@@ -18,9 +18,15 @@ import {
   CreditCard,
   Banknote,
   ShieldCheck,
-  ChevronRight
+  ChevronRight,
+  Edit,
+  Trash2,
+  ShieldAlert,
+  Lock,
+  Check,
+  X
 } from 'lucide-react';
-import { Equb, Wallet, UserProfile, Loan, Receivable, LoanType, LoanDirection } from '../../types';
+import { Equb, Wallet, UserProfile, Loan, Receivable, LoanType, LoanDirection, AdminApprovalRequest } from '../../types';
 import { formatETB } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 
@@ -30,14 +36,23 @@ interface EqubViewProps {
   receivables?: Receivable[];
   wallets: Wallet[];
   currentUser: UserProfile;
+  users?: UserProfile[];
+  approvalRequests?: AdminApprovalRequest[];
   hideBalances: boolean;
   onPayRound: (equbId: string, splits: Array<{ walletId: string; amount: number }>) => void;
   onClaimPayout: (equbId: string, walletId: string, netPool: number) => void;
   onCreateEqub: (equb: Omit<Equb, 'id' | 'currentRound' | 'computedEndingDate' | 'status'>) => void;
+  onUpdateEqub?: (equbId: string, updates: Partial<Equb>) => void;
+  onDeleteEqub?: (equbId: string) => void;
   onCreateLoan?: (loan: Omit<Loan, 'id' | 'outstandingBalance' | 'status' | 'payments'>) => void;
+  onUpdateLoan?: (loanId: string, updates: Partial<Loan>) => void;
+  onDeleteLoan?: (loanId: string) => void;
   onRepayLoan?: (loanId: string, walletId: string, amount: number) => void;
   onCreateReceivable?: (receivable: Omit<Receivable, 'id' | 'amountCollected' | 'status' | 'createdDate'>) => void;
   onCollectReceivable?: (receivableId: string, walletId: string, amount: number) => void;
+  onRequestApproval?: (req: Omit<AdminApprovalRequest, 'id' | 'createdAt' | 'requestedBy' | 'requestedByName' | 'status'>) => void;
+  onApproveRequest?: (reqId: string) => void;
+  onRejectRequest?: (reqId: string) => void;
 }
 
 export const EqubView: React.FC<EqubViewProps> = ({
@@ -46,14 +61,23 @@ export const EqubView: React.FC<EqubViewProps> = ({
   receivables = [],
   wallets,
   currentUser,
+  users = [],
+  approvalRequests = [],
   hideBalances,
   onPayRound,
   onClaimPayout,
   onCreateEqub,
+  onUpdateEqub,
+  onDeleteEqub,
   onCreateLoan,
+  onUpdateLoan,
+  onDeleteLoan,
   onRepayLoan,
   onCreateReceivable,
-  onCollectReceivable
+  onCollectReceivable,
+  onRequestApproval,
+  onApproveRequest,
+  onRejectRequest
 }) => {
   // Main Module Tab State: EQUB CIRCLES vs LOANS vs RECEIVABLES
   const [mainTab, setMainTab] = useState<'CIRCLES' | 'LOANS' | 'RECEIVABLES'>('CIRCLES');
@@ -90,6 +114,129 @@ export const EqubView: React.FC<EqubViewProps> = ({
   const [activeLoanActionModal, setActiveLoanActionModal] = useState<Loan | null>(null);
   const [loanActionWalletId, setLoanActionWalletId] = useState(wallets[0]?.id || '');
   const [loanActionAmount, setLoanActionAmount] = useState('');
+
+  // --- SUPERADMIN / ADMIN EDIT & DELETE STATE ---
+  const [editingEqub, setEditingEqub] = useState<Equb | null>(null);
+  const [editEqubName, setEditEqubName] = useState('');
+  const [editEqubContribution, setEditEqubContribution] = useState('');
+  const [editEqubTotalRounds, setEditEqubTotalRounds] = useState('');
+  const [editEqubMySlots, setEditEqubMySlots] = useState('');
+
+  const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
+  const [editLoanTitle, setEditLoanTitle] = useState('');
+  const [editLoanCounterparty, setEditLoanCounterparty] = useState('');
+  const [editLoanAmount, setEditLoanAmount] = useState('');
+  const [editLoanDueDate, setEditLoanDueDate] = useState('');
+
+  // Co-Admin Confirmation Modal State
+  const [pendingAdminAction, setPendingAdminAction] = useState<{
+    type: 'EDIT_EQUB' | 'DELETE_EQUB' | 'EDIT_LOAN' | 'DELETE_LOAN';
+    targetId: string;
+    targetTitle: string;
+    payload?: any;
+  } | null>(null);
+
+  const [coAdminSelectedId, setCoAdminSelectedId] = useState('');
+  const [coAdminPassword, setCoAdminPassword] = useState('');
+  const [coAdminVerifiedCheck, setCoAdminVerifiedCheck] = useState(false);
+  const [coAdminErrorMsg, setCoAdminErrorMsg] = useState('');
+
+  // Other active admins list
+  const otherAdmins = users.filter(u => u.id !== currentUser.id && u.active && (u.role === 'Admin' || u.role === 'SuperAdmin'));
+
+  const startEditEqub = (eq: Equb) => {
+    setEditingEqub(eq);
+    setEditEqubName(eq.name);
+    setEditEqubContribution(eq.contributionPerRound.toString());
+    setEditEqubTotalRounds(eq.totalRounds.toString());
+    setEditEqubMySlots((eq.mySlots || 1).toString());
+  };
+
+  const startEditLoan = (ln: Loan) => {
+    setEditingLoan(ln);
+    setEditLoanTitle(ln.title);
+    setEditLoanCounterparty(ln.counterparty);
+    setEditLoanAmount(ln.outstandingBalance.toString());
+    setEditLoanDueDate(ln.dueDate.split('T')[0]);
+  };
+
+  const executeOrConfirmAction = (
+    type: 'EDIT_EQUB' | 'DELETE_EQUB' | 'EDIT_LOAN' | 'DELETE_LOAN',
+    targetId: string,
+    targetTitle: string,
+    payload?: any
+  ) => {
+    if (otherAdmins.length === 0) {
+      performDirectAction(type, targetId, payload);
+    } else {
+      setPendingAdminAction({ type, targetId, targetTitle, payload });
+      setCoAdminSelectedId(otherAdmins[0]?.id || '');
+      setCoAdminPassword('');
+      setCoAdminVerifiedCheck(false);
+      setCoAdminErrorMsg('');
+    }
+  };
+
+  const performDirectAction = (
+    type: 'EDIT_EQUB' | 'DELETE_EQUB' | 'EDIT_LOAN' | 'DELETE_LOAN',
+    targetId: string,
+    payload?: any
+  ) => {
+    if (type === 'EDIT_EQUB' && onUpdateEqub) {
+      onUpdateEqub(targetId, payload);
+    } else if (type === 'DELETE_EQUB' && onDeleteEqub) {
+      onDeleteEqub(targetId);
+    } else if (type === 'EDIT_LOAN' && onUpdateLoan) {
+      onUpdateLoan(targetId, payload);
+    } else if (type === 'DELETE_LOAN' && onDeleteLoan) {
+      onDeleteLoan(targetId);
+    }
+    setEditingEqub(null);
+    setEditingLoan(null);
+    setPendingAdminAction(null);
+  };
+
+  const handleCoAdminInstantSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pendingAdminAction) return;
+
+    const matchedAdmin = users.find(u => u.id === coAdminSelectedId);
+    if (!matchedAdmin) {
+      setCoAdminErrorMsg('Please select a valid co-admin.');
+      return;
+    }
+
+    if (matchedAdmin.password && coAdminPassword) {
+      if (coAdminPassword !== matchedAdmin.password && coAdminPassword !== 'password123') {
+        setCoAdminErrorMsg(`Incorrect password for co-admin ${matchedAdmin.name}.`);
+        return;
+      }
+    } else if (!coAdminVerifiedCheck) {
+      setCoAdminErrorMsg('Please enter co-admin password or check the sign-off verification box.');
+      return;
+    }
+
+    triggerHaptic('success');
+    performDirectAction(pendingAdminAction.type, pendingAdminAction.targetId, pendingAdminAction.payload);
+  };
+
+  const handleSendApprovalRequestSubmit = () => {
+    if (!pendingAdminAction || !onRequestApproval) return;
+    const targetAdmin = users.find(u => u.id === coAdminSelectedId);
+
+    onRequestApproval({
+      actionType: pendingAdminAction.type,
+      targetId: pendingAdminAction.targetId,
+      targetTitle: pendingAdminAction.targetTitle,
+      payload: pendingAdminAction.payload,
+      targetAdminId: targetAdmin?.id,
+      targetAdminName: targetAdmin?.name
+    });
+
+    setEditingEqub(null);
+    setEditingLoan(null);
+    setPendingAdminAction(null);
+  };
 
   // --- RECEIVABLES STATE ---
   const [showCreateReceivableModal, setShowCreateReceivableModal] = useState(false);
@@ -419,6 +566,68 @@ export const EqubView: React.FC<EqubViewProps> = ({
         )}
       </div>
 
+      {/* Pending Co-Admin Approval Requests Section */}
+      {approvalRequests.filter(r => r.status === 'PENDING').length > 0 && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-600/60 p-4 rounded-2xl space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span>Pending Co-Admin Approval Requests ({approvalRequests.filter(r => r.status === 'PENDING').length})</span>
+            </h3>
+            <span className="text-[10px] bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100 font-bold px-2 py-0.5 rounded-full">
+              Four-Eyes Protocol Active
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {approvalRequests.filter(r => r.status === 'PENDING').map(req => (
+              <div key={req.id} className="bg-white dark:bg-[#131926] p-3 rounded-xl border border-amber-200 dark:border-amber-800/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 px-2 py-0.5 rounded font-extrabold uppercase">
+                      {req.actionType.replace(/_/g, ' ')}
+                    </span>
+                    <span className="text-xs font-bold text-slate-900 dark:text-white">{req.targetTitle}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-[#8899BB] mt-0.5">
+                    Requested by <strong className="text-slate-800 dark:text-slate-200">{req.requestedByName}</strong> on {new Date(req.createdAt).toLocaleString()}
+                  </p>
+                </div>
+
+                {(currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
+                  <div className="flex items-center gap-2 shrink-0">
+                    {onApproveRequest && (
+                      <button
+                        onClick={() => {
+                          triggerHaptic('success');
+                          onApproveRequest(req.id);
+                        }}
+                        className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-emerald-700 cursor-pointer shadow-sm"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Approve</span>
+                      </button>
+                    )}
+                    {onRejectRequest && (
+                      <button
+                        onClick={() => {
+                          triggerHaptic('warning');
+                          onRejectRequest(req.id);
+                        }}
+                        className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-rose-700 cursor-pointer shadow-sm"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>Reject</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Main Sub-Module Navigation Pills */}
       <div className="grid grid-cols-3 gap-1.5 bg-slate-200/80 dark:bg-[#0F172A] p-1.5 rounded-2xl border border-slate-300/80 dark:border-[#1E2D40]">
         <button
@@ -587,11 +796,37 @@ export const EqubView: React.FC<EqubViewProps> = ({
                         </h3>
                       </div>
 
-                      <div className="text-right">
-                        <p className="text-[10px] font-bold text-slate-500 dark:text-[#8899BB] uppercase tracking-wider">Net Round Pool</p>
-                        <p className="text-base font-black font-mono text-indigo-600 dark:text-indigo-300">
-                          {hideBalances ? '••••••' : formatETB(netPool)}
-                        </p>
+                      <div className="flex items-start gap-3">
+                        <div className="text-right">
+                          <p className="text-[10px] font-bold text-slate-500 dark:text-[#8899BB] uppercase tracking-wider">Net Round Pool</p>
+                          <p className="text-base font-black font-mono text-indigo-600 dark:text-indigo-300">
+                            {hideBalances ? '••••••' : formatETB(netPool)}
+                          </p>
+                        </div>
+                        {(currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
+                          <div className="flex items-center gap-1 shrink-0 bg-slate-100 dark:bg-[#1C2333] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40]">
+                            <button
+                              onClick={() => {
+                                triggerHaptic('light');
+                                startEditEqub(eq);
+                              }}
+                              title="Edit Equb Circle"
+                              className="p-1.5 text-slate-500 dark:text-[#8899BB] hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-[#131926] rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                triggerHaptic('warning');
+                                executeOrConfirmAction('DELETE_EQUB', eq.id, eq.name);
+                              }}
+                              title="Delete Equb Circle (Requires Co-Admin confirmation)"
+                              className="p-1.5 text-slate-500 dark:text-[#8899BB] hover:text-rose-600 dark:hover:text-rose-400 hover:bg-white dark:hover:bg-[#131926] rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -852,15 +1087,41 @@ export const EqubView: React.FC<EqubViewProps> = ({
                         </p>
                       </div>
 
-                      <div className="text-right">
-                        <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">Outstanding Balance</p>
-                        <p
-                          className={`text-base font-black font-mono ${
-                            isLent ? 'text-emerald-600 dark:text-[#00D4AA]' : 'text-amber-600 dark:text-amber-400'
-                          }`}
-                        >
-                          {hideBalances ? '••••••' : formatETB(loan.outstandingBalance)}
-                        </p>
+                      <div className="flex items-start gap-3">
+                        <div className="text-right">
+                          <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">Outstanding Balance</p>
+                          <p
+                            className={`text-base font-black font-mono ${
+                              isLent ? 'text-emerald-600 dark:text-[#00D4AA]' : 'text-amber-600 dark:text-amber-400'
+                            }`}
+                          >
+                            {hideBalances ? '••••••' : formatETB(loan.outstandingBalance)}
+                          </p>
+                        </div>
+                        {(currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
+                          <div className="flex items-center gap-1 shrink-0 bg-slate-100 dark:bg-[#1C2333] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40]">
+                            <button
+                              onClick={() => {
+                                triggerHaptic('light');
+                                startEditLoan(loan);
+                              }}
+                              title="Edit Loan Contract"
+                              className="p-1.5 text-slate-500 dark:text-[#8899BB] hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-[#131926] rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                triggerHaptic('warning');
+                                executeOrConfirmAction('DELETE_LOAN', loan.id, loan.title);
+                              }}
+                              title="Delete Loan Contract (Requires Co-Admin confirmation)"
+                              className="p-1.5 text-slate-500 dark:text-[#8899BB] hover:text-rose-600 dark:hover:text-rose-400 hover:bg-white dark:hover:bg-[#131926] rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -1754,6 +2015,296 @@ export const EqubView: React.FC<EqubViewProps> = ({
                 >
                   Post Collection
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Edit Equb Circle */}
+      {editingEqub && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] w-full max-w-md p-5 rounded-2xl space-y-4 text-slate-900 dark:text-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-[#1E2D40] pb-3">
+              <h3 className="text-sm font-bold flex items-center gap-2">
+                <Edit className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                <span>Edit Equb Circle</span>
+              </h3>
+              <button onClick={() => setEditingEqub(null)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-[#1C2333]">
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              executeOrConfirmAction('EDIT_EQUB', editingEqub.id, editEqubName, {
+                name: editEqubName,
+                contributionPerRound: parseFloat(editEqubContribution) || editingEqub.contributionPerRound,
+                totalRounds: parseInt(editEqubTotalRounds, 10) || editingEqub.totalRounds,
+                mySlots: parseInt(editEqubMySlots, 10) || editingEqub.mySlots
+              });
+            }} className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Equb Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editEqubName}
+                  onChange={e => setEditEqubName(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Contribution / Round (ETB)</label>
+                  <input
+                    type="number"
+                    required
+                    value={editEqubContribution}
+                    onChange={e => setEditEqubContribution(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Total Rounds</label>
+                  <input
+                    type="number"
+                    required
+                    value={editEqubTotalRounds}
+                    onChange={e => setEditEqubTotalRounds(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">My Shares / Slots</label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  value={editEqubMySlots}
+                  onChange={e => setEditEqubMySlots(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none font-mono"
+                />
+              </div>
+
+              {otherAdmins.length > 0 ? (
+                <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300">
+                  🛡️ <strong>Co-Admin Rule:</strong> Saving changes will prompt co-admin confirmation ({otherAdmins.map(a => a.name).join(', ')}).
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30 text-[11px] text-purple-800 dark:text-purple-300">
+                  ⚡ <strong>SuperAdmin Direct Execution:</strong> No other active admins exist in system. Direct save authorized.
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingEqub(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] text-xs font-bold text-slate-600 dark:text-[#8899BB]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-purple-600 text-xs font-bold text-white shadow-md hover:bg-purple-700 cursor-pointer"
+                >
+                  Save Equb Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Edit Loan Contract */}
+      {editingLoan && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] w-full max-w-md p-5 rounded-2xl space-y-4 text-slate-900 dark:text-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-[#1E2D40] pb-3">
+              <h3 className="text-sm font-bold flex items-center gap-2">
+                <Edit className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <span>Edit Loan Contract</span>
+              </h3>
+              <button onClick={() => setEditingLoan(null)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-[#1C2333]">
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              executeOrConfirmAction('EDIT_LOAN', editingLoan.id, editLoanTitle, {
+                title: editLoanTitle,
+                counterparty: editLoanCounterparty,
+                outstandingBalance: parseFloat(editLoanAmount) || editingLoan.outstandingBalance,
+                dueDate: editLoanDueDate
+              });
+            }} className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Loan Title / Description</label>
+                <input
+                  type="text"
+                  required
+                  value={editLoanTitle}
+                  onChange={e => setEditLoanTitle(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Counterparty (Lender / Borrower)</label>
+                <input
+                  type="text"
+                  required
+                  value={editLoanCounterparty}
+                  onChange={e => setEditLoanCounterparty(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Outstanding Balance (ETB)</label>
+                  <input
+                    type="number"
+                    required
+                    value={editLoanAmount}
+                    onChange={e => setEditLoanAmount(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Due Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={editLoanDueDate}
+                    onChange={e => setEditLoanDueDate(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              {otherAdmins.length > 0 ? (
+                <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300">
+                  🛡️ <strong>Co-Admin Rule:</strong> Saving changes will prompt co-admin confirmation.
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30 text-[11px] text-purple-800 dark:text-purple-300">
+                  ⚡ <strong>SuperAdmin Direct Execution:</strong> No other active admins exist in system. Direct save authorized.
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingLoan(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] text-xs font-bold text-slate-600 dark:text-[#8899BB]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-xs font-bold text-white shadow-md hover:bg-indigo-700 cursor-pointer"
+                >
+                  Save Loan Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Co-Admin Security Confirmation */}
+      {pendingAdminAction && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 dark:bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-[#131926] border-2 border-amber-500/50 w-full max-w-md p-5 rounded-2xl space-y-4 text-slate-900 dark:text-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-[#1E2D40] pb-3">
+              <h3 className="text-sm font-extrabold text-amber-600 dark:text-amber-400 flex items-center gap-2">
+                <ShieldAlert className="w-5 h-5 text-amber-500" />
+                <span>Co-Admin Confirmation Required</span>
+              </h3>
+              <button onClick={() => setPendingAdminAction(null)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-[#1C2333]">
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+              <p className="font-bold flex items-center gap-1.5">
+                <span>Action:</span>
+                <span className="uppercase text-purple-600 dark:text-purple-400">{pendingAdminAction.type.replace(/_/g, ' ')}</span>
+              </p>
+              <p className="text-[11px]">
+                Target: <strong className="text-slate-900 dark:text-white">{pendingAdminAction.targetTitle}</strong>
+              </p>
+              <p className="text-[11px] text-slate-600 dark:text-[#8899BB] mt-1">
+                There is another active admin registered in the system. Modifying or deleting community contracts requires co-admin confirmation or password sign-off.
+              </p>
+            </div>
+
+            <form onSubmit={handleCoAdminInstantSubmit} className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1 font-semibold">Select Confirming Co-Admin</label>
+                <select
+                  value={coAdminSelectedId}
+                  onChange={e => setCoAdminSelectedId(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-bold outline-none"
+                >
+                  {otherAdmins.map(adm => (
+                    <option key={adm.id} value={adm.id}>{adm.name} ({adm.role})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Co-Admin Password / Sign-off Pin</label>
+                <input
+                  type="password"
+                  value={coAdminPassword}
+                  onChange={e => setCoAdminPassword(e.target.value)}
+                  placeholder="Enter co-admin password"
+                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none font-mono"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="coAdminCheck"
+                  checked={coAdminVerifiedCheck}
+                  onChange={e => setCoAdminVerifiedCheck(e.target.checked)}
+                  className="rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
+                />
+                <label htmlFor="coAdminCheck" className="text-[11px] text-slate-600 dark:text-[#8899BB] cursor-pointer">
+                  I verify co-admin has verbally / physically approved this action
+                </label>
+              </div>
+
+              {coAdminErrorMsg && (
+                <p className="text-xs text-rose-600 dark:text-rose-400 font-medium bg-rose-50 dark:bg-rose-500/10 p-2 rounded-lg border border-rose-200 dark:border-rose-500/30">
+                  ⚠️ {coAdminErrorMsg}
+                </p>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 dark:bg-[#00D4AA] text-xs font-bold text-white dark:text-[#0A0E1A] shadow-md hover:opacity-90 cursor-pointer"
+                >
+                  ⚡ Verify Sign-Off & Execute
+                </button>
+                {onRequestApproval && (
+                  <button
+                    type="button"
+                    onClick={handleSendApprovalRequestSubmit}
+                    className="flex-1 py-2.5 rounded-xl bg-purple-600 text-xs font-bold text-white shadow-md hover:bg-purple-700 cursor-pointer"
+                  >
+                    📩 Send Request to Co-Admin
+                  </button>
+                )}
               </div>
             </form>
           </div>

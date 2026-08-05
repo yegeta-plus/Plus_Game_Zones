@@ -79,9 +79,15 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
   const [description, setDescription] = useState('');
 
   // Date helper functions
+  const isSuperAdmin = currentUser.role === 'SuperAdmin';
   const getTodayStr = () => new Date().toISOString().split('T')[0];
   const getMinDateStr = () => {
     const d = new Date();
+    if (isSuperAdmin) {
+      // SuperAdmin can select dates going back to the start of previous month
+      const firstDayPrevMonth = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+      return firstDayPrevMonth.toISOString().split('T')[0];
+    }
     d.setDate(d.getDate() - 7);
     return d.toISOString().split('T')[0];
   };
@@ -89,6 +95,11 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
     const d = new Date();
     d.setDate(d.getDate() - 1);
     return d.toISOString().split('T')[0];
+  };
+  const getLastMonthEndStr = () => {
+    const d = new Date();
+    const prevMonthEnd = new Date(d.getFullYear(), d.getMonth(), 0);
+    return prevMonthEnd.toISOString().split('T')[0];
   };
 
   const [postingDate, setPostingDate] = useState<string>(getTodayStr());
@@ -118,25 +129,10 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
     }
   };
 
-  const handleSingleAddPreset = (addVal: number) => {
-    triggerHaptic('medium');
-    const currTotal = parseSummedAmount(amountStr).total;
-    setAmountStr((currTotal + addVal).toString());
-  };
-
   const handleBatchAmountChange = (wId: string, val: string) => {
     setBatchAmounts(prev => ({
       ...prev,
       [wId]: val
-    }));
-  };
-
-  const handleBatchAddPreset = (wId: string, addVal: number) => {
-    triggerHaptic('medium');
-    const currTotal = parseSummedAmount(batchAmounts[wId] || '').total;
-    setBatchAmounts(prev => ({
-      ...prev,
-      [wId]: (currTotal + addVal).toString()
     }));
   };
 
@@ -558,20 +554,6 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                           return null;
                         })()}
                       </div>
-
-                      {/* Quick Add Chips for Wallet */}
-                      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-                        {[1000, 5000, 10000, 25000].map(addVal => (
-                          <button
-                            key={addVal}
-                            type="button"
-                            onClick={() => handleBatchAddPreset(w.id, addVal)}
-                            className="px-2 py-0.5 rounded-lg bg-white dark:bg-[#0A0E1A] hover:bg-slate-100 dark:hover:bg-[#1C2333] text-[9px] font-mono font-semibold text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-[#1E2D40] shrink-0 cursor-pointer"
-                          >
-                            +{addVal >= 1000 ? `${addVal / 1000}k` : addVal}
-                          </button>
-                        ))}
-                      </div>
                     </div>
                   );
                 })}
@@ -656,29 +638,6 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                       {formatETB(parsedSingle.total)}
                     </span>
                   </div>
-                </div>
-              )}
-
-              {/* Fast Quick-Add Chips (Income Only) */}
-              {entryMode === 'INCOME' && (
-                <div className="pt-2 border-t border-slate-200 dark:border-[#1E2D40] flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
-                  <span className="text-[10px] text-slate-500 dark:text-[#8899BB] shrink-0 font-medium">Quick Add:</span>
-                  {[
-                    { label: '+500', val: 500 },
-                    { label: '+1,000', val: 1000 },
-                    { label: '+5,000', val: 5000 },
-                    { label: '+10,000', val: 10000 },
-                    { label: '+50,000', val: 50000 }
-                  ].map((p) => (
-                    <button
-                      key={p.label}
-                      type="button"
-                      onClick={() => handleSingleAddPreset(p.val)}
-                      className="px-2.5 py-1 rounded-xl bg-white dark:bg-[#131926] hover:bg-slate-100 dark:hover:bg-[#1C2333] hover:text-slate-900 dark:hover:text-white text-[10px] font-mono font-bold text-slate-600 dark:text-[#8899BB] border border-slate-200 dark:border-[#1E2D40] shrink-0 cursor-pointer transition-colors"
-                    >
-                      {p.label}
-                    </button>
-                  ))}
                 </div>
               )}
             </div>
@@ -770,7 +729,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
             />
           </div>
 
-          {/* Date Selector (Custom date up to 7 days past) */}
+          {/* Date Selector (SuperAdmin can post to last month) */}
           <div className="bg-slate-50 dark:bg-[#131926] p-3 rounded-2xl border border-slate-200 dark:border-[#1E2D40] space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs text-slate-600 dark:text-[#8899BB] flex items-center gap-1.5 font-semibold">
@@ -778,11 +737,11 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                 <span>Posting Date</span>
               </span>
               <span className="text-[10px] font-mono text-slate-500 dark:text-[#8899BB]">
-                (Max 7 days back)
+                {isSuperAdmin ? '⚡ SuperAdmin: Past Month Allowed' : '(Max 7 days back)'}
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <div className="flex items-center gap-1 bg-white dark:bg-[#0A0E1A] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40] shrink-0">
                 <button
                   type="button"
@@ -808,6 +767,20 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                 >
                   Yesterday
                 </button>
+                {isSuperAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setPostingDate(getLastMonthEndStr());
+                    }}
+                    className={`px-2 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      postingDate === getLastMonthEndStr() ? 'bg-purple-600 dark:bg-purple-500 text-white' : 'text-purple-600 dark:text-purple-400 hover:text-purple-700 bg-purple-50 dark:bg-purple-500/10'
+                    }`}
+                  >
+                    Last Month
+                  </button>
+                )}
               </div>
 
               <input
@@ -824,6 +797,12 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                 className="bg-white dark:bg-[#0A0E1A] border border-slate-200 dark:border-[#1E2D40] focus:border-emerald-500 dark:focus:border-[#00D4AA] rounded-xl py-1 px-2 text-xs text-slate-900 dark:text-white outline-none cursor-pointer font-mono font-bold w-full text-center"
               />
             </div>
+
+            {isSuperAdmin && postingDate < getYesterdayStr() && (
+              <p className="text-[10px] text-purple-600 dark:text-purple-400 font-medium bg-purple-50 dark:bg-purple-500/10 p-1.5 rounded-lg border border-purple-200 dark:border-purple-500/20">
+                🔒 <strong>SuperAdmin Privilege Active:</strong> Registering backdated entry for {postingDate}.
+              </p>
+            )}
           </div>
 
           {/* Submit Action Button */}

@@ -371,10 +371,16 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                           <div className="flex items-center gap-1.5">
                             <p className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF] line-clamp-1">{tx.description}</p>
                             {!isTransactionEditable(tx.date) && !tx.reversed && (
-                              <span title="Can't be edited: older than 1 week" className="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0 font-medium">
-                                <Lock className="w-2.5 h-2.5" />
-                                <span className="hidden xs:inline">Locked</span>
-                              </span>
+                              currentUser.role === 'SuperAdmin' ? (
+                                <span title="SuperAdmin can edit/delete backdated transactions" className="text-[9px] bg-purple-100 text-purple-800 dark:bg-purple-500/15 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0 font-bold">
+                                  ⚡ SuperAdmin
+                                </span>
+                              ) : (
+                                <span title="Can't be edited: older than 1 week" className="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0 font-medium">
+                                  <Lock className="w-2.5 h-2.5" />
+                                  <span className="hidden xs:inline">Locked</span>
+                                </span>
+                              )
                             )}
                           </div>
                           <p className="text-[10px] text-slate-500 dark:text-[#8899BB] flex items-center gap-1 mt-0.5">
@@ -415,7 +421,8 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
       {/* Transaction Detail Sheet Modal */}
       {activeTxDetail && (() => {
-        const editable = isTransactionEditable(activeTxDetail.date) && !activeTxDetail.reversed;
+        const isSuperAdmin = currentUser.role === 'SuperAdmin';
+        const editable = (isTransactionEditable(activeTxDetail.date) || isSuperAdmin) && !activeTxDetail.reversed;
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fadeIn">
@@ -428,7 +435,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                     <span className="text-[9px] bg-rose-100 text-rose-800 dark:bg-red-500/20 dark:text-red-400 border border-rose-200 dark:border-red-500/30 px-2 py-0.5 rounded-full font-bold">Reversed</span>
                   ) : editable ? (
                     <span className="text-[9px] bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-                      <CheckCircle2 className="w-2.5 h-2.5" /> Editable (Within 1 week)
+                      <CheckCircle2 className="w-2.5 h-2.5" /> {isSuperAdmin && !isTransactionEditable(activeTxDetail.date) ? 'SuperAdmin Authorized' : 'Editable'}
                     </span>
                   ) : (
                     <span className="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">

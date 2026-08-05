@@ -240,6 +240,23 @@ export interface Category {
   active: boolean;
 }
 
+export interface AdminApprovalRequest {
+  id: string;
+  createdAt: string;
+  requestedBy: string;
+  requestedByName: string;
+  targetAdminId?: string;
+  targetAdminName?: string;
+  actionType: 'EDIT_EQUB' | 'DELETE_EQUB' | 'EDIT_LOAN' | 'DELETE_LOAN';
+  targetId: string;
+  targetTitle: string;
+  payload?: any;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  approvedBy?: string;
+  approvedByName?: string;
+  approvedAt?: string;
+}
+
 export interface ERPState {
   currentUser: UserProfile;
   users: UserProfile[];
@@ -254,6 +271,7 @@ export interface ERPState {
   receivables: Receivable[];
   categories: Category[];
   auditLogs: AuditLogEntry[];
+  approvalRequests?: AdminApprovalRequest[];
   theme: 'dark' | 'light';
   hideBalances: boolean;
 }

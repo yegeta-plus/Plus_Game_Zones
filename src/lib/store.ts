@@ -197,6 +197,7 @@ function createInitialState(): ERPState {
     receivables: DEFAULT_RECEIVABLES,
     categories: DEFAULT_CATEGORIES,
     auditLogs: DEFAULT_AUDIT_LOGS,
+    approvalRequests: [],
     theme: 'dark',
     hideBalances: false
   };

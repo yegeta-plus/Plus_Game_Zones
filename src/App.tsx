@@ -21,7 +21,7 @@ import {
   formatETB
 } from './lib/store';
 import { subscribeToFirebaseState, syncStateToFirebase } from './lib/firebase';
-import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment } from './types';
+import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest } from './types';
 import { CheckCircle2, Sparkles } from 'lucide-react';
 import { triggerHaptic } from './lib/haptics';
 
@@ -387,7 +387,7 @@ export default function App() {
     const existingTx = state.transactions.find(t => t.id === txId);
     if (!existingTx) return;
 
-    if (!isTransactionEditable(existingTx.date)) {
+    if (!isTransactionEditable(existingTx.date) && state.currentUser.role !== 'SuperAdmin') {
       triggerToast(`⚠️ Can't be edited: transaction is older than 1 week!`);
       return;
     }
@@ -436,7 +436,7 @@ export default function App() {
     const existingTx = state.transactions.find(t => t.id === txId);
     if (!existingTx) return;
 
-    if (!isTransactionEditable(existingTx.date)) {
+    if (!isTransactionEditable(existingTx.date) && state.currentUser.role !== 'SuperAdmin') {
       triggerToast(`⚠️ Can't be deleted: transaction is older than 1 week!`);
       return;
     }
@@ -780,6 +780,181 @@ export default function App() {
     performRefresh(true);
   };
 
+  // 12. Update & Delete Equb
+  const handleUpdateEqub = (equbId: string, updates: Partial<Equb>) => {
+    const targetEqub = state.equbs.find(e => e.id === equbId);
+    if (!targetEqub) return;
+
+    setState(prev => ({
+      ...prev,
+      equbs: prev.equbs.map(e => e.id === equbId ? { ...e, ...updates } : e),
+      auditLogs: [
+        {
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'UPDATE_EQUB',
+          entity: 'Equb',
+          entityId: equbId,
+          diffAfter: updates,
+          branch: prev.currentUser.branch
+        },
+        ...prev.auditLogs
+      ]
+    }));
+
+    triggerToast(`Equb circle "${updates.name || targetEqub.name}" updated.`);
+    performRefresh(true);
+  };
+
+  const handleDeleteEqub = (equbId: string) => {
+    const targetEqub = state.equbs.find(e => e.id === equbId);
+    if (!targetEqub) return;
+
+    setState(prev => ({
+      ...prev,
+      equbs: prev.equbs.filter(e => e.id !== equbId),
+      auditLogs: [
+        {
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'DELETE_EQUB',
+          entity: 'Equb',
+          entityId: equbId,
+          diffAfter: { deleted: true, name: targetEqub.name },
+          branch: prev.currentUser.branch
+        },
+        ...prev.auditLogs
+      ]
+    }));
+
+    triggerToast(`🗑️ Equb circle "${targetEqub.name}" deleted.`);
+    performRefresh(true);
+  };
+
+  // 13. Update & Delete Loan
+  const handleUpdateLoan = (loanId: string, updates: Partial<Loan>) => {
+    const targetLoan = state.loans.find(l => l.id === loanId);
+    if (!targetLoan) return;
+
+    setState(prev => ({
+      ...prev,
+      loans: prev.loans.map(l => l.id === loanId ? { ...l, ...updates } : l),
+      auditLogs: [
+        {
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'UPDATE_LOAN',
+          entity: 'Loan',
+          entityId: loanId,
+          diffAfter: updates,
+          branch: prev.currentUser.branch
+        },
+        ...prev.auditLogs
+      ]
+    }));
+
+    triggerToast(`Loan contract "${updates.title || targetLoan.title}" updated.`);
+    performRefresh(true);
+  };
+
+  const handleDeleteLoan = (loanId: string) => {
+    const targetLoan = state.loans.find(l => l.id === loanId);
+    if (!targetLoan) return;
+
+    setState(prev => ({
+      ...prev,
+      loans: prev.loans.filter(l => l.id !== loanId),
+      auditLogs: [
+        {
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'DELETE_LOAN',
+          entity: 'Loan',
+          entityId: loanId,
+          diffAfter: { deleted: true, title: targetLoan.title },
+          branch: prev.currentUser.branch
+        },
+        ...prev.auditLogs
+      ]
+    }));
+
+    triggerToast(`🗑️ Loan contract "${targetLoan.title}" deleted.`);
+    performRefresh(true);
+  };
+
+  // 14. Approval Request Handlers
+  const handleCreateApprovalRequest = (reqData: Omit<AdminApprovalRequest, 'id' | 'createdAt' | 'requestedBy' | 'requestedByName' | 'status'>) => {
+    const newReq: AdminApprovalRequest = {
+      ...reqData,
+      id: `req-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      requestedBy: state.currentUser.id,
+      requestedByName: state.currentUser.name,
+      status: 'PENDING'
+    };
+
+    setState(prev => ({
+      ...prev,
+      approvalRequests: [newReq, ...(prev.approvalRequests || [])]
+    }));
+
+    triggerToast(`📋 Approval request sent to co-admin.`);
+    performRefresh(true);
+  };
+
+  const handleApproveRequest = (reqId: string) => {
+    const req = (state.approvalRequests || []).find(r => r.id === reqId);
+    if (!req) return;
+
+    if (req.actionType === 'EDIT_EQUB' && req.payload) {
+      handleUpdateEqub(req.targetId, req.payload);
+    } else if (req.actionType === 'DELETE_EQUB') {
+      handleDeleteEqub(req.targetId);
+    } else if (req.actionType === 'EDIT_LOAN' && req.payload) {
+      handleUpdateLoan(req.targetId, req.payload);
+    } else if (req.actionType === 'DELETE_LOAN') {
+      handleDeleteLoan(req.targetId);
+    }
+
+    setState(prev => ({
+      ...prev,
+      approvalRequests: (prev.approvalRequests || []).map(r => r.id === reqId ? {
+        ...r,
+        status: 'APPROVED',
+        approvedBy: prev.currentUser.id,
+        approvedByName: prev.currentUser.name,
+        approvedAt: new Date().toISOString()
+      } : r)
+    }));
+
+    triggerToast(`✅ Co-admin request approved and executed!`);
+    performRefresh(true);
+  };
+
+  const handleRejectRequest = (reqId: string) => {
+    setState(prev => ({
+      ...prev,
+      approvalRequests: (prev.approvalRequests || []).map(r => r.id === reqId ? {
+        ...r,
+        status: 'REJECTED',
+        approvedBy: prev.currentUser.id,
+        approvedByName: prev.currentUser.name,
+        approvedAt: new Date().toISOString()
+      } : r)
+    }));
+
+    triggerToast(`❌ Approval request rejected.`);
+    performRefresh(true);
+  };
+
   const headerNotifications = React.useMemo(() => {
     const list: Array<{
       id: string;
@@ -983,14 +1158,23 @@ export default function App() {
             receivables={state.receivables}
             wallets={state.wallets}
             currentUser={state.currentUser}
+            users={state.users}
+            approvalRequests={state.approvalRequests}
             hideBalances={state.hideBalances}
             onPayRound={handlePayEqubRound}
             onClaimPayout={handleClaimEqubPayout}
             onCreateEqub={handleCreateEqub}
+            onUpdateEqub={handleUpdateEqub}
+            onDeleteEqub={handleDeleteEqub}
             onCreateLoan={handleCreateLoan}
+            onUpdateLoan={handleUpdateLoan}
+            onDeleteLoan={handleDeleteLoan}
             onRepayLoan={handleRepayLoan}
             onCreateReceivable={handleCreateReceivable}
             onCollectReceivable={handleCollectReceivable}
+            onRequestApproval={handleCreateApprovalRequest}
+            onApproveRequest={handleApproveRequest}
+            onRejectRequest={handleRejectRequest}
           />
         )}
 
