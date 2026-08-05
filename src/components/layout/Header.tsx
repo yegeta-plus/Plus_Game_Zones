@@ -1,0 +1,242 @@
+import React, { useState } from 'react';
+import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut } from 'lucide-react';
+import { UserProfile, UserRole, NavTab } from '../../types';
+import { triggerHaptic } from '../../lib/haptics';
+
+export interface HeaderNotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  type: 'HIGH' | 'MEDIUM' | 'INFO';
+  time: string;
+  actionTab?: NavTab;
+}
+
+interface HeaderProps {
+  currentUser: UserProfile;
+  allUsers: UserProfile[];
+  onSwitchUser: (user: UserProfile) => void;
+  onLogout?: () => void;
+  theme: 'dark' | 'light';
+  onToggleTheme: () => void;
+  hideBalances: boolean;
+  onToggleHideBalances: () => void;
+  onNavigateTab?: (tab: NavTab) => void;
+  notifications?: HeaderNotificationItem[];
+  lastRefreshedAt?: Date;
+  isRefreshing?: boolean;
+  autoRefreshEnabled?: boolean;
+  onToggleAutoRefresh?: () => void;
+  onManualRefresh?: () => void;
+}
+
+export const Header: React.FC<HeaderProps> = ({
+  currentUser,
+  allUsers,
+  onSwitchUser,
+  onLogout,
+  theme,
+  onToggleTheme,
+  hideBalances,
+  onToggleHideBalances,
+  onNavigateTab,
+  notifications = [],
+  lastRefreshedAt,
+  isRefreshing = false,
+  autoRefreshEnabled = true,
+  onToggleAutoRefresh,
+  onManualRefresh
+}) => {
+  const [showRoleMenu, setShowRoleMenu] = useState(false);
+  const [showNotifMenu, setShowNotifMenu] = useState(false);
+
+  const getRoleBadgeColor = (role: UserRole) => {
+    switch (role) {
+      case 'SuperAdmin': return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
+      case 'Admin': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+      case 'Partner': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+    }
+  };
+
+  return (
+    <header className="sticky top-0 z-30 bg-white/90 dark:bg-[#0A0E1A]/90 backdrop-blur-md border-b border-slate-200/80 dark:border-[#1E2D40] px-4 py-3 transition-colors">
+      <div className="max-w-6xl mx-auto flex items-center justify-between w-full">
+        {/* Left: Brand logo & role selector */}
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#00D4AA] to-[#3B82F6] flex items-center justify-center text-[#0A0E1A] font-black text-lg shadow-md">
+          PZ
+        </div>
+        <div>
+          <h1 className="text-sm font-bold text-slate-900 dark:text-[#F0F4FF] leading-tight flex items-center gap-1.5">
+            PlusZone ERP
+            <span className="text-[10px] text-emerald-600 dark:text-[#00D4AA] bg-emerald-50 dark:bg-[#00D4AA]/10 px-1.5 py-0.2 rounded font-mono font-bold">FINTECH</span>
+          </h1>
+          
+          {/* User Badge */}
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-[#8899BB] mt-0.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 dark:text-[#00D4AA]" />
+            <span className="font-semibold text-slate-800 dark:text-white/90">{currentUser.name}</span>
+            <span className={`text-[9px] px-1.5 py-0.2 rounded border font-semibold ${getRoleBadgeColor(currentUser.role)}`}>
+              {currentUser.role}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Right Controls */}
+      <div className="flex items-center gap-1.5 sm:gap-2">
+        {/* Auto Refresh Button & Indicator */}
+        <button
+          onClick={() => {
+            if (onManualRefresh) onManualRefresh();
+          }}
+          title={autoRefreshEnabled ? 'Auto-Refresh Active (15s). Click to refresh now.' : 'Auto-Refresh Disabled. Click to refresh now.'}
+          className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] hover:border-emerald-400 text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5 cursor-pointer transition-all hover:bg-slate-200 dark:hover:bg-[#1C2333]/80 group"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 dark:text-[#00D4AA] ${isRefreshing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} />
+          <span className="hidden sm:inline text-[11px] font-mono text-emerald-700 dark:text-[#00D4AA]">
+            {isRefreshing ? 'Syncing...' : 'Auto 15s'}
+          </span>
+          <span className="relative flex h-2 w-2">
+            {autoRefreshEnabled && (
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 dark:bg-[#00D4AA] opacity-75"></span>
+            )}
+            <span className={`relative inline-flex rounded-full h-2 w-2 ${autoRefreshEnabled ? 'bg-emerald-500 dark:bg-[#00D4AA]' : 'bg-slate-400'}`}></span>
+          </span>
+        </button>
+
+        {/* Hide Amounts Toggle */}
+        <button
+          onClick={() => {
+            triggerHaptic('light');
+            onToggleHideBalances();
+          }}
+          title={hideBalances ? 'Show Balances' : 'Hide Balances'}
+          className="p-2 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-[#F0F4FF] transition-colors cursor-pointer"
+        >
+          {hideBalances ? <EyeOff className="w-4 h-4 text-amber-500" /> : <Eye className="w-4 h-4 text-emerald-600 dark:text-[#00D4AA]" />}
+        </button>
+
+        {/* Notification Bell Icon */}
+        <div className="relative">
+          {(() => {
+            const hasHigh = notifications.some(n => n.type === 'HIGH');
+            const hasMedium = notifications.some(n => n.type === 'MEDIUM');
+            const bellColor = hasHigh ? 'text-rose-500' : hasMedium ? 'text-amber-500' : 'text-emerald-600 dark:text-[#00D4AA]';
+            const badgeBg = hasHigh ? 'bg-rose-500 text-white' : hasMedium ? 'bg-amber-500 text-slate-950' : 'bg-emerald-500 dark:bg-[#00D4AA] text-white dark:text-[#0A0E1A]';
+
+            return (
+              <button
+                onClick={() => {
+                  triggerHaptic('medium');
+                  setShowNotifMenu(!showNotifMenu);
+                  setShowRoleMenu(false);
+                }}
+                title="Operational Notifications & Alerts"
+                className="p-2 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-[#F0F4FF] transition-colors cursor-pointer relative"
+              >
+                <Bell className={`w-4 h-4 ${bellColor}`} />
+                {notifications.length > 0 && (
+                  <span className={`absolute -top-1 -right-1 min-w-[16px] h-4 px-1 font-black text-[9px] rounded-full flex items-center justify-center border border-white dark:border-[#0A0E1A] animate-pulse ${badgeBg}`}>
+                    {notifications.length}
+                  </span>
+                )}
+              </button>
+            );
+          })()}
+
+          {/* Notifications Dropdown Panel */}
+          {showNotifMenu && (
+            <div className="absolute top-11 right-0 bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#2A3B53] rounded-2xl shadow-2xl p-3.5 w-72 sm:w-84 z-50 animate-fadeIn space-y-2.5 text-slate-900 dark:text-white">
+              {(() => {
+                const hasHigh = notifications.some(n => n.type === 'HIGH');
+                const hasMedium = notifications.some(n => n.type === 'MEDIUM');
+                const headerColor = hasHigh ? 'text-rose-500 dark:text-rose-400' : hasMedium ? 'text-amber-500 dark:text-amber-400' : 'text-emerald-600 dark:text-[#00D4AA]';
+                const headerBadge = hasHigh
+                  ? 'bg-rose-100 text-rose-800 dark:bg-rose-600 dark:text-white border-rose-300 dark:border-rose-400 font-bold'
+                  : hasMedium
+                  ? 'bg-amber-100 text-amber-900 dark:bg-amber-500 dark:text-slate-950 border-amber-300 dark:border-amber-400 font-bold'
+                  : 'bg-emerald-100 text-emerald-900 dark:bg-[#00D4AA] dark:text-slate-950 border-emerald-300 dark:border-[#00D4AA] font-bold';
+
+                return (
+                  <div className="flex items-center justify-between border-b border-slate-200 dark:border-[#2A3B53] pb-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <Bell className={`w-4 h-4 ${headerColor}`} />
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white tracking-wide">Operational Alerts</h4>
+                    </div>
+                    <span className={`text-[9px] font-mono border px-2 py-0.5 rounded-full ${headerBadge}`}>
+                      {notifications.length} Active
+                    </span>
+                  </div>
+                );
+              })()}
+
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
+                {notifications.map(n => {
+                  const isHigh = n.type === 'HIGH';
+                  const isMedium = n.type === 'MEDIUM';
+
+                  const cardBg = isHigh
+                    ? 'bg-rose-50/90 dark:bg-rose-950/80 border-rose-300 dark:border-rose-500/60 hover:border-rose-500 dark:hover:border-rose-400'
+                    : isMedium
+                    ? 'bg-amber-50/90 dark:bg-amber-950/80 border-amber-300 dark:border-amber-500/60 hover:border-amber-500 dark:hover:border-amber-400'
+                    : 'bg-slate-50 dark:bg-[#1C2538] border-slate-200 dark:border-[#00D4AA]/50 hover:border-emerald-500 dark:hover:border-[#00D4AA]';
+
+                  const tagStyle = isHigh
+                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-500 dark:text-white border-rose-300 dark:border-rose-400'
+                    : isMedium
+                    ? 'bg-amber-100 text-amber-900 dark:bg-amber-400 dark:text-slate-950 border-amber-300 dark:border-amber-300'
+                    : 'bg-emerald-100 text-emerald-900 dark:bg-[#00D4AA] dark:text-slate-950 border-emerald-300 dark:border-[#00D4AA]';
+
+                  const tagText = isHigh ? 'CRITICAL' : isMedium ? 'DUE' : 'NEW';
+
+                  return (
+                    <div
+                      key={n.id}
+                      onClick={() => {
+                        triggerHaptic('light');
+                        if (n.actionTab && onNavigateTab) {
+                          onNavigateTab(n.actionTab);
+                          setShowNotifMenu(false);
+                        }
+                      }}
+                      className={`p-3 rounded-xl border text-left cursor-pointer transition-all shadow-sm ${cardBg}`}
+                    >
+                      <div className="flex items-center justify-between gap-1.5">
+                        <h5 className="text-[11px] font-bold text-slate-900 dark:text-white leading-tight truncate">{n.title}</h5>
+                        <span className={`text-[8px] font-mono font-extrabold px-1.5 py-0.2 rounded-full border shrink-0 ${tagStyle}`}>
+                          {tagText}
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-medium text-slate-700 dark:text-slate-100 mt-1 leading-snug">{n.message}</p>
+                    </div>
+                  );
+                })}
+
+                {notifications.length === 0 && (
+                  <div className="text-center py-6 text-slate-500 dark:text-slate-300 space-y-1">
+                    <CheckCircle2 className="w-6 h-6 text-emerald-500 dark:text-[#00D4AA] mx-auto opacity-90" />
+                    <p className="text-xs font-semibold">No pending notifications.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Theme Toggle */}
+        <button
+          onClick={() => {
+            triggerHaptic('light');
+            onToggleTheme();
+          }}
+          title="Toggle Dark/Light Mode"
+          className="p-2 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-[#F0F4FF] transition-colors cursor-pointer"
+        >
+          {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
+        </button>
+      </div>
+    </div>
+  </header>
+  );
+};

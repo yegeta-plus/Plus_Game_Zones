@@ -1,0 +1,13 @@
+{
+  "entities": {
+    "ERPState": {
+      "title": "ERP State",
+      "description": "Financial ERP data state synchronized in real-time across users",
+      "type": "object",
+      "properties": {
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "PlusZone Finance ERP",
+  "description": "Mobile-first Ethiopian fintech ERP app with cash, Telebirr, CBE, Equb savings, loans, recurring bills, assets, and AI finance assistant.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

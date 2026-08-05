@@ -1,0 +1,25 @@
+{
+  "short_name": "PlusZone ERP",
+  "name": "PlusZone Finance ERP — Ethiopian Business Ledger",
+  "description": "Mobile-first Ethiopian fintech ERP for partners — cash, Telebirr, CBE, Equb savings, loans, recurring bills, assets, and AI assistant.",
+  "icons": [
+    {
+      "src": "/pwa-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0A0E1A",
+  "theme_color": "#00D4AA",
+  "display": "standalone",
+  "orientation": "portrait",
+  "categories": ["finance", "business", "productivity"]
+}
