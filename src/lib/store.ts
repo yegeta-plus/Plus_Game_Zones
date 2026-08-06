@@ -32,6 +32,7 @@ export interface ERPState {
   receivables: Receivable[];
   categories: Category[];
   auditLogs: AuditLogEntry[];
+  approvalRequests?: any[];
   theme: 'dark' | 'light';
   hideBalances: boolean;
 }

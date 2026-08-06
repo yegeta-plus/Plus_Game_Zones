@@ -8,10 +8,15 @@ import {
   ShieldAlert,
   CheckCircle2,
   Key,
-  X
+  X,
+  Gamepad2,
+  Fingerprint
 } from 'lucide-react';
 import { UserProfile } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
+import gameZoneLogo from '../../assets/images/game_zone_logo_clean_1786002952694.jpg';
+import { FingerprintModal } from './FingerprintModal';
+import { getEnrolledBiometric } from '../../lib/biometrics';
 
 interface LoginPageProps {
   allUsers: UserProfile[];
@@ -47,6 +52,45 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [showGoogleModal, setShowGoogleModal] = useState<boolean>(false);
   const [googleEmailInput, setGoogleEmailInput] = useState<string>('');
   const [googleAuthError, setGoogleAuthError] = useState<string | null>(null);
+
+  // Fingerprint Modal State
+  const [showFingerprintModal, setShowFingerprintModal] = useState<boolean>(false);
+
+  const handleBiometricSuccess = (verifiedEmail: string) => {
+    triggerHaptic('heavy');
+    const target = allUsers.find(
+      u => u.email.toLowerCase() === verifiedEmail.toLowerCase() || u.name.toLowerCase().includes(verifiedEmail.toLowerCase())
+    ) || {
+      id: 'u-1',
+      name: 'Yegeta Huawei',
+      email: 'yegeta.huawei@gmail.com',
+      username: 'yegeta',
+      role: 'SuperAdmin' as const,
+      active: true,
+      isApproved: true,
+      invitationCode: 'PZ-SUPER-GOOGLE',
+      hasSetPassword: true,
+      password: 'password123',
+      isTemporaryPassword: false,
+      mustChangePassword: false,
+      permissions: {
+        Dashboard: { view: true, add: true, edit: true, delete: true, export: true },
+        Income: { view: true, add: true, edit: true, delete: true, export: true },
+        Expenses: { view: true, add: true, edit: true, delete: true, export: true },
+        Equb: { view: true, add: true, edit: true, delete: true, export: true },
+        Loans: { view: true, add: true, edit: true, delete: true, export: true },
+        Reports: { view: true, add: true, edit: true, delete: true, export: true },
+        Analytics: { view: true, add: true, edit: true, delete: true, export: true },
+        Partners: { view: true, add: true, edit: true, delete: true, export: true },
+        Settings: { view: true, add: true, edit: true, delete: true, export: true },
+        UserManagement: { view: true, add: true, edit: true, delete: true, export: true }
+      },
+      branch: 'Addis Ababa HQ',
+      lastActive: 'Just now'
+    };
+
+    onLogin(target);
+  };
 
   // Password strength score (0-4)
   const getPasswordStrength = (pwd: string) => {
@@ -303,14 +347,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       {/* Top Header */}
       <header className="w-full max-w-5xl mx-auto px-6 py-6 flex items-center justify-between z-10">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#00D4AA] to-[#3B82F6] flex items-center justify-center text-[#070A12] font-black text-xl shadow-lg shadow-[#00D4AA]/20">
-            PZ
+          <div className="w-11 h-11 rounded-2xl overflow-hidden border border-emerald-500/30 shadow-lg shadow-[#00D4AA]/20 bg-[#070A12] shrink-0">
+            <img
+              src={gameZoneLogo}
+              alt="PlusZone Game Zone Logo"
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-cover"
+            />
           </div>
           <div>
             <h1 className="text-base font-black tracking-tight text-white flex items-center gap-2">
-              PlusZone ERP
+              PlusZone Game Zone
             </h1>
-            <p className="text-[11px] text-slate-400">Enterprise Management System</p>
+            <p className="text-[11px] text-slate-400">PlayStation House & Gaming Lounge Management</p>
           </div>
         </div>
 
@@ -435,6 +484,20 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 </span>
               </div>
 
+              {/* Sign in with Fingerprint / Touch ID Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  setShowFingerprintModal(true);
+                }}
+                disabled={isSubmitting}
+                className="w-full py-3.5 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/40 hover:border-emerald-400 text-emerald-400 font-bold text-xs flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-md group active:scale-95"
+              >
+                <Fingerprint className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform animate-pulse" />
+                <span>Fingerprint / Touch ID Quick Login</span>
+              </button>
+
               {/* Sign in with Google Button */}
               <button
                 type="button"
@@ -443,7 +506,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   setShowGoogleModal(true);
                 }}
                 disabled={isSubmitting}
-                className="w-full py-3.5 rounded-2xl bg-[#0D121F] hover:bg-slate-800 border border-slate-700 hover:border-[#4285F4] text-slate-100 font-bold text-xs flex items-center justify-center gap-3 transition-all cursor-pointer shadow-md disabled:opacity-50 group"
+                className="w-full py-3 rounded-2xl bg-[#0D121F] hover:bg-slate-800 border border-slate-700 hover:border-[#4285F4] text-slate-100 font-bold text-xs flex items-center justify-center gap-3 transition-all cursor-pointer shadow-md disabled:opacity-50 group"
               >
                 <svg className="w-4 h-4 shrink-0 group-hover:scale-110 transition-transform" viewBox="0 0 24 24">
                   <path
@@ -703,6 +766,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           </div>
         </div>
       )}
+
+      {/* Fingerprint / Touch ID Biometric Scanner Modal */}
+      <FingerprintModal
+        isOpen={showFingerprintModal}
+        onClose={() => setShowFingerprintModal(false)}
+        userEmail={username.includes('@') ? username : 'yegeta.huawei@gmail.com'}
+        userName={username || 'Yegeta Huawei'}
+        onSuccess={handleBiometricSuccess}
+        mode="LOGIN"
+      />
     </div>
   );
 };

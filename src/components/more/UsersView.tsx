@@ -274,6 +274,32 @@ export const UsersView: React.FC<UsersViewProps> = ({
     setCreatedNotice({ user: user.name, tempPass: newTemp });
   };
 
+  const [deletingUser, setDeletingUser] = useState<UserProfile | null>(null);
+
+  const confirmDeleteUser = () => {
+    if (!deletingUser) return;
+    triggerHaptic('warning');
+    onUpdateState((prev) => ({
+      ...prev,
+      users: prev.users.filter((u) => u.id !== deletingUser.id),
+      auditLogs: [
+        {
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'DELETE_USER_ACCOUNT',
+          entity: 'UserProfile',
+          entityId: deletingUser.id,
+          diffBefore: { name: deletingUser.name, role: deletingUser.role },
+          branch: prev.currentUser.branch
+        },
+        ...prev.auditLogs
+      ]
+    }));
+    setDeletingUser(null);
+  };
+
   const handleDeleteUser = (user: UserProfile) => {
     if (!isSuperAdmin) {
       alert('Security Protocol: Only SuperAdmins can delete user accounts.');
@@ -284,27 +310,8 @@ export const UsersView: React.FC<UsersViewProps> = ({
       return;
     }
 
-    if (confirm(`Remove user "${user.name}" (${user.role}) permanently from the business system?`)) {
-      triggerHaptic('warning');
-      onUpdateState((prev) => ({
-        ...prev,
-        users: prev.users.filter((u) => u.id !== user.id),
-        auditLogs: [
-          {
-            id: `aud-${Date.now()}`,
-            timestamp: new Date().toISOString(),
-            actorId: prev.currentUser.id,
-            actorName: prev.currentUser.name,
-            action: 'DELETE_USER_ACCOUNT',
-            entity: 'UserProfile',
-            entityId: user.id,
-            diffBefore: { name: user.name, role: user.role },
-            branch: prev.currentUser.branch
-          },
-          ...prev.auditLogs
-        ]
-      }));
-    }
+    triggerHaptic('light');
+    setDeletingUser(user);
   };
 
   const handleToggleActive = (user: UserProfile) => {
@@ -849,6 +856,42 @@ export const UsersView: React.FC<UsersViewProps> = ({
                 className="flex-1 py-3 rounded-2xl bg-orange-500 dark:bg-[#FB923C] hover:brightness-110 text-xs font-bold text-white dark:text-[#0A0E1A] shadow-lg cursor-pointer disabled:opacity-50"
               >
                 {editingUser ? 'Save User Privileges' : 'Register User'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Confirmation Modal */}
+      {deletingUser && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-[#131926] border border-rose-200 dark:border-rose-900/50 max-w-sm w-full p-5 rounded-2xl space-y-4 shadow-2xl text-slate-900 dark:text-white">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/60 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Delete User Account?</h3>
+                <p className="text-xs text-slate-500 dark:text-[#8899BB] font-semibold">{deletingUser.name} ({deletingUser.role})</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-[#8899BB] leading-relaxed">
+              Are you sure you want to permanently remove <strong className="text-slate-900 dark:text-white">"{deletingUser.name}"</strong> from your organization? Their login access will be revoked immediately.
+            </p>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setDeletingUser(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-xs font-bold text-slate-600 dark:text-[#8899BB] hover:bg-slate-200 dark:hover:bg-[#252E42]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteUser}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-bold shadow-md hover:bg-rose-700 active:scale-[0.98] transition-all"
+              >
+                Yes, Delete User
               </button>
             </div>
           </div>

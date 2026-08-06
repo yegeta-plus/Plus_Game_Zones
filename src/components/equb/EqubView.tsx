@@ -19,6 +19,8 @@ import {
   Banknote,
   ShieldCheck,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Edit,
   Trash2,
   ShieldAlert,
@@ -29,6 +31,12 @@ import {
 import { Equb, Wallet, UserProfile, Loan, Receivable, LoanType, LoanDirection, AdminApprovalRequest } from '../../types';
 import { formatETB } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
+import {
+  toEthiopianDate,
+  toGregorianDate,
+  addEthiopianMonths,
+  formatEthiopianDate
+} from '../../lib/ethiopianCalendar';
 
 interface EqubViewProps {
   equbs: Equb[];
@@ -83,6 +91,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
   const [mainTab, setMainTab] = useState<'CIRCLES' | 'LOANS' | 'RECEIVABLES'>('CIRCLES');
 
   // --- EQUB CIRCLES STATE ---
+  const [expandedEqubId, setExpandedEqubId] = useState<string | null>(null);
   const [activeEqubModal, setActiveEqubModal] = useState<Equb | null>(null);
   const [paymentMode, setPaymentMode] = useState<'single' | 'split'>('single');
   const [payWalletId, setPayWalletId] = useState(wallets[0]?.id || '');
@@ -166,15 +175,11 @@ export const EqubView: React.FC<EqubViewProps> = ({
     targetTitle: string,
     payload?: any
   ) => {
-    if (otherAdmins.length === 0) {
-      performDirectAction(type, targetId, payload);
-    } else {
-      setPendingAdminAction({ type, targetId, targetTitle, payload });
-      setCoAdminSelectedId(otherAdmins[0]?.id || '');
-      setCoAdminPassword('');
-      setCoAdminVerifiedCheck(false);
-      setCoAdminErrorMsg('');
-    }
+    setPendingAdminAction({ type, targetId, targetTitle, payload });
+    setCoAdminSelectedId(otherAdmins[0]?.id || '');
+    setCoAdminPassword('');
+    setCoAdminVerifiedCheck(false);
+    setCoAdminErrorMsg('');
   };
 
   const performDirectAction = (
@@ -341,13 +346,38 @@ export const EqubView: React.FC<EqubViewProps> = ({
       isWinner: false
     }));
 
-    let daysPerRound = 7;
-    if (equbInterval === 'EVERY_10_DAYS') daysPerRound = 10;
-    else if (equbInterval === 'EVERY_15_DAYS') daysPerRound = 15;
-    else if (equbInterval === 'MONTHLY') daysPerRound = 30;
+    const startObj = new Date(equbStartDate || Date.now());
+    let endingDateObj: Date;
+    const roundsToAdvance = Math.max(0, totalRoundsCount - 1);
 
-    const startMs = new Date(equbStartDate || Date.now()).getTime();
-    const endingIso = new Date(startMs + 86400000 * daysPerRound * Math.max(0, totalRoundsCount - 1)).toISOString();
+    if (equbInterval === 'MONTHLY') {
+      endingDateObj = addEthiopianMonths(startObj, roundsToAdvance);
+    } else {
+      let daysPerRound = 7;
+      if (equbInterval === 'EVERY_10_DAYS') daysPerRound = 10;
+      else if (equbInterval === 'EVERY_15_DAYS') daysPerRound = 15;
+
+      const ethStart = toEthiopianDate(startObj);
+      let targetYear = ethStart.year;
+      let targetMonth = ethStart.month;
+      let targetDay = ethStart.day + (daysPerRound * roundsToAdvance);
+
+      while (targetMonth > 13) {
+        targetMonth -= 13;
+        targetYear += 1;
+      }
+
+      while (targetDay > 30) {
+        targetDay -= 30;
+        targetMonth += 1;
+        if (targetMonth > 13) {
+          targetMonth -= 13;
+          targetYear += 1;
+        }
+      }
+      endingDateObj = toGregorianDate(targetYear, targetMonth, Math.min(targetDay, 30));
+    }
+    const endingIso = endingDateObj.toISOString();
 
     onCreateEqub({
       name: equbName,
@@ -516,10 +546,10 @@ export const EqubView: React.FC<EqubViewProps> = ({
     <div className="space-y-4 pb-24">
       
       {/* Title Header */}
-      <div className="flex items-center justify-between bg-white dark:bg-[#131926] p-4 rounded-2xl border border-slate-200 dark:border-[#1E2D40] shadow-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-[#131926] p-4 rounded-2xl border border-slate-200 dark:border-[#1E2D40] shadow-sm">
         <div>
           <h2 className="text-xl font-extrabold text-slate-900 dark:text-[#F0F4FF] flex items-center gap-2">
-            <Users className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <Users className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
             <span>Community Capital & Equb</span>
           </h2>
           <p className="text-xs text-slate-600 dark:text-[#8899BB] mt-0.5 font-medium">Equb rotating pools, lend & lent loans, and customer credit</p>
@@ -532,9 +562,9 @@ export const EqubView: React.FC<EqubViewProps> = ({
               triggerHaptic('light');
               setShowCreateEqubModal(true);
             }}
-            className="px-3.5 py-2 rounded-xl bg-indigo-600 dark:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md hover:bg-indigo-700 dark:hover:bg-indigo-600 active:scale-[0.98] transition-all"
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-indigo-600 dark:bg-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:bg-indigo-700 dark:hover:bg-indigo-600 active:scale-[0.98] transition-all"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4 shrink-0" />
             <span>New Equb Circle</span>
           </button>
         )}
@@ -545,9 +575,9 @@ export const EqubView: React.FC<EqubViewProps> = ({
               triggerHaptic('light');
               setShowCreateLoanModal(true);
             }}
-            className="px-3.5 py-2 rounded-xl bg-emerald-600 dark:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md hover:bg-emerald-700 dark:hover:bg-emerald-600 active:scale-[0.98] transition-all"
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 dark:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:bg-emerald-700 dark:hover:bg-emerald-600 active:scale-[0.98] transition-all"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4 shrink-0" />
             <span>Add / Lend Loan</span>
           </button>
         )}
@@ -558,9 +588,9 @@ export const EqubView: React.FC<EqubViewProps> = ({
               triggerHaptic('light');
               setShowCreateReceivableModal(true);
             }}
-            className="px-3.5 py-2 rounded-xl bg-blue-600 dark:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md hover:bg-blue-700 dark:hover:bg-blue-600 active:scale-[0.98] transition-all"
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-blue-600 dark:bg-blue-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:bg-blue-700 dark:hover:bg-blue-600 active:scale-[0.98] transition-all"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4 shrink-0" />
             <span>New Credit IOU</span>
           </button>
         )}
@@ -740,22 +770,23 @@ export const EqubView: React.FC<EqubViewProps> = ({
                 const isFinished = eq.status === 'COMPLETED' || eq.currentRound >= eq.totalRounds;
                 const progressPercent = Math.min(100, Math.round((eq.currentRound / eq.totalRounds) * 100));
 
-                const startDateObj = new Date(eq.startDate || Date.now());
-                const startDateFormatted = isNaN(startDateObj.getTime())
-                  ? eq.startDate
-                  : startDateObj.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+                const startDateFormatted = formatEthiopianDate(eq.startDate || Date.now(), true);
+                const endDateFormatted = formatEthiopianDate(eq.computedEndingDate || Date.now(), true);
 
-                const endDateObj = new Date(eq.computedEndingDate || Date.now());
-                const endDateFormatted = isNaN(endDateObj.getTime())
-                  ? eq.computedEndingDate
-                  : endDateObj.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+                const isExpanded = expandedEqubId === eq.id;
 
                 return (
                   <div
                     key={eq.id}
-                    className={`bg-white dark:bg-[#131926] border rounded-2xl p-4.5 space-y-3.5 transition-all shadow-sm ${
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setExpandedEqubId(prev => prev === eq.id ? null : eq.id);
+                    }}
+                    className={`bg-white dark:bg-[#131926] border rounded-2xl p-4.5 space-y-3.5 transition-all shadow-sm cursor-pointer ${
                       isFinished
                         ? 'border-emerald-300 dark:border-emerald-500/50 bg-emerald-50/20 dark:bg-emerald-950/20'
+                        : isExpanded
+                        ? 'border-indigo-500/80 dark:border-indigo-500/80 ring-2 ring-indigo-500/10'
                         : 'border-slate-200 dark:border-[#1E2D40] hover:border-indigo-400 dark:hover:border-indigo-500/60'
                     }`}
                   >
@@ -771,7 +802,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
                           </span>
 
                           <span className="text-[10px] bg-slate-100 dark:bg-[#1C2333] text-slate-800 dark:text-slate-200 px-2.5 py-0.5 rounded-full font-extrabold border border-slate-200 dark:border-[#1E2D40]">
-                            {mySlots} {mySlots === 1 ? 'Slot / Share' : 'Slots / Shares'}
+                            {mySlots} {mySlots === 1 ? 'Slot' : 'Slots'}
                           </span>
 
                           {isFinished && (
@@ -796,15 +827,16 @@ export const EqubView: React.FC<EqubViewProps> = ({
                         </h3>
                       </div>
 
-                      <div className="flex items-start gap-3">
+                      <div className="flex items-start gap-2 sm:gap-3">
                         <div className="text-right">
                           <p className="text-[10px] font-bold text-slate-500 dark:text-[#8899BB] uppercase tracking-wider">Net Round Pool</p>
                           <p className="text-base font-black font-mono text-indigo-600 dark:text-indigo-300">
                             {hideBalances ? '••••••' : formatETB(netPool)}
                           </p>
                         </div>
+                        
                         {(currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
-                          <div className="flex items-center gap-1 shrink-0 bg-slate-100 dark:bg-[#1C2333] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40]">
+                          <div className="flex items-center gap-1 shrink-0 bg-slate-100 dark:bg-[#1C2333] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40]" onClick={e => e.stopPropagation()}>
                             <button
                               onClick={() => {
                                 triggerHaptic('light');
@@ -827,6 +859,10 @@ export const EqubView: React.FC<EqubViewProps> = ({
                             </button>
                           </div>
                         )}
+
+                        <div className="p-1.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] text-slate-600 dark:text-[#8899BB] shrink-0 border border-slate-200 dark:border-[#1E2D40]">
+                          {isExpanded ? <ChevronUp className="w-4 h-4 text-indigo-500" /> : <ChevronDown className="w-4 h-4" />}
+                        </div>
                       </div>
                     </div>
 
@@ -850,100 +886,112 @@ export const EqubView: React.FC<EqubViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Detailed Info Grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs bg-slate-50 dark:bg-[#1C2333]/90 p-3 rounded-xl border border-slate-200/80 dark:border-[#1E2D40]">
-                      <div>
-                        <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Contribution / Slot</span>
-                        <p className="font-mono font-bold text-slate-900 dark:text-white mt-0.5">{formatETB(eq.contributionPerRound)}</p>
-                        <p className="text-[10px] text-slate-500 font-mono">My Pay: {formatETB(myContributionPerRound)}</p>
-                      </div>
-
-                      <div>
-                        <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Share / Slot</span>
-                        <p className="font-mono font-bold text-indigo-600 dark:text-indigo-300 mt-0.5">{mySlots} {mySlots === 1 ? 'Slot' : 'Slots'}</p>
-                        <p className="text-[10px] text-slate-500 font-mono">Payouts: {payoutsClaimed}/{mySlots}</p>
-                      </div>
-
-                      <div>
-                        <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Starting Date</span>
-                        <p className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mt-0.5">
-                          <Calendar className="w-3.5 h-3.5 text-indigo-500" />
-                          <span>{startDateFormatted}</span>
-                        </p>
-                      </div>
-
-                      <div>
-                        <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Finished Date</span>
-                        <p className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mt-0.5">
-                          <Calendar className="w-3.5 h-3.5 text-emerald-500" />
-                          <span>{endDateFormatted}</span>
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Agerye specific July payments timeline */}
-                    {eq.id === 'eq-agerye' && (
-                      <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 rounded-xl text-xs space-y-1.5">
-                        <div className="flex items-center justify-between text-[11px] font-bold text-indigo-950 dark:text-indigo-200">
-                          <span className="flex items-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                            <span>Last 3 July Payments Paid:</span>
-                          </span>
-                          <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400">3 × 5,000 ETB</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-[10px] font-mono text-indigo-900 dark:text-indigo-200 pt-0.5">
-                          <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/60 rounded border border-indigo-200 dark:border-indigo-700 font-bold">July 08</span>
-                          <span className="text-indigo-400">→</span>
-                          <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/60 rounded border border-indigo-200 dark:border-indigo-700 font-bold">July 17</span>
-                          <span className="text-indigo-400">→</span>
-                          <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/60 rounded border border-indigo-200 dark:border-indigo-700 font-bold">July 29</span>
-                        </div>
+                    {/* General Mode Hint when Collapsed */}
+                    {!isExpanded && (
+                      <div className="pt-1 flex items-center justify-between text-xs text-indigo-600 dark:text-indigo-400 font-bold border-t border-slate-100 dark:border-[#1E2D40]/60">
+                        <span>Tap to view details & actions</span>
+                        <ChevronDown className="w-3.5 h-3.5" />
                       </div>
                     )}
 
-                    {/* Action CTAs */}
-                    <div className="flex items-center gap-2 pt-1">
-                      {!isFinished ? (
-                        <>
-                          <button
-                            onClick={() => {
-                              triggerHaptic('medium');
-                              openPayRoundModal(eq);
-                            }}
-                            className="flex-1 py-2.5 rounded-xl bg-indigo-600 dark:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer hover:bg-indigo-700 dark:hover:bg-indigo-600 active:scale-[0.99] transition-all"
-                          >
-                            <DollarSign className="w-4 h-4" />
-                            <span>Pay Round #{eq.currentRound} ({formatETB(myContributionPerRound)})</span>
-                          </button>
+                    {/* Detailed Info Grid & Actions (Shown on Click/Expand) */}
+                    {isExpanded && (
+                      <div className="space-y-3.5 pt-2 border-t border-slate-200/80 dark:border-[#1E2D40]" onClick={e => e.stopPropagation()}>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs bg-slate-50 dark:bg-[#1C2333]/90 p-3 rounded-xl border border-slate-200/80 dark:border-[#1E2D40]">
+                          <div>
+                            <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Contribution / Slot</span>
+                            <p className="font-mono font-bold text-slate-900 dark:text-white mt-0.5">{formatETB(eq.contributionPerRound)}</p>
+                            <p className="text-[10px] text-slate-500 font-mono">My Pay: {formatETB(myContributionPerRound)}</p>
+                          </div>
 
-                          {payoutsClaimed < mySlots ? (
-                            <button
-                              onClick={() => {
-                                triggerHaptic('heavy');
-                                setShowPayoutModal(eq);
-                              }}
-                              className="py-2.5 px-3.5 rounded-xl bg-emerald-600 dark:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer hover:bg-emerald-700 dark:hover:bg-emerald-600 active:scale-[0.99] shadow-md transition-all"
-                            >
-                              <Trophy className="w-4 h-4" />
-                              <span>Claim Payout ({payoutsClaimed + 1}/{mySlots})</span>
-                            </button>
-                          ) : (
-                            <button
-                              disabled
-                              className="py-2.5 px-3.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-500 dark:text-slate-400 font-bold text-xs flex items-center gap-1.5 opacity-80"
-                            >
-                              <Trophy className="w-4 h-4 text-slate-400" />
-                              <span>Payouts Claimed ({payoutsClaimed}/{mySlots})</span>
-                            </button>
-                          )}
-                        </>
-                      ) : (
-                        <div className="w-full py-2.5 bg-emerald-100 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700/60 text-emerald-900 dark:text-emerald-200 font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                          <span>Equb Circle Finished & Completed</span>
+                          <div>
+                            <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Share / Slot</span>
+                            <p className="font-mono font-bold text-indigo-600 dark:text-indigo-300 mt-0.5">{mySlots} {mySlots === 1 ? 'Slot' : 'Slots'}</p>
+                            <p className="text-[10px] text-slate-500 font-mono">Payouts: {payoutsClaimed}/{mySlots}</p>
+                          </div>
+
+                          <div>
+                            <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Starting Date</span>
+                            <p className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mt-0.5">
+                              <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                              <span>{startDateFormatted}</span>
+                            </p>
+                          </div>
+
+                          <div>
+                            <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Finished Date</span>
+                            <p className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mt-0.5">
+                              <Calendar className="w-3.5 h-3.5 text-emerald-500" />
+                              <span>{endDateFormatted}</span>
+                            </p>
+                          </div>
                         </div>
-                      )}
-                    </div>
+
+                        {/* Agerye specific July payments timeline */}
+                        {eq.id === 'eq-agerye' && (
+                          <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 rounded-xl text-xs space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px] font-bold text-indigo-950 dark:text-indigo-200">
+                              <span className="flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                <span>Last 3 July Payments Paid:</span>
+                              </span>
+                              <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400">3 × 5,000 ETB</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] font-mono text-indigo-900 dark:text-indigo-200 pt-0.5">
+                              <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/60 rounded border border-indigo-200 dark:border-indigo-700 font-bold">July 08</span>
+                              <span className="text-indigo-400">→</span>
+                              <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/60 rounded border border-indigo-200 dark:border-indigo-700 font-bold">July 17</span>
+                              <span className="text-indigo-400">→</span>
+                              <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/60 rounded border border-indigo-200 dark:border-indigo-700 font-bold">July 29</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Action CTAs */}
+                        <div className="flex items-center gap-2 pt-1">
+                          {!isFinished ? (
+                            <>
+                              <button
+                                onClick={() => {
+                                  triggerHaptic('medium');
+                                  openPayRoundModal(eq);
+                                }}
+                                className="flex-1 py-2.5 rounded-xl bg-indigo-600 dark:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer hover:bg-indigo-700 dark:hover:bg-indigo-600 active:scale-[0.99] transition-all"
+                              >
+                                <DollarSign className="w-4 h-4" />
+                                <span>Pay Round #{eq.currentRound} ({formatETB(myContributionPerRound)})</span>
+                              </button>
+
+                              {payoutsClaimed < mySlots ? (
+                                <button
+                                  onClick={() => {
+                                    triggerHaptic('heavy');
+                                    setShowPayoutModal(eq);
+                                  }}
+                                  className="py-2.5 px-3.5 rounded-xl bg-emerald-600 dark:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer hover:bg-emerald-700 dark:hover:bg-emerald-600 active:scale-[0.99] shadow-md transition-all"
+                                >
+                                  <Trophy className="w-4 h-4" />
+                                  <span>Claim Payout ({payoutsClaimed + 1}/{mySlots})</span>
+                                </button>
+                              ) : (
+                                <button
+                                  disabled
+                                  className="py-2.5 px-3.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-500 dark:text-slate-400 font-bold text-xs flex items-center gap-1.5 opacity-80"
+                                >
+                                  <Trophy className="w-4 h-4 text-slate-400" />
+                                  <span>Payouts Claimed ({payoutsClaimed}/{mySlots})</span>
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <div className="w-full py-2.5 bg-emerald-100 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700/60 text-emerald-900 dark:text-emerald-200 font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                              <span>Equb Circle Finished & Completed</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })
@@ -1132,7 +1180,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
                       </div>
                       <div>
                         <span className="text-[10px] text-slate-500 dark:text-[#8899BB]">Due Date</span>
-                        <p className="font-mono font-bold text-slate-900 dark:text-white">{new Date(loan.dueDate).toLocaleDateString()}</p>
+                        <p className="font-mono font-bold text-slate-900 dark:text-white">{formatEthiopianDate(loan.dueDate, true)}</p>
                       </div>
                     </div>
 
@@ -2218,95 +2266,125 @@ export const EqubView: React.FC<EqubViewProps> = ({
         </div>
       )}
 
-      {/* Modal: Co-Admin Security Confirmation */}
+      {/* Modal: Co-Admin Security / Action Confirmation */}
       {pendingAdminAction && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 dark:bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
           <div className="bg-white dark:bg-[#131926] border-2 border-amber-500/50 w-full max-w-md p-5 rounded-2xl space-y-4 text-slate-900 dark:text-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-[#1E2D40] pb-3">
               <h3 className="text-sm font-extrabold text-amber-600 dark:text-amber-400 flex items-center gap-2">
                 <ShieldAlert className="w-5 h-5 text-amber-500" />
-                <span>Co-Admin Confirmation Required</span>
+                <span>
+                  {otherAdmins.length > 0 ? 'Co-Admin Confirmation Required' : 'Confirm Action Warning'}
+                </span>
               </h3>
               <button onClick={() => setPendingAdminAction(null)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-[#1C2333]">
                 <X className="w-4 h-4 text-slate-500" />
               </button>
             </div>
 
-            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+            <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-xs text-amber-900 dark:text-amber-200 space-y-1.5">
               <p className="font-bold flex items-center gap-1.5">
                 <span>Action:</span>
-                <span className="uppercase text-purple-600 dark:text-purple-400">{pendingAdminAction.type.replace(/_/g, ' ')}</span>
+                <span className="uppercase text-rose-600 dark:text-rose-400 font-extrabold">{pendingAdminAction.type.replace(/_/g, ' ')}</span>
               </p>
-              <p className="text-[11px]">
+              <p className="text-xs">
                 Target: <strong className="text-slate-900 dark:text-white">{pendingAdminAction.targetTitle}</strong>
               </p>
-              <p className="text-[11px] text-slate-600 dark:text-[#8899BB] mt-1">
-                There is another active admin registered in the system. Modifying or deleting community contracts requires co-admin confirmation or password sign-off.
+              <p className="text-[11px] text-slate-600 dark:text-[#8899BB] leading-relaxed pt-1">
+                {pendingAdminAction.type.startsWith('DELETE')
+                  ? '⚠️ Warning: Deleting this item will permanently remove it from your records. This action cannot be undone.'
+                  : '⚠️ Warning: You are about to modify saved terms for this financial record.'}
               </p>
             </div>
 
-            <form onSubmit={handleCoAdminInstantSubmit} className="space-y-3">
-              <div>
-                <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1 font-semibold">Select Confirming Co-Admin</label>
-                <select
-                  value={coAdminSelectedId}
-                  onChange={e => setCoAdminSelectedId(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-bold outline-none"
-                >
-                  {otherAdmins.map(adm => (
-                    <option key={adm.id} value={adm.id}>{adm.name} ({adm.role})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Co-Admin Password / Sign-off Pin</label>
-                <input
-                  type="password"
-                  value={coAdminPassword}
-                  onChange={e => setCoAdminPassword(e.target.value)}
-                  placeholder="Enter co-admin password"
-                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none font-mono"
-                />
-              </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="coAdminCheck"
-                  checked={coAdminVerifiedCheck}
-                  onChange={e => setCoAdminVerifiedCheck(e.target.checked)}
-                  className="rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
-                />
-                <label htmlFor="coAdminCheck" className="text-[11px] text-slate-600 dark:text-[#8899BB] cursor-pointer">
-                  I verify co-admin has verbally / physically approved this action
-                </label>
-              </div>
-
-              {coAdminErrorMsg && (
-                <p className="text-xs text-rose-600 dark:text-rose-400 font-medium bg-rose-50 dark:bg-rose-500/10 p-2 rounded-lg border border-rose-200 dark:border-rose-500/30">
-                  ⚠️ {coAdminErrorMsg}
+            {otherAdmins.length === 0 ? (
+              /* Single Admin Confirmation Flow */
+              <div className="space-y-3 pt-1">
+                <p className="text-xs text-slate-600 dark:text-[#8899BB]">
+                  Are you sure you want to proceed with this action?
                 </p>
-              )}
-
-              <div className="flex flex-col sm:flex-row gap-2 pt-2">
-                <button
-                  type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 dark:bg-[#00D4AA] text-xs font-bold text-white dark:text-[#0A0E1A] shadow-md hover:opacity-90 cursor-pointer"
-                >
-                  ⚡ Verify Sign-Off & Execute
-                </button>
-                {onRequestApproval && (
+                <div className="flex gap-2 pt-2">
                   <button
                     type="button"
-                    onClick={handleSendApprovalRequestSubmit}
-                    className="flex-1 py-2.5 rounded-xl bg-purple-600 text-xs font-bold text-white shadow-md hover:bg-purple-700 cursor-pointer"
+                    onClick={() => setPendingAdminAction(null)}
+                    className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-xs font-bold text-slate-600 dark:text-[#8899BB] hover:bg-slate-200 dark:hover:bg-[#252E42]"
                   >
-                    📩 Send Request to Co-Admin
+                    Cancel
                   </button>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => performDirectAction(pendingAdminAction.type, pendingAdminAction.targetId, pendingAdminAction.payload)}
+                    className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-bold shadow-md hover:bg-rose-700 active:scale-[0.98] transition-all"
+                  >
+                    Yes, Execute Action
+                  </button>
+                </div>
               </div>
-            </form>
+            ) : (
+              /* Multi Admin Authorization Flow */
+              <form onSubmit={handleCoAdminInstantSubmit} className="space-y-3">
+                <div>
+                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1 font-semibold">Select Confirming Co-Admin</label>
+                  <select
+                    value={coAdminSelectedId}
+                    onChange={e => setCoAdminSelectedId(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-bold outline-none"
+                  >
+                    {otherAdmins.map(adm => (
+                      <option key={adm.id} value={adm.id}>{adm.name} ({adm.role})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Co-Admin Password / Sign-off Pin</label>
+                  <input
+                    type="password"
+                    value={coAdminPassword}
+                    onChange={e => setCoAdminPassword(e.target.value)}
+                    placeholder="Enter co-admin password"
+                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none font-mono"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="checkbox"
+                    id="coAdminCheck"
+                    checked={coAdminVerifiedCheck}
+                    onChange={e => setCoAdminVerifiedCheck(e.target.checked)}
+                    className="rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
+                  />
+                  <label htmlFor="coAdminCheck" className="text-[11px] text-slate-600 dark:text-[#8899BB] cursor-pointer">
+                    I verify co-admin has verbally / physically approved this action
+                  </label>
+                </div>
+
+                {coAdminErrorMsg && (
+                  <p className="text-xs text-rose-600 dark:text-rose-400 font-medium bg-rose-50 dark:bg-rose-500/10 p-2 rounded-lg border border-rose-200 dark:border-rose-500/30">
+                    ⚠️ {coAdminErrorMsg}
+                  </p>
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                  <button
+                    type="submit"
+                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 dark:bg-[#00D4AA] text-xs font-bold text-white dark:text-[#0A0E1A] shadow-md hover:opacity-90 cursor-pointer"
+                  >
+                    ⚡ Verify Sign-Off & Execute
+                  </button>
+                  {onRequestApproval && (
+                    <button
+                      type="button"
+                      onClick={handleSendApprovalRequestSubmit}
+                      className="flex-1 py-2.5 rounded-xl bg-purple-600 text-xs font-bold text-white shadow-md hover:bg-purple-700 cursor-pointer"
+                    >
+                      📩 Send Request to Co-Admin
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut } from 'lucide-react';
+import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut, Gamepad2, Send, Sparkles } from 'lucide-react';
 import { UserProfile, UserRole, NavTab } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
+import gameZoneLogo from '../../assets/images/game_zone_logo_clean_1786002952694.jpg';
+import { requestNotificationPermission, sendExternalNotification } from '../../lib/notifications';
 
 export interface HeaderNotificationItem {
   id: string;
@@ -17,6 +19,7 @@ interface HeaderProps {
   allUsers: UserProfile[];
   onSwitchUser: (user: UserProfile) => void;
   onLogout?: () => void;
+  onLockSession?: () => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
   hideBalances: boolean;
@@ -35,6 +38,7 @@ export const Header: React.FC<HeaderProps> = ({
   allUsers,
   onSwitchUser,
   onLogout,
+  onLockSession,
   theme,
   onToggleTheme,
   hideBalances,
@@ -49,6 +53,29 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [showNotifMenu, setShowNotifMenu] = useState(false);
+  const [pushSentMessage, setPushSentMessage] = useState<string | null>(null);
+
+  const handleTestExternalPushNotification = async () => {
+    triggerHaptic('heavy');
+    const perm = await requestNotificationPermission();
+    if (perm === 'granted') {
+      const ok = await sendExternalNotification('PlusZone Financial Alert ⚡', {
+        body: `Hello ${currentUser.name}! Push notifications outside the app are ACTIVE. Real-time transaction alerts will be delivered to your device.`,
+        tag: 'test-push-alert'
+      });
+      if (ok) {
+        setPushSentMessage('✓ System push notification sent outside the app!');
+      } else {
+        setPushSentMessage('System notification dispatched to Service Worker');
+      }
+    } else {
+      setPushSentMessage('⚠️ Notification permission denied in browser.');
+    }
+
+    setTimeout(() => {
+      setPushSentMessage(null);
+    }, 4000);
+  };
 
   const getRoleBadgeColor = (role: UserRole) => {
     switch (role) {
@@ -62,26 +89,27 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="sticky top-0 z-30 bg-white/90 dark:bg-[#0A0E1A]/90 backdrop-blur-md border-b border-slate-200/80 dark:border-[#1E2D40] px-4 py-3 transition-colors">
       <div className="max-w-6xl mx-auto flex items-center justify-between w-full">
         {/* Left: Brand logo & role selector */}
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#00D4AA] to-[#3B82F6] flex items-center justify-center text-[#0A0E1A] font-black text-lg shadow-md">
-          PZ
-        </div>
-        <div>
-          <h1 className="text-sm font-bold text-slate-900 dark:text-[#F0F4FF] leading-tight flex items-center gap-1.5">
-            PlusZone ERP
-            <span className="text-[10px] text-emerald-600 dark:text-[#00D4AA] bg-emerald-50 dark:bg-[#00D4AA]/10 px-1.5 py-0.2 rounded font-mono font-bold">FINTECH</span>
-          </h1>
-          
-          {/* User Badge */}
-          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-[#8899BB] mt-0.5">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 dark:text-[#00D4AA]" />
-            <span className="font-semibold text-slate-800 dark:text-white/90">{currentUser.name}</span>
-            <span className={`text-[9px] px-1.5 py-0.2 rounded border font-semibold ${getRoleBadgeColor(currentUser.role)}`}>
-              {currentUser.role}
-            </span>
+        <div className="flex items-center gap-3">
+          <div className="relative w-10 h-10 rounded-xl overflow-hidden border border-emerald-500/30 shadow-md shadow-emerald-500/10 shrink-0 bg-[#0A0E1A]">
+            <img
+              src={gameZoneLogo}
+              alt="PlusZone Game Zone Logo"
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-cover"
+            />
+          </div>
+          <div>
+            <h1 className="text-sm font-bold text-slate-900 dark:text-[#F0F4FF] leading-tight">
+              PlusZone Game Zone
+            </h1>
+            
+            {/* User Badge */}
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-[#8899BB] mt-0.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 dark:text-[#00D4AA]" />
+              <span className="font-semibold text-slate-800 dark:text-white/90">{currentUser.name}</span>
+            </div>
           </div>
         </div>
-      </div>
 
       {/* Right Controls */}
       <div className="flex items-center gap-1.5 sm:gap-2">
@@ -214,10 +242,26 @@ export const Header: React.FC<HeaderProps> = ({
                 })}
 
                 {notifications.length === 0 && (
-                  <div className="text-center py-6 text-slate-500 dark:text-slate-300 space-y-1">
+                  <div className="text-center py-4 text-slate-500 dark:text-slate-300 space-y-1">
                     <CheckCircle2 className="w-6 h-6 text-emerald-500 dark:text-[#00D4AA] mx-auto opacity-90" />
                     <p className="text-xs font-semibold">No pending notifications.</p>
                   </div>
+                )}
+              </div>
+
+              {/* Action: Dispatch Test External Push Notification */}
+              <div className="pt-2 border-t border-slate-200 dark:border-[#2A3B53] space-y-1">
+                <button
+                  onClick={handleTestExternalPushNotification}
+                  className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold flex items-center justify-center gap-2 shadow cursor-pointer transition-all active:scale-95"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Send Push Alert Outside App</span>
+                </button>
+                {pushSentMessage && (
+                  <p className="text-[10px] text-center font-extrabold text-emerald-600 dark:text-[#00D4AA] animate-fadeIn">
+                    {pushSentMessage}
+                  </p>
                 )}
               </div>
             </div>

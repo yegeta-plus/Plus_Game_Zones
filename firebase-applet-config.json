@@ -1,12 +1,12 @@
 {
-  "projectId": "plus-game-zone",
-  "appId": "1:446161976869:web:0316cfa589d22f3d07c9cc",
-  "apiKey": "AIzaSyDhdc0yox1H8jvdq0RV4ANENfSTuKJMaaw",
-  "authDomain": "plus-game-zone.firebaseapp.com",
+  "projectId": "arctic-history-nsjh2",
+  "appId": "1:592375249532:web:ec9e3ed2dec7605d24a7f9",
+  "apiKey": "AIzaSyDcHlnRWayNiMttURX-6gTZKixVbHLDEUI",
+  "authDomain": "arctic-history-nsjh2.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-pluszonefinancee-81b56110-6dcb-4d53-93e5-bd5cf2918283",
-  "storageBucket": "plus-game-zone.firebasestorage.app",
-  "messagingSenderId": "446161976869",
-  "measurementId": "G-JB03320NHG",
+  "storageBucket": "arctic-history-nsjh2.firebasestorage.app",
+  "messagingSenderId": "592375249532",
+  "measurementId": "",
   "oAuthClientId": "592375249532-sr1v2teuotqaam8i2a7jh3glo8gff2hm.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

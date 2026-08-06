@@ -31,6 +31,13 @@ import {
 import { Equb, Loan, RecurringTemplate, Receivable, Transaction } from '../../types';
 import { formatETB } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
+import {
+  formatEthiopianDate,
+  toEthiopianDate,
+  evaluatePagumeExemption,
+  calculateNextEthiopianDueDate,
+  addEthiopianMonths
+} from '../../lib/ethiopianCalendar';
 
 export type CalendarViewMode = 'MONTH' | 'WEEK' | 'AGENDA';
 export type EventTypeFilter = 'ALL' | 'EQUB' | 'LOAN' | 'RECURRING' | 'RECEIVABLE' | 'TRANSACTION';
@@ -48,6 +55,8 @@ export interface CalendarEventItem {
   description?: string;
   direction: 'IN' | 'OUT';
   originalData?: any;
+  isExemptInPagume?: boolean;
+  pagumeReason?: string;
 }
 
 interface CalendarViewProps {
@@ -95,9 +104,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
     // 1. Equb Due Events
     equbs.forEach(e => {
-      const now = new Date();
-      // Estimate next round date (e.g. current week / month)
-      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2);
+      const d = calculateNextEthiopianDueDate(e.startDate || new Date(), e.interval || 'EVERY_10_DAYS');
+      const pagumeCheck = evaluatePagumeExemption('Equb Contribution', d);
       list.push({
         id: `equb-${e.id}`,
         title: `${e.name} - Round #${e.currentRound}`,
@@ -108,7 +116,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         dateStr: formatYMD(d),
         color: '#A78BFA',
         direction: 'OUT',
-        description: `Equb contribution for ${e.name} (${(e.frequency || '').toLowerCase()} frequency)`
+        description: `Equb contribution for ${e.name} (${(e.interval || '').toLowerCase()} frequency - calculated in Ethiopian Calendar)`,
+        isExemptInPagume: pagumeCheck.isExempt,
+        pagumeReason: pagumeCheck.reason
       });
     });
 
@@ -116,6 +126,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     loans.forEach(l => {
       if (l.status === 'ACTIVE') {
         const d = new Date(l.dueDate);
+        const pagumeCheck = evaluatePagumeExemption('Loan Repayment', d);
         list.push({
           id: `loan-${l.id}`,
           title: `Loan Repayment: ${l.title}`,
@@ -127,7 +138,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           color: '#FB923C',
           direction: 'OUT',
           status: `Remaining: ${formatETB(l.outstandingBalance)}`,
-          description: `Scheduled loan payment to ${l.lenderOrBorrower}`
+          description: `Scheduled loan payment to ${l.lenderOrBorrower}`,
+          isExemptInPagume: pagumeCheck.isExempt,
+          pagumeReason: pagumeCheck.reason
         });
       }
     });
@@ -136,6 +149,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     recurring.forEach(r => {
       if (r.active) {
         const d = new Date(r.nextDueDate);
+        const pagumeCheck = evaluatePagumeExemption(r.category || r.title, d);
         list.push({
           id: `rec-${r.id}`,
           title: r.title,
@@ -146,7 +160,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           dateStr: formatYMD(d),
           color: '#6366F1',
           direction: r.type === 'EXPENSE' ? 'OUT' : 'IN',
-          description: `Recurring ${(r.type || '').toLowerCase()} scheduled for ${r.frequency}`
+          description: `Recurring ${(r.type || '').toLowerCase()} scheduled for ${r.frequency}`,
+          isExemptInPagume: pagumeCheck.isExempt,
+          pagumeReason: pagumeCheck.reason
         });
       }
     });

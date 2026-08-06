@@ -142,28 +142,35 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
     }));
   };
 
+  const [deletingCategory, setDeletingCategory] = useState<Category | null>(null);
+
+  const confirmDeleteCategory = () => {
+    if (!deletingCategory) return;
+    triggerHaptic('warning');
+    onUpdateState(prev => ({
+      ...prev,
+      categories: prev.categories.filter(c => c.id !== deletingCategory.id),
+      auditLogs: [
+        {
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'DELETE_CATEGORY',
+          entity: 'Category',
+          entityId: deletingCategory.id,
+          diffBefore: { name: deletingCategory.name },
+          branch: prev.currentUser.branch
+        },
+        ...prev.auditLogs
+      ]
+    }));
+    setDeletingCategory(null);
+  };
+
   const handleDelete = (cat: Category) => {
-    if (confirm(`Are you sure you want to delete category "${cat.name}"?`)) {
-      triggerHaptic('warning');
-      onUpdateState(prev => ({
-        ...prev,
-        categories: prev.categories.filter(c => c.id !== cat.id),
-        auditLogs: [
-          {
-            id: `aud-${Date.now()}`,
-            timestamp: new Date().toISOString(),
-            actorId: prev.currentUser.id,
-            actorName: prev.currentUser.name,
-            action: 'DELETE_CATEGORY',
-            entity: 'Category',
-            entityId: cat.id,
-            diffBefore: { name: cat.name },
-            branch: prev.currentUser.branch
-          },
-          ...prev.auditLogs
-        ]
-      }));
-    }
+    triggerHaptic('light');
+    setDeletingCategory(cat);
   };
 
   return (
@@ -494,6 +501,42 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
                 className="flex-1 py-2.5 rounded-xl bg-emerald-600 dark:bg-[#00D4AA] hover:brightness-110 text-xs font-bold text-white dark:text-[#0A0E1A] shadow-lg cursor-pointer disabled:opacity-50"
               >
                 {editingCategory ? 'Update Category' : 'Create Category'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingCategory && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-[#131926] border border-rose-200 dark:border-rose-900/50 max-w-sm w-full p-5 rounded-2xl space-y-4 shadow-2xl text-slate-900 dark:text-white">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/60 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Delete Category?</h3>
+                <p className="text-xs text-slate-500 dark:text-[#8899BB] font-semibold">{deletingCategory.name}</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-[#8899BB] leading-relaxed">
+              Are you sure you want to delete category <strong className="text-slate-900 dark:text-white">"{deletingCategory.name}"</strong>? Existing ledger transactions under this category will remain, but the category won't be available for new entries.
+            </p>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setDeletingCategory(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-xs font-bold text-slate-600 dark:text-[#8899BB] hover:bg-slate-200 dark:hover:bg-[#252E42]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteCategory}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-bold shadow-md hover:bg-rose-700 active:scale-[0.98] transition-all"
+              >
+                Yes, Delete
               </button>
             </div>
           </div>

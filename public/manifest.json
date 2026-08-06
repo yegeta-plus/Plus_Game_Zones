@@ -1,7 +1,7 @@
 {
-  "short_name": "PlusZone ERP",
-  "name": "PlusZone Finance ERP — Ethiopian Business Ledger",
-  "description": "Mobile-first Ethiopian fintech ERP for partners — cash, Telebirr, CBE, Equb savings, loans, recurring bills, assets, and AI assistant.",
+  "short_name": "PlusZone Game",
+  "name": "PlusZone Game Zone — PlayStation House & FC 26/27 ERP",
+  "description": "Mobile-first PlayStation House & Game Zone management system — cash, Telebirr, CBE, gaming station tracking, Equb, and finance.",
   "icons": [
     {
       "src": "/pwa-192.png",

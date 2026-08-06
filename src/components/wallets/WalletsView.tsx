@@ -250,45 +250,32 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
     <div className="space-y-4 pb-24">
       
       {/* Title & Action Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-slate-900 dark:text-[#F0F4FF]">Business Wallets</h2>
           <p className="text-xs text-slate-500 dark:text-[#8899BB] mt-0.5">Multi-account liquid capital breakdown</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
           <button
             onClick={() => {
               triggerHaptic('medium');
               setShowIntegrationModal(true);
             }}
-            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md hover:brightness-110 transition-all border border-emerald-400/30"
+            className="px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:brightness-110 transition-all border border-emerald-400/30"
           >
-            <Zap className="w-3.5 h-3.5 fill-current" />
-            <span>Telebirr / CBE / eBirr Sync</span>
+            <Zap className="w-3.5 h-3.5 fill-current shrink-0" />
+            <span className="truncate">Bank Sync</span>
           </button>
-
-          {onOpenQuickEntry && (
-            <button
-              onClick={() => {
-                triggerHaptic('light');
-                onOpenQuickEntry(selectedWalletId || undefined);
-              }}
-              className="px-3 py-1.5 rounded-xl bg-emerald-600 dark:bg-[#00D4AA] text-white dark:text-[#0A0E1A] text-xs font-bold flex items-center gap-1 cursor-pointer shadow-md hover:brightness-110 transition-all"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Quick Add</span>
-            </button>
-          )}
 
           <button
             onClick={() => {
               triggerHaptic('light');
               onOpenTransferModal();
             }}
-            className="px-3 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md hover:bg-blue-700 transition-colors"
+            className="px-3 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:bg-blue-700 transition-colors"
           >
-            <ArrowRightLeft className="w-3.5 h-3.5" />
+            <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
             <span>Transfer</span>
           </button>
           
@@ -298,10 +285,10 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                 triggerHaptic('light');
                 setShowAddModal(true);
               }}
-              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#00D4AA] to-[#00B894] text-[#0A0E1A] text-xs font-bold flex items-center gap-1 cursor-pointer shadow-md hover:brightness-110 transition-all"
+              className="col-span-2 sm:col-span-1 px-3 py-2 rounded-xl bg-gradient-to-r from-[#00D4AA] to-[#00B894] text-[#0A0E1A] text-xs font-bold flex items-center justify-center gap-1 cursor-pointer shadow-md hover:brightness-110 transition-all"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Wallet</span>
+              <Plus className="w-3.5 h-3.5 shrink-0" />
+              <span>Add New Wallet</span>
             </button>
           )}
         </div>
@@ -599,19 +586,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                 Current: {formatETB(selectedBal)}
               </span>
 
-              {onOpenQuickEntry && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    onOpenQuickEntry(selectedWallet.id);
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-emerald-600 dark:bg-[#00D4AA] text-white dark:text-[#0A0E1A] text-[10px] font-bold flex items-center gap-1 cursor-pointer shadow-sm hover:brightness-105 transition-all shrink-0"
-                >
-                  <Plus className="w-3 h-3" />
-                  <span>+ Add Transaction</span>
-                </button>
-              )}
+              {/* Add Transaction removed from wallet page as requested */}
             </div>
           </div>
 

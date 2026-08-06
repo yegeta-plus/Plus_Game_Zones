@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Tag, Users, Repeat, Database, Settings, ArrowLeft, ChevronRight, ShieldAlert } from 'lucide-react';
+import { Tag, Users, Repeat, Database, Settings, ArrowLeft, ChevronRight, ShieldAlert, Fingerprint } from 'lucide-react';
 import { ERPState } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 
@@ -7,8 +7,9 @@ import { CategoriesView } from './CategoriesView';
 import { UsersView } from './UsersView';
 import { RecurringView } from './RecurringView';
 import { BackupView } from './BackupView';
+import { SecurityBiometricsView } from './SecurityBiometricsView';
 
-export type SettingsTabType = 'CATEGORIES' | 'PARTNERS' | 'RECURRING' | 'BACKUP';
+export type SettingsTabType = 'CATEGORIES' | 'PARTNERS' | 'RECURRING' | 'BACKUP' | 'SECURITY';
 
 interface SettingsViewProps {
   state: ERPState;
@@ -81,6 +82,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       icon: Database,
       color: '#64748B',
       count: 'Consensus JSON'
+    },
+    {
+      id: 'SECURITY' as SettingsTabType,
+      label: 'Fingerprint & Push Alerts',
+      subtitle: 'Touch ID biometrics login & OS notifications outside app',
+      icon: Fingerprint,
+      color: '#10B981',
+      count: 'WebAuthn / SW'
     }
   ];
 
@@ -212,6 +221,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {activeTab === 'BACKUP' && (
           <BackupView state={state} onRestore={(newState) => onUpdateState(() => newState)} />
+        )}
+
+        {activeTab === 'SECURITY' && (
+          <SecurityBiometricsView state={state} />
         )}
       </div>
     </div>

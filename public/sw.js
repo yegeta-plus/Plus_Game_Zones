@@ -30,7 +30,71 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   
-  // Exclude API requests from caching
+  // Service worker event handlers for push & external OS notifications
+self.addEventListener('push', (event) => {
+  let data = { title: 'PlusZone Finance Alert', body: 'You have a new transaction update.', icon: '/pwa-192.png' };
+  try {
+    if (event.data) {
+      data = event.data.json();
+    }
+  } catch (err) {
+    if (event.data) {
+      data.body = event.data.text();
+    }
+  }
+
+  const options = {
+    body: data.body || 'Financial statement & transaction alert',
+    icon: data.icon || '/pwa-192.png',
+    badge: '/pwa-192.png',
+    vibrate: [100, 50, 100],
+    data: data.data || { url: '/' },
+    actions: data.actions || [
+      { action: 'open', title: 'Open App' },
+      { action: 'close', title: 'Dismiss' }
+    ]
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'PlusZone ERP Alert', options)
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  if (event.action === 'close') return;
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow('/');
+      }
+    })
+  );
+});
+
+// Handle postMessage from app to trigger external system notification
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
+    const { title, body, icon, tag, data } = event.data.payload || {};
+    const options = {
+      body: body || 'New update in PlusZone ERP',
+      icon: icon || '/pwa-192.png',
+      badge: '/pwa-192.png',
+      tag: tag || `notif-${Date.now()}`,
+      vibrate: [200, 100, 200],
+      data: data || { url: '/' },
+      renotify: true
+    };
+    self.registration.showNotification(title || 'PlusZone ERP', options);
+  }
+});
   if (event.request.url.includes('/api/')) {
     event.respondWith(
       fetch(event.request).catch(() => {

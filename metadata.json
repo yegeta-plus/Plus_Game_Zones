@@ -1,6 +1,6 @@
 {
-  "name": "PlusZone Finance ERP",
-  "description": "Mobile-first Ethiopian fintech ERP app with cash, Telebirr, CBE, Equb savings, loans, recurring bills, assets, and AI finance assistant.",
+  "name": "PlusZone Game Zone ERP",
+  "description": "PlayStation House and Gaming Lounge ERP for FC 26/27, featuring game station tracking, cash, Telebirr, CBE, Equb savings, and financial management.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

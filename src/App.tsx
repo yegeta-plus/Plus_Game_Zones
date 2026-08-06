@@ -20,16 +20,20 @@ import {
   isTransactionEditable,
   formatETB
 } from './lib/store';
+import { calculateNextEthiopianDueDate } from './lib/ethiopianCalendar';
 import { subscribeToFirebaseState, syncStateToFirebase } from './lib/firebase';
 import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest } from './types';
 import { CheckCircle2, Sparkles } from 'lucide-react';
 import { triggerHaptic } from './lib/haptics';
+import { FingerprintModal } from './components/auth/FingerprintModal';
+import { sendExternalNotification } from './lib/notifications';
 
 export default function App() {
   const [state, setState] = useState<ERPState>(() => loadInitialState());
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [moreSubView, setMoreSubView] = useState<SubViewType>('HUB');
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true);
+  const [isSessionLocked, setIsSessionLocked] = useState<boolean>(false);
 
   const handleNavigateTab = (tab: TabType, subView?: SubViewType) => {
     setActiveTab(tab);
@@ -117,12 +121,7 @@ export default function App() {
           };
           updatedTransactions.unshift(newTx);
 
-          const nextDateObj = new Date(rec.nextDueDate || todayStr);
-          if (rec.frequency === 'WEEKLY') nextDateObj.setDate(nextDateObj.getDate() + 7);
-          else if (rec.frequency === 'BIWEEKLY') nextDateObj.setDate(nextDateObj.getDate() + 14);
-          else if (rec.frequency === 'MONTHLY') nextDateObj.setMonth(nextDateObj.getMonth() + 1);
-          else if (rec.frequency === 'QUARTERLY') nextDateObj.setMonth(nextDateObj.getMonth() + 3);
-          else if (rec.frequency === 'YEARLY') nextDateObj.setFullYear(nextDateObj.getFullYear() + 1);
+          const nextDateObj = calculateNextEthiopianDueDate(rec.nextDueDate || todayStr, rec.frequency);
 
           return {
             ...rec,
@@ -295,6 +294,9 @@ export default function App() {
     }));
 
     triggerToast(`✨ Successfully posted ${items.length} daily income entries (${formatETB(totalAmount)}) across wallets!`);
+    sendExternalNotification('PlusZone ERP - Financial Update 💸', {
+      body: `${items.length} income transactions posted totaling ${formatETB(totalAmount)} by ${state.currentUser.name}.`
+    });
     performRefresh(true);
   };
 
@@ -1084,6 +1086,7 @@ export default function App() {
         allUsers={state.users}
         onSwitchUser={(user: UserProfile) => setState(prev => ({ ...prev, currentUser: user }))}
         onLogout={() => setIsLoggedIn(false)}
+        onLockSession={() => setIsSessionLocked(true)}
         theme={state.theme}
         onToggleTheme={() => setState(prev => ({ ...prev, theme: prev.theme === 'dark' ? 'light' : 'dark' }))}
         hideBalances={state.hideBalances}
@@ -1242,6 +1245,16 @@ export default function App() {
         isOpen={showAiAssistant}
         onClose={() => setShowAiAssistant(false)}
         state={state}
+      />
+
+      {/* Session Lock Screen Biometric Fingerprint Modal */}
+      <FingerprintModal
+        isOpen={isSessionLocked}
+        onClose={() => setIsSessionLocked(false)}
+        userEmail={state.currentUser.email}
+        userName={state.currentUser.name}
+        onSuccess={() => setIsSessionLocked(false)}
+        mode="SESSION_UNLOCK"
       />
 
     </div>

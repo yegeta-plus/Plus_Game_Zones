@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Database, Download, Upload, RefreshCw, Calendar, CheckCircle2, ShieldCheck, AlertTriangle, Users, Clock, Check, X } from 'lucide-react';
+import { Database, Download, Upload, RefreshCw, Calendar, CheckCircle2, ShieldCheck, AlertTriangle, Users, Clock, Check, X, Trash2 } from 'lucide-react';
 import { ERPState, UserProfile } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 
@@ -96,12 +96,17 @@ export const BackupView: React.FC<BackupViewProps> = ({ state, onRestore }) => {
     setTimeout(() => setRestoreSuccessMsg(''), 5000);
   };
 
+  const [showResetModal, setShowResetModal] = useState(false);
+
+  const confirmResetDemo = () => {
+    triggerHaptic('warning');
+    localStorage.clear();
+    window.location.reload();
+  };
+
   const handleResetDemo = () => {
-    if (confirm('Reset ledger state back to initial Ethiopian business demo dataset?')) {
-      triggerHaptic('warning');
-      localStorage.clear();
-      window.location.reload();
-    }
+    triggerHaptic('light');
+    setShowResetModal(true);
   };
 
   return (
@@ -357,6 +362,42 @@ export const BackupView: React.FC<BackupViewProps> = ({ state, onRestore }) => {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Reset Demo Dataset Confirmation Modal */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-[#131926] border border-rose-200 dark:border-rose-900/50 max-w-sm w-full p-5 rounded-2xl space-y-4 shadow-2xl text-slate-900 dark:text-white">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/60 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Reset Ledger State?</h3>
+                <p className="text-xs text-slate-500 dark:text-[#8899BB] font-semibold">Restore Initial Demo Dataset</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-[#8899BB] leading-relaxed">
+              Are you sure you want to reset all business ledger data, wallets, Equb circles, and transaction entries back to the initial demo dataset? Local storage will be cleared and the app will reload.
+            </p>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setShowResetModal(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-xs font-bold text-slate-600 dark:text-[#8899BB] hover:bg-slate-200 dark:hover:bg-[#252E42]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmResetDemo}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-bold shadow-md hover:bg-rose-700 active:scale-[0.98] transition-all"
+              >
+                Yes, Reset Data
+              </button>
+            </div>
           </div>
         </div>
       )}

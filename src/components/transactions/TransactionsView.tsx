@@ -15,11 +15,15 @@ import {
   Trash2,
   Lock,
   CheckCircle2,
-  Calculator
+  Calculator,
+  FileText,
+  FileSpreadsheet,
+  Sparkles
 } from 'lucide-react';
-import { Transaction, Wallet, Category, UserProfile, TransactionType } from '../../types';
+import { Transaction, Wallet, Category, UserProfile, TransactionType, ERPState } from '../../types';
 import { formatETB, isTransactionEditable, parseSummedAmount } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
+import { generatePDFReport, generateExcelReport } from '../../lib/exports';
 
 interface TransactionsViewProps {
   transactions: Transaction[];
@@ -220,11 +224,79 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   return (
     <div className="space-y-4 pb-24">
       
-      {/* Title */}
-      <div className="flex items-center justify-between">
+      {/* Title & Quick Export */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
           <h2 className="text-xl font-bold text-slate-900 dark:text-[#F0F4FF]">Financial Ledger</h2>
           <p className="text-xs text-slate-500 dark:text-[#8899BB] mt-0.5">{filtered.length} entries recorded</p>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('medium');
+              const dummyState: any = {
+                currentUser,
+                wallets,
+                transactions,
+                transfers: [],
+                equbs: [],
+                loans: [],
+                assets: [],
+                receivables: [],
+                users: [],
+                categories,
+                recurring: [],
+                auditLogs: [],
+                savedReports: []
+              };
+              generatePDFReport({
+                state: dummyState,
+                transactions: filtered,
+                dateRangeLabel: 'Filtered Ledger View',
+                reportTitle: 'Financial Ledger & Transaction Creator Report'
+              });
+            }}
+            className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1 shadow-sm cursor-pointer transition-all active:scale-95"
+            title="Download PDF Financial Report"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>PDF</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('heavy');
+              const dummyState: any = {
+                currentUser,
+                wallets,
+                transactions,
+                transfers: [],
+                equbs: [],
+                loans: [],
+                assets: [],
+                receivables: [],
+                users: [],
+                categories,
+                recurring: [],
+                auditLogs: [],
+                savedReports: []
+              };
+              generateExcelReport({
+                state: dummyState,
+                transactions: filtered,
+                dateRangeLabel: 'Filtered Ledger View',
+                reportTitle: 'Banking & Financial Reporting Package'
+              });
+            }}
+            className="px-3 py-1.5 rounded-xl bg-emerald-600 dark:bg-[#00D4AA] text-white dark:text-[#0A0E1A] font-bold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer hover:brightness-110 transition-all active:scale-95"
+            title="Download Multi-Tab Excel Workbook (.xlsx)"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>Export xlsx</span>
+          </button>
         </div>
       </div>
 

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Repeat, Plus, Trash2, CheckCircle2, PauseCircle, PlayCircle, Calendar, Wallet as WalletIcon, X, Search, Tag } from 'lucide-react';
+import { Repeat, Plus, Trash2, CheckCircle2, PauseCircle, PlayCircle, Calendar, Wallet as WalletIcon, X, Search, Tag, Gift } from 'lucide-react';
 import { RecurringTemplate, Wallet, Category, RecurringFrequency, TransactionType, ERPState } from '../../types';
 import { formatETB } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
+import { formatEthiopianDate, evaluatePagumeExemption } from '../../lib/ethiopianCalendar';
 
 interface RecurringViewProps {
   recurring: RecurringTemplate[];
@@ -103,30 +104,37 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
     }));
   };
 
+  const [deletingRec, setDeletingRec] = useState<RecurringTemplate | null>(null);
+
+  const confirmDeleteRecurring = () => {
+    if (!deletingRec || !onUpdateState) return;
+    triggerHaptic('warning');
+
+    onUpdateState(prev => ({
+      ...prev,
+      recurring: prev.recurring.filter(r => r.id !== deletingRec.id),
+      auditLogs: [
+        {
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'DELETE_RECURRING_BILL',
+          entity: 'RecurringTemplate',
+          entityId: deletingRec.id,
+          diffBefore: { title: deletingRec.title },
+          branch: prev.currentUser.branch
+        },
+        ...prev.auditLogs
+      ]
+    }));
+    setDeletingRec(null);
+  };
+
   const handleDelete = (rec: RecurringTemplate) => {
     if (!onUpdateState) return;
-    if (confirm(`Delete recurring bill "${rec.title}"?`)) {
-      triggerHaptic('warning');
-
-      onUpdateState(prev => ({
-        ...prev,
-        recurring: prev.recurring.filter(r => r.id !== rec.id),
-        auditLogs: [
-          {
-            id: `aud-${Date.now()}`,
-            timestamp: new Date().toISOString(),
-            actorId: prev.currentUser.id,
-            actorName: prev.currentUser.name,
-            action: 'DELETE_RECURRING_BILL',
-            entity: 'RecurringTemplate',
-            entityId: rec.id,
-            diffBefore: { title: rec.title },
-            branch: prev.currentUser.branch
-          },
-          ...prev.auditLogs
-        ]
-      }));
-    }
+    triggerHaptic('light');
+    setDeletingRec(rec);
   };
 
   return (
@@ -169,6 +177,9 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
         {filteredRecurring.map((r) => {
           const wallet = wallets.find(w => w.id === r.walletId);
           const isPaused = r.status === 'PAUSED';
+          const dueDateObj = new Date(r.nextDueDate);
+          const ethDueDateStr = formatEthiopianDate(dueDateObj, true);
+          const pagumeRule = evaluatePagumeExemption(r.category || r.title, dueDateObj);
 
           return (
             <div
@@ -187,7 +198,7 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
                 </div>
 
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h4 className="text-xs font-bold text-white">{r.title}</h4>
                     <span className="text-[9px] bg-[#A78BFA]/20 text-[#A78BFA] px-1.5 py-0.2 rounded font-mono font-bold">
                       {r.frequency}
@@ -195,6 +206,16 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
                     {r.autoProcess && (
                       <span className="text-[9px] bg-blue-500/20 text-blue-400 px-1.5 py-0.2 rounded font-mono font-bold">
                         AUTO
+                      </span>
+                    )}
+                    {pagumeRule.isExempt ? (
+                      <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.2 rounded font-bold flex items-center gap-1">
+                        <Gift className="w-3 h-3 text-emerald-400" />
+                        13th Month (Pagumē): FREE
+                      </span>
+                    ) : (
+                      <span className="text-[9px] bg-amber-500/10 text-amber-300 px-2 py-0.2 rounded font-mono font-bold">
+                        Active in Month 13
                       </span>
                     )}
                   </div>
@@ -206,7 +227,7 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
 
                   <p className="text-[10px] text-[#8899BB] mt-0.5 flex items-center gap-1">
                     <Calendar className="w-3 h-3 text-[#A78BFA]" />
-                    <span>Next Due: {new Date(r.nextDueDate).toLocaleDateString()}</span>
+                    <span>Next Due: {ethDueDateStr}</span>
                   </p>
                 </div>
               </div>
@@ -388,6 +409,42 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
                 className="flex-1 py-2.5 rounded-xl bg-[#A78BFA] hover:bg-[#A78BFA]/90 text-xs font-bold text-[#0A0E1A] shadow-lg cursor-pointer disabled:opacity-50"
               >
                 Create Schedule
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Recurring Confirmation Modal */}
+      {deletingRec && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-[#131926] border border-rose-200 dark:border-rose-900/50 max-w-sm w-full p-5 rounded-2xl space-y-4 shadow-2xl text-slate-900 dark:text-white">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/60 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Delete Recurring Bill?</h3>
+                <p className="text-xs text-slate-500 dark:text-[#8899BB] font-semibold">{deletingRec.title}</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-[#8899BB] leading-relaxed">
+              Are you sure you want to delete <strong className="text-slate-900 dark:text-white">"{deletingRec.title}"</strong>? Future automatic bill schedules and reminders for this item will be cancelled.
+            </p>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setDeletingRec(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-xs font-bold text-slate-600 dark:text-[#8899BB] hover:bg-slate-200 dark:hover:bg-[#252E42]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteRecurring}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-bold shadow-md hover:bg-rose-700 active:scale-[0.98] transition-all"
+              >
+                Yes, Delete Schedule
               </button>
             </div>
           </div>

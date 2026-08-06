@@ -153,10 +153,11 @@ export async function syncStateToFirebase(state: ERPState): Promise<void> {
 
     try {
       const docRef = doc(db, 'erp_state', 'main');
+      const cleanState = JSON.parse(JSON.stringify(state));
       await setDoc(
         docRef,
         {
-          state,
+          state: cleanState,
           updatedAt: new Date().toISOString(),
           updatedBy: state.currentUser?.name || 'System'
         },
