@@ -274,4 +274,5 @@ export interface ERPState {
   approvalRequests?: AdminApprovalRequest[];
   theme: 'dark' | 'light';
   hideBalances: boolean;
+  calendarType?: 'ETHIOPIAN' | 'GREGORIAN';
 }

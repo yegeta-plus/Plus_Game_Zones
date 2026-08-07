@@ -85,6 +85,7 @@ interface DashboardViewProps {
   recurring: RecurringTemplate[];
   receivables?: Receivable[];
   hideBalances: boolean;
+  calendarType?: 'ETHIOPIAN' | 'GREGORIAN';
   onToggleHideBalances: () => void;
   onOpenQuickEntry: () => void;
   onOpenTransferModal: () => void;
@@ -101,6 +102,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   recurring,
   receivables = [],
   hideBalances,
+  calendarType = 'ETHIOPIAN',
   onToggleHideBalances,
   onOpenQuickEntry,
   onOpenTransferModal,

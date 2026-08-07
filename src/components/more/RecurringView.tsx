@@ -3,12 +3,13 @@ import { Repeat, Plus, Trash2, CheckCircle2, PauseCircle, PlayCircle, Calendar, 
 import { RecurringTemplate, Wallet, Category, RecurringFrequency, TransactionType, ERPState } from '../../types';
 import { formatETB } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
-import { formatEthiopianDate, evaluatePagumeExemption } from '../../lib/ethiopianCalendar';
+import { formatEthiopianDate, formatDateByCalendar, evaluatePagumeExemption } from '../../lib/ethiopianCalendar';
 
 interface RecurringViewProps {
   recurring: RecurringTemplate[];
   wallets: Wallet[];
   categories?: Category[];
+  calendarType?: 'ETHIOPIAN' | 'GREGORIAN';
   onUpdateState?: (fn: (prev: ERPState) => ERPState) => void;
 }
 
@@ -16,6 +17,7 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
   recurring,
   wallets,
   categories = [],
+  calendarType = 'ETHIOPIAN',
   onUpdateState
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -178,7 +180,7 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
           const wallet = wallets.find(w => w.id === r.walletId);
           const isPaused = r.status === 'PAUSED';
           const dueDateObj = new Date(r.nextDueDate);
-          const ethDueDateStr = formatEthiopianDate(dueDateObj, true);
+          const ethDueDateStr = formatDateByCalendar(dueDateObj, calendarType, true);
           const pagumeRule = evaluatePagumeExemption(r.category || r.title, dueDateObj);
 
           return (

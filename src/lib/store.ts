@@ -35,6 +35,7 @@ export interface ERPState {
   approvalRequests?: any[];
   theme: 'dark' | 'light';
   hideBalances: boolean;
+  calendarType?: 'ETHIOPIAN' | 'GREGORIAN';
 }
 
 const DEFAULT_USERS: UserProfile[] = [
@@ -164,14 +165,18 @@ export function loadInitialState(): ERPState {
           parsed.users = DEFAULT_USERS;
         }
 
-        parsed.equbs = DEFAULT_EQUBS;
-        parsed.loans = [];
-        parsed.assets = [];
-        parsed.receivables = [];
-        parsed.transactions = DEFAULT_TRANSACTIONS;
-        parsed.wallets = DEFAULT_WALLETS;
-        parsed.categories = DEFAULT_CATEGORIES;
-        parsed.currentUser = DEFAULT_USERS[0];
+        parsed.equbs = Array.isArray(parsed.equbs) && parsed.equbs.length > 0 ? parsed.equbs : DEFAULT_EQUBS;
+        parsed.loans = Array.isArray(parsed.loans) ? parsed.loans : DEFAULT_LOANS;
+        parsed.assets = Array.isArray(parsed.assets) ? parsed.assets : DEFAULT_ASSETS;
+        parsed.receivables = Array.isArray(parsed.receivables) ? parsed.receivables : DEFAULT_RECEIVABLES;
+        parsed.transactions = Array.isArray(parsed.transactions) ? parsed.transactions : DEFAULT_TRANSACTIONS;
+        parsed.wallets = Array.isArray(parsed.wallets) && parsed.wallets.length > 0 ? parsed.wallets : DEFAULT_WALLETS;
+        parsed.categories = Array.isArray(parsed.categories) && parsed.categories.length > 0 ? parsed.categories : DEFAULT_CATEGORIES;
+        parsed.recurring = Array.isArray(parsed.recurring) ? parsed.recurring : DEFAULT_RECURRING;
+        parsed.transfers = Array.isArray(parsed.transfers) ? parsed.transfers : [];
+        parsed.goals = Array.isArray(parsed.goals) ? parsed.goals : DEFAULT_GOALS;
+        parsed.auditLogs = Array.isArray(parsed.auditLogs) ? parsed.auditLogs : DEFAULT_AUDIT_LOGS;
+        parsed.currentUser = parsed.users?.[0] || DEFAULT_USERS[0];
         return parsed;
       }
     }
@@ -200,7 +205,8 @@ function createInitialState(): ERPState {
     auditLogs: DEFAULT_AUDIT_LOGS,
     approvalRequests: [],
     theme: 'dark',
-    hideBalances: false
+    hideBalances: false,
+    calendarType: 'ETHIOPIAN'
   };
 }
 

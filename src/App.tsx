@@ -1113,6 +1113,7 @@ export default function App() {
             recurring={state.recurring}
             receivables={state.receivables}
             hideBalances={state.hideBalances}
+            calendarType={state.calendarType || 'ETHIOPIAN'}
             onToggleHideBalances={() => setState(prev => ({ ...prev, hideBalances: !prev.hideBalances }))}
             onOpenQuickEntry={() => setShowQuickEntry(true)}
             onOpenTransferModal={() => setShowTransferModal(true)}
@@ -1164,6 +1165,8 @@ export default function App() {
             users={state.users}
             approvalRequests={state.approvalRequests}
             hideBalances={state.hideBalances}
+            calendarType={state.calendarType || 'ETHIOPIAN'}
+            onToggleCalendarType={(type) => setState(prev => ({ ...prev, calendarType: type }))}
             onPayRound={handlePayEqubRound}
             onClaimPayout={handleClaimEqubPayout}
             onCreateEqub={handleCreateEqub}

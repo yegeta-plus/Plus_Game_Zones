@@ -67,6 +67,8 @@ interface CalendarViewProps {
   transactions?: Transaction[];
   defaultView?: CalendarViewMode;
   agendaOnly?: boolean;
+  calendarType?: 'ETHIOPIAN' | 'GREGORIAN';
+  onToggleCalendarType?: (type: 'ETHIOPIAN' | 'GREGORIAN') => void;
 }
 
 export const CalendarView: React.FC<CalendarViewProps> = ({
@@ -76,7 +78,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   receivables,
   transactions = [],
   defaultView,
-  agendaOnly = false
+  agendaOnly = false,
+  calendarType = 'ETHIOPIAN',
+  onToggleCalendarType
 }) => {
   const [viewMode, setViewMode] = useState<CalendarViewMode>(
     defaultView || (agendaOnly ? 'AGENDA' : 'MONTH')
@@ -676,7 +680,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       </div>
 
       {/* Month Navigation Control Bar */}
-      <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-3 flex items-center justify-between shadow-sm">
+      <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2 shadow-sm">
         <div className="flex items-center gap-2">
           <button
             onClick={prevMonth}
@@ -690,17 +694,66 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           >
             <ChevronRight className="w-4 h-4" />
           </button>
-          <span className="text-sm font-bold text-slate-900 dark:text-white ml-1">
-            {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
+          <span className="text-sm font-extrabold text-slate-900 dark:text-white ml-1 flex items-center gap-1.5">
+            {calendarType === 'ETHIOPIAN' ? (
+              <>
+                <span>{toEthiopianDate(currentDate).monthNameEn} ({toEthiopianDate(currentDate).monthNameAm})</span>
+                <span className="text-xs font-mono px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-[#00D4AA] border border-emerald-500/20">
+                  {toEthiopianDate(currentDate).year} E.C.
+                </span>
+              </>
+            ) : (
+              <>
+                <span>{monthNames[currentDate.getMonth()]}</span>
+                <span className="text-xs font-mono px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                  {currentDate.getFullYear()} G.C.
+                </span>
+              </>
+            )}
           </span>
         </div>
 
-        <button
-          onClick={goToToday}
-          className="px-3 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/50 text-purple-700 dark:text-purple-300 text-xs font-bold cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-900/60 transition-colors"
-        >
-          Today
-        </button>
+        <div className="flex items-center gap-2">
+          {onToggleCalendarType && (
+            <div className="flex items-center bg-slate-100 dark:bg-[#1C2333] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40]">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  onToggleCalendarType('ETHIOPIAN');
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  calendarType === 'ETHIOPIAN'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-500 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                🇪🇹 E.C.
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  onToggleCalendarType('GREGORIAN');
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  calendarType === 'GREGORIAN'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-500 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                🌐 G.C.
+              </button>
+            </div>
+          )}
+
+          <button
+            onClick={goToToday}
+            className="px-3 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/50 text-purple-700 dark:text-purple-300 text-xs font-bold cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-900/60 transition-colors"
+          >
+            Today
+          </button>
+        </div>
       </div>
 
       {/* VIEW MODE: MONTH GRID */}

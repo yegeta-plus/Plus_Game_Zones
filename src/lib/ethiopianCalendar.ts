@@ -195,6 +195,31 @@ export function formatEthiopianDate(gregorianDate: Date | string, includeAmharic
 }
 
 /**
+ * Format Date depending on active Calendar Type ('ETHIOPIAN' vs 'GREGORIAN')
+ * Note: Under the hood, all date math & calculations (e.g. Equb cycles, 13th month exemption, due dates)
+ * are calculated using the Ethiopian Calendar system.
+ * When calendarType is 'GREGORIAN', it converts and formats the date into Gregorian (G.C.) format.
+ */
+export function formatDateByCalendar(
+  gregorianDate: Date | string,
+  calendarType: 'ETHIOPIAN' | 'GREGORIAN' | string = 'ETHIOPIAN',
+  includeAmharic = true
+): string {
+  const d = typeof gregorianDate === 'string' ? new Date(gregorianDate) : gregorianDate;
+  if (isNaN(d.getTime())) return 'Invalid Date';
+
+  if (calendarType === 'GREGORIAN') {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[d.getMonth()];
+    const day = d.getDate();
+    const year = d.getFullYear();
+    return `${month} ${day}, ${year} G.C.`;
+  }
+
+  return formatEthiopianDate(d, includeAmharic);
+}
+
+/**
  * 13th Month (Pagumē / ጳጉሜ) Exemption Guard Policy Evaluator
  * 
  * Rules requested:

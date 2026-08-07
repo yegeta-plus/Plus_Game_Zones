@@ -35,7 +35,8 @@ import {
   toEthiopianDate,
   toGregorianDate,
   addEthiopianMonths,
-  formatEthiopianDate
+  formatEthiopianDate,
+  formatDateByCalendar
 } from '../../lib/ethiopianCalendar';
 
 interface EqubViewProps {
@@ -47,6 +48,8 @@ interface EqubViewProps {
   users?: UserProfile[];
   approvalRequests?: AdminApprovalRequest[];
   hideBalances: boolean;
+  calendarType?: 'ETHIOPIAN' | 'GREGORIAN';
+  onToggleCalendarType?: (type: 'ETHIOPIAN' | 'GREGORIAN') => void;
   onPayRound: (equbId: string, splits: Array<{ walletId: string; amount: number }>) => void;
   onClaimPayout: (equbId: string, walletId: string, netPool: number) => void;
   onCreateEqub: (equb: Omit<Equb, 'id' | 'currentRound' | 'computedEndingDate' | 'status'>) => void;
@@ -72,6 +75,8 @@ export const EqubView: React.FC<EqubViewProps> = ({
   users = [],
   approvalRequests = [],
   hideBalances,
+  calendarType = 'ETHIOPIAN',
+  onToggleCalendarType,
   onPayRound,
   onClaimPayout,
   onCreateEqub,
@@ -548,52 +553,92 @@ export const EqubView: React.FC<EqubViewProps> = ({
       {/* Title Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-[#131926] p-4 rounded-2xl border border-slate-200 dark:border-[#1E2D40] shadow-sm">
         <div>
-          <h2 className="text-xl font-extrabold text-slate-900 dark:text-[#F0F4FF] flex items-center gap-2">
-            <Users className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-            <span>Community Capital & Equb</span>
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-extrabold text-slate-900 dark:text-[#F0F4FF] flex items-center gap-2">
+              <Users className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <span>Community Capital & Equb</span>
+            </h2>
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border border-indigo-500/20">
+              {calendarType === 'ETHIOPIAN' ? '🇪🇹 Ethiopian E.C.' : '🌐 Gregorian G.C.'}
+            </span>
+          </div>
           <p className="text-xs text-slate-600 dark:text-[#8899BB] mt-0.5 font-medium">Equb rotating pools, lend & lent loans, and customer credit</p>
         </div>
 
-        {/* Primary CTA based on main tab */}
-        {mainTab === 'CIRCLES' && (
-          <button
-            onClick={() => {
-              triggerHaptic('light');
-              setShowCreateEqubModal(true);
-            }}
-            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-indigo-600 dark:bg-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:bg-indigo-700 dark:hover:bg-indigo-600 active:scale-[0.98] transition-all"
-          >
-            <Plus className="w-4 h-4 shrink-0" />
-            <span>New Equb Circle</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
+          {onToggleCalendarType && (
+            <div className="flex items-center bg-slate-100 dark:bg-[#1C2333] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40] text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  onToggleCalendarType('ETHIOPIAN');
+                }}
+                className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                  calendarType === 'ETHIOPIAN'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                🇪🇹 E.C.
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  onToggleCalendarType('GREGORIAN');
+                }}
+                className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                  calendarType === 'GREGORIAN'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                🌐 G.C.
+              </button>
+            </div>
+          )}
 
-        {mainTab === 'LOANS' && (
-          <button
-            onClick={() => {
-              triggerHaptic('light');
-              setShowCreateLoanModal(true);
-            }}
-            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 dark:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:bg-emerald-700 dark:hover:bg-emerald-600 active:scale-[0.98] transition-all"
-          >
-            <Plus className="w-4 h-4 shrink-0" />
-            <span>Add / Lend Loan</span>
-          </button>
-        )}
+          {/* Primary CTA based on main tab */}
+          {mainTab === 'CIRCLES' && (
+            <button
+              onClick={() => {
+                triggerHaptic('light');
+                setShowCreateEqubModal(true);
+              }}
+              className="px-4 py-2.5 rounded-xl bg-indigo-600 dark:bg-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:bg-indigo-700 dark:hover:bg-indigo-600 active:scale-[0.98] transition-all shrink-0"
+            >
+              <Plus className="w-4 h-4 shrink-0" />
+              <span>New Equb Circle</span>
+            </button>
+          )}
 
-        {mainTab === 'RECEIVABLES' && (
-          <button
-            onClick={() => {
-              triggerHaptic('light');
-              setShowCreateReceivableModal(true);
-            }}
-            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-blue-600 dark:bg-blue-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:bg-blue-700 dark:hover:bg-blue-600 active:scale-[0.98] transition-all"
-          >
-            <Plus className="w-4 h-4 shrink-0" />
-            <span>New Credit IOU</span>
-          </button>
-        )}
+          {mainTab === 'LOANS' && (
+            <button
+              onClick={() => {
+                triggerHaptic('light');
+                setShowCreateLoanModal(true);
+              }}
+              className="px-4 py-2.5 rounded-xl bg-emerald-600 dark:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:bg-emerald-700 dark:hover:bg-emerald-600 active:scale-[0.98] transition-all shrink-0"
+            >
+              <Plus className="w-4 h-4 shrink-0" />
+              <span>Add / Lend Loan</span>
+            </button>
+          )}
+
+          {mainTab === 'RECEIVABLES' && (
+            <button
+              onClick={() => {
+                triggerHaptic('light');
+                setShowCreateReceivableModal(true);
+              }}
+              className="px-4 py-2.5 rounded-xl bg-blue-600 dark:bg-blue-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:bg-blue-700 dark:hover:bg-blue-600 active:scale-[0.98] transition-all shrink-0"
+            >
+              <Plus className="w-4 h-4 shrink-0" />
+              <span>New Credit IOU</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Pending Co-Admin Approval Requests Section */}
@@ -770,8 +815,8 @@ export const EqubView: React.FC<EqubViewProps> = ({
                 const isFinished = eq.status === 'COMPLETED' || eq.currentRound >= eq.totalRounds;
                 const progressPercent = Math.min(100, Math.round((eq.currentRound / eq.totalRounds) * 100));
 
-                const startDateFormatted = formatEthiopianDate(eq.startDate || Date.now(), true);
-                const endDateFormatted = formatEthiopianDate(eq.computedEndingDate || Date.now(), true);
+                const startDateFormatted = formatDateByCalendar(eq.startDate || Date.now(), calendarType, true);
+                const endDateFormatted = formatDateByCalendar(eq.computedEndingDate || Date.now(), calendarType, true);
 
                 const isExpanded = expandedEqubId === eq.id;
 
@@ -1180,7 +1225,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
                       </div>
                       <div>
                         <span className="text-[10px] text-slate-500 dark:text-[#8899BB]">Due Date</span>
-                        <p className="font-mono font-bold text-slate-900 dark:text-white">{formatEthiopianDate(loan.dueDate, true)}</p>
+                        <p className="font-mono font-bold text-slate-900 dark:text-white">{formatDateByCalendar(loan.dueDate, calendarType, true)}</p>
                       </div>
                     </div>
 
@@ -1323,7 +1368,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
         const estEndingObj = new Date(startMs + 86400000 * daysPerRound * Math.max(0, totalRoundsCount - 1));
         const estEndingFormatted = isNaN(estEndingObj.getTime())
           ? 'Invalid Date'
-          : estEndingObj.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+          : formatDateByCalendar(estEndingObj, calendarType, true);
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">

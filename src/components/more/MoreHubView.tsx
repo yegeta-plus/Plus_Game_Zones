@@ -190,17 +190,54 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
   if (subView !== 'HUB') {
     return (
       <div className="space-y-4 pb-24">
-        {/* Back navigation header */}
-        <button
-          onClick={() => {
-            triggerHaptic('light');
-            setSubView('HUB');
-          }}
-          className="flex items-center gap-1.5 text-xs font-bold text-[#00D4AA] bg-[#00D4AA]/10 border border-[#00D4AA]/30 px-3 py-1.5 rounded-xl cursor-pointer hover:bg-[#00D4AA]/20 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to More Operations</span>
-        </button>
+        {/* Back navigation & Calendar toggle header */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <button
+            onClick={() => {
+              triggerHaptic('light');
+              setSubView('HUB');
+            }}
+            className="flex items-center gap-1.5 text-xs font-bold text-[#00D4AA] bg-[#00D4AA]/10 border border-[#00D4AA]/30 px-3 py-1.5 rounded-xl cursor-pointer hover:bg-[#00D4AA]/20 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back to More Operations</span>
+          </button>
+
+          {/* Quick Calendar Switch Pill */}
+          <div className="flex items-center bg-slate-100 dark:bg-[#131926] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40] text-xs">
+            <span className="text-[10px] font-bold text-slate-500 dark:text-[#8899BB] px-1.5 hidden xs:inline">
+              Calendar:
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('medium');
+                onUpdateState(prev => ({ ...prev, calendarType: 'ETHIOPIAN' }));
+              }}
+              className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                (state.calendarType || 'ETHIOPIAN') === 'ETHIOPIAN'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              🇪🇹 E.C.
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('medium');
+                onUpdateState(prev => ({ ...prev, calendarType: 'GREGORIAN' }));
+              }}
+              className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                state.calendarType === 'GREGORIAN'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              🌐 G.C.
+            </button>
+          </div>
+        </div>
 
         {subView === 'PROFILE' && (
           <ProfileView currentUser={state.currentUser} onUpdateState={onUpdateState} />
@@ -285,6 +322,10 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
             recurring={state.recurring}
             receivables={state.receivables}
             transactions={state.transactions}
+            calendarType={state.calendarType || 'ETHIOPIAN'}
+            onToggleCalendarType={(type) => {
+              onUpdateState(prev => ({ ...prev, calendarType: type }));
+            }}
           />
         )}
         {subView === 'BACKUP' && (
@@ -296,10 +337,55 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
 
   return (
     <div className="space-y-4 pb-24">
-      {/* Title */}
-      <div>
-        <h2 className="text-xl font-bold text-slate-900 dark:text-[#F0F4FF]">ERP Operations Hub</h2>
-        <p className="text-xs text-slate-500 dark:text-[#8899BB] mt-0.5">Advanced business modules, compliance & settings</p>
+      {/* Top Banner & Calendar System Switcher */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 dark:from-[#131926] dark:via-[#1a2336] dark:to-[#131926] border border-indigo-500/30 rounded-2xl p-4 text-white shadow-md relative overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-400 font-extrabold shrink-0">
+            <CalendarIcon className="w-5 h-5 text-indigo-300" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-extrabold text-white">ERP Operations Hub</h2>
+              <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full font-mono font-bold border border-indigo-400/30">
+                {(state.calendarType || 'ETHIOPIAN') === 'ETHIOPIAN' ? '🇪🇹 Ethiopian E.C.' : '🌐 Gregorian G.C.'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 mt-0.5">Active Calendar System for Equbs, Obligations & Statements</p>
+          </div>
+        </div>
+
+        {/* Toggle Switch */}
+        <div className="flex items-center bg-slate-950/80 p-1 rounded-xl border border-slate-800 shrink-0 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('medium');
+              onUpdateState(prev => ({ ...prev, calendarType: 'ETHIOPIAN' }));
+            }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
+              (state.calendarType || 'ETHIOPIAN') === 'ETHIOPIAN'
+                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md border border-emerald-400/40'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span>🇪🇹 Ethiopian (E.C.)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('medium');
+              onUpdateState(prev => ({ ...prev, calendarType: 'GREGORIAN' }));
+            }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
+              state.calendarType === 'GREGORIAN'
+                ? 'bg-indigo-600 text-white shadow-md border border-indigo-400/40'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span>🌐 Gregorian (G.C.)</span>
+          </button>
+        </div>
       </div>
 
       {/* User Account Profile Card */}
