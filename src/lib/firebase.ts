@@ -1,5 +1,5 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, doc, onSnapshot, setDoc, disableNetwork } from 'firebase/firestore';
+import { getFirestore, doc, onSnapshot, setDoc, getDoc, disableNetwork } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import config from '../../firebase-applet-config.json';
 import { ERPState } from './store';
@@ -18,8 +18,6 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 export const db = getFirestore(app, config.firestoreDatabaseId || metaEnv.VITE_FIREBASE_DATABASE_ID || '(default)');
 export const auth = getAuth(app);
-
-const STATE_DOC_PATH = 'erp_state/main';
 
 const getTodayStr = () => new Date().toISOString().split('T')[0];
 
@@ -128,7 +126,66 @@ export function subscribeToFirebaseState(onUpdate: (remoteState: Partial<ERPStat
 }
 
 /**
- * Push updated state to Firebase Firestore asynchronously with debouncing and loop suppression.
+ * Fetch latest state directly from Firebase Firestore on demand.
+ */
+export async function fetchLatestFirebaseState(): Promise<Partial<ERPState> | null> {
+  if (isQuotaExceeded) return null;
+  try {
+    const docRef = doc(db, 'erp_state', 'main');
+    const snapshot = await getDoc(docRef);
+    if (snapshot.exists()) {
+      const data = snapshot.data();
+      if (data && data.state) {
+        return data.state as Partial<ERPState>;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to fetch latest Firebase state:', err);
+  }
+  return null;
+}
+
+/**
+ * Immediately push state to Firestore without debounce delay.
+ */
+export async function syncStateToFirebaseNow(state: ERPState): Promise<void> {
+  if (isQuotaExceeded || isRemoteUpdate) return;
+  if (syncTimeout) {
+    clearTimeout(syncTimeout);
+    syncTimeout = null;
+  }
+  const currentStateJson = JSON.stringify(state);
+  try {
+    const docRef = doc(db, 'erp_state', 'main');
+    const cleanState = JSON.parse(JSON.stringify(state));
+    await setDoc(
+      docRef,
+      {
+        state: cleanState,
+        updatedAt: new Date().toISOString(),
+        updatedBy: state.currentUser?.name || 'System'
+      },
+      { merge: true }
+    );
+    lastSyncedStateJson = currentStateJson;
+  } catch (err: any) {
+    if (
+      err?.code === 'resource-exhausted' ||
+      err?.message?.includes('Quota') ||
+      err?.message?.includes('quota') ||
+      err?.message?.includes('resource-exhausted')
+    ) {
+      isQuotaExceeded = true;
+      markQuotaExceeded();
+      disableNetwork(db).catch(() => {});
+    } else {
+      console.error('Failed instant sync to Firebase:', err);
+    }
+  }
+}
+
+/**
+ * Push updated state to Firebase Firestore asynchronously with short 150ms debouncing and loop suppression.
  * Guarantees fast, real-time sync across all devices and sessions without exhausting quota.
  */
 export async function syncStateToFirebase(state: ERPState): Promise<void> {
@@ -182,5 +239,6 @@ export async function syncStateToFirebase(state: ERPState): Promise<void> {
         console.error('Failed to sync ERP state to Firebase Firestore:', err);
       }
     }
-  }, 1000);
+  }, 150);
 }
+

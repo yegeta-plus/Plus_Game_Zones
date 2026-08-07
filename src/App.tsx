@@ -21,7 +21,12 @@ import {
   formatETB
 } from './lib/store';
 import { calculateNextEthiopianDueDate } from './lib/ethiopianCalendar';
-import { subscribeToFirebaseState, syncStateToFirebase } from './lib/firebase';
+import {
+  subscribeToFirebaseState,
+  syncStateToFirebase,
+  syncStateToFirebaseNow,
+  fetchLatestFirebaseState
+} from './lib/firebase';
 import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest } from './types';
 import { CheckCircle2, Sparkles } from 'lucide-react';
 import { triggerHaptic } from './lib/haptics';
@@ -60,11 +65,23 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = subscribeToFirebaseState((remoteState) => {
       if (remoteState && typeof remoteState === 'object') {
-        setState(prev => ({
-          ...prev,
-          ...remoteState,
-          currentUser: prev.currentUser
-        }));
+        setState(prev => {
+          const mergedUsers = Array.isArray(remoteState.users) && remoteState.users.length > 0
+            ? remoteState.users
+            : prev.users;
+
+          const activeUser = mergedUsers.find(u => u.id === prev.currentUser?.id || u.email === prev.currentUser?.email) || prev.currentUser;
+
+          const calType = prev.calendarType || remoteState.calendarType || 'ETHIOPIAN';
+
+          return {
+            ...prev,
+            ...remoteState,
+            calendarType: calType,
+            users: mergedUsers,
+            currentUser: activeUser
+          };
+        });
       }
     });
     return () => {
@@ -91,11 +108,38 @@ export default function App() {
   };
 
   // Auto Refresh Execution
-  const performRefresh = (isManual = false) => {
+  const performRefresh = async (isManual = false) => {
     setIsRefreshing(true);
     if (isManual) triggerHaptic('light');
 
-    // Auto-check for active recurring templates due today or earlier and auto-process if enabled
+    // 1. Immediately persist current state to Local Storage & sync to Firebase Firestore
+    saveStateToStorage(state);
+    await syncStateToFirebaseNow(state);
+
+    // 2. Fetch latest remote state directly from Firebase Firestore
+    const remoteState = await fetchLatestFirebaseState();
+    if (remoteState && typeof remoteState === 'object') {
+      setState(prev => {
+        const mergedUsers = Array.isArray(remoteState.users) && remoteState.users.length > 0
+          ? remoteState.users
+          : prev.users;
+
+        const activeUser = mergedUsers.find(u => u.id === prev.currentUser?.id || u.email === prev.currentUser?.email) || prev.currentUser;
+        const calType = prev.calendarType || remoteState.calendarType || 'ETHIOPIAN';
+
+        const updated = {
+          ...prev,
+          ...remoteState,
+          calendarType: calType,
+          users: mergedUsers,
+          currentUser: activeUser
+        };
+        saveStateToStorage(updated);
+        return updated;
+      });
+    }
+
+    // 3. Auto-check for active recurring templates due today or earlier and auto-process if enabled
     const todayStr = new Date().toISOString().split('T')[0];
     setState(prev => {
       let updatedTransactions = [...prev.transactions];
@@ -106,7 +150,6 @@ export default function App() {
       updatedRecurring = updatedRecurring.map(rec => {
         if (rec.status === 'ACTIVE' && rec.autoProcess && rec.nextDueDate <= todayStr) {
           processedAny = true;
-          const targetWallet = prev.wallets.find(w => w.id === rec.walletId);
           const newTx: Transaction = {
             id: `tx-auto-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
             date: todayStr,
@@ -156,12 +199,14 @@ export default function App() {
 
     setLastRefreshedAt(new Date());
 
-    setTimeout(() => {
-      setIsRefreshing(false);
-      if (isManual) {
-        triggerToast('⚡ App data synchronized & refreshed!');
-      }
-    }, 450);
+    if (isManual) {
+      // Reload page immediately as requested to show fresh updates instantly
+      window.location.reload();
+    } else {
+      setTimeout(() => {
+        setIsRefreshing(false);
+      }, 450);
+    }
   };
 
   // Background Auto-Refresh Timer (every 15 seconds)
@@ -247,6 +292,28 @@ export default function App() {
     } else {
       triggerToast(`${formatETB(data.amount)} ${(data.type || '').toLowerCase()} logged to ${targetWallet?.name || 'wallet'}`);
     }
+    performRefresh(true);
+  };
+
+  const handleAddGamingIncome = (amount: number, category: string, description: string) => {
+    const mainWallet = state.wallets[0] || { id: 'w1', name: 'Main Cash Drawer' };
+    const newTx: Transaction = {
+      id: `tx-game-${Date.now()}`,
+      type: 'INCOME',
+      category: category || 'Gaming & Entertainment',
+      amount,
+      date: new Date().toISOString(),
+      walletId: mainWallet.id,
+      description,
+      creatorId: state.currentUser.id,
+      creatorName: state.currentUser.name,
+      branch: state.currentUser.branch
+    };
+    setState(prev => ({
+      ...prev,
+      transactions: [newTx, ...prev.transactions]
+    }));
+    triggerToast(`🎮 ${formatETB(amount)} PS5 Gaming revenue logged to ${mainWallet.name}!`);
     performRefresh(true);
   };
 
@@ -465,6 +532,30 @@ export default function App() {
     });
 
     triggerToast(`Transaction deleted from ledger.`);
+    performRefresh(true);
+  };
+
+  // 3.3 Clear All Transactions
+  const handleClearAllTransactions = () => {
+    setState(prev => {
+      const newAuditLog = {
+        id: `aud-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        actorId: prev.currentUser.id,
+        actorName: prev.currentUser.name,
+        action: 'CLEAR_ALL_TRANSACTIONS',
+        entity: 'Transaction',
+        entityId: 'all',
+        diffAfter: { clearedCount: prev.transactions.length },
+        branch: prev.currentUser.branch
+      };
+      return {
+        ...prev,
+        transactions: [],
+        auditLogs: [newAuditLog, ...prev.auditLogs]
+      };
+    });
+    triggerToast(`🗑️ All transactions cleared! You can now add entries manually.`);
     performRefresh(true);
   };
 
@@ -1096,6 +1187,8 @@ export default function App() {
         lastRefreshedAt={lastRefreshedAt}
         isRefreshing={isRefreshing}
         autoRefreshEnabled={autoRefreshEnabled}
+        calendarType={state.calendarType || 'ETHIOPIAN'}
+        onToggleCalendarType={(type) => setState(prev => ({ ...prev, calendarType: type }))}
         onToggleAutoRefresh={() => setAutoRefreshEnabled(prev => !prev)}
         onManualRefresh={() => performRefresh(true)}
       />
@@ -1118,6 +1211,7 @@ export default function App() {
             onOpenQuickEntry={() => setShowQuickEntry(true)}
             onOpenTransferModal={() => setShowTransferModal(true)}
             onNavigateTab={(tab, subView) => handleNavigateTab(tab, subView)}
+            onAddIncome={handleAddGamingIncome}
           />
         )}
 
@@ -1128,9 +1222,11 @@ export default function App() {
             categories={state.categories}
             currentUser={state.currentUser}
             hideBalances={state.hideBalances}
+            calendarType={state.calendarType || 'ETHIOPIAN'}
             onReverseTransaction={handleReverseTransaction}
             onUpdateTransaction={handleUpdateTransaction}
             onDeleteTransaction={handleDeleteTransaction}
+            onClearAllTransactions={handleClearAllTransactions}
           />
         )}
 

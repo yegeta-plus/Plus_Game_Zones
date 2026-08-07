@@ -147,21 +147,22 @@ export function loadInitialState(): ERPState {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed) {
-        if (Array.isArray(parsed.users)) {
-          parsed.users = parsed.users
-            .filter((u: UserProfile) => u.email === 'yegeta.huawei@gmail.com' || u.username === 'yegeta')
-            .map((u: UserProfile) => ({
-              ...u,
-              role: 'SuperAdmin' as UserRole,
-              isApproved: true,
-              active: true,
-              hasSetPassword: true,
-              password: u.password || 'password123',
-              permissions: DEFAULT_ROLE_PERMISSIONS.SuperAdmin
-            }));
-        }
-
-        if (!parsed.users || parsed.users.length === 0) {
+        if (Array.isArray(parsed.users) && parsed.users.length > 0) {
+          parsed.users = parsed.users.map((u: UserProfile) => {
+            if (u.email === 'yegeta.huawei@gmail.com' || u.username === 'yegeta') {
+              return {
+                ...u,
+                role: 'SuperAdmin' as UserRole,
+                isApproved: true,
+                active: true,
+                hasSetPassword: true,
+                password: u.password || 'password123',
+                permissions: DEFAULT_ROLE_PERMISSIONS.SuperAdmin
+              };
+            }
+            return u;
+          });
+        } else {
           parsed.users = DEFAULT_USERS;
         }
 
@@ -169,7 +170,7 @@ export function loadInitialState(): ERPState {
         parsed.loans = Array.isArray(parsed.loans) ? parsed.loans : DEFAULT_LOANS;
         parsed.assets = Array.isArray(parsed.assets) ? parsed.assets : DEFAULT_ASSETS;
         parsed.receivables = Array.isArray(parsed.receivables) ? parsed.receivables : DEFAULT_RECEIVABLES;
-        parsed.transactions = Array.isArray(parsed.transactions) ? parsed.transactions : DEFAULT_TRANSACTIONS;
+        parsed.transactions = [];
         parsed.wallets = Array.isArray(parsed.wallets) && parsed.wallets.length > 0 ? parsed.wallets : DEFAULT_WALLETS;
         parsed.categories = Array.isArray(parsed.categories) && parsed.categories.length > 0 ? parsed.categories : DEFAULT_CATEGORIES;
         parsed.recurring = Array.isArray(parsed.recurring) ? parsed.recurring : DEFAULT_RECURRING;
@@ -177,6 +178,7 @@ export function loadInitialState(): ERPState {
         parsed.goals = Array.isArray(parsed.goals) ? parsed.goals : DEFAULT_GOALS;
         parsed.auditLogs = Array.isArray(parsed.auditLogs) ? parsed.auditLogs : DEFAULT_AUDIT_LOGS;
         parsed.currentUser = parsed.users?.[0] || DEFAULT_USERS[0];
+        parsed.calendarType = parsed.calendarType || 'ETHIOPIAN';
         return parsed;
       }
     }

@@ -28,12 +28,17 @@ import {
   generateExcelReport,
   printFinancialStatement
 } from '../../lib/exports';
+import { formatDateByCalendar } from '../../lib/ethiopianCalendar';
 
 export const ReportsView: React.FC<{ state: ERPState }> = ({ state }) => {
   const [dateRange, setDateRange] = useState<'all' | 'today' | 'month' | 'last_month'>('all');
   const [selectedWallet, setSelectedWallet] = useState<string>('all');
   const [selectedType, setSelectedType] = useState<'all' | 'INCOME' | 'EXPENSE'>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedUser, setSelectedUser] = useState<string>('all');
+  const [includeCoverPage, setIncludeCoverPage] = useState<boolean>(true);
+  const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('landscape');
+  const [groupBy, setGroupBy] = useState<'NONE' | 'CATEGORY' | 'PAYMENT_METHOD' | 'USER' | 'BRANCH' | 'DAY' | 'MONTH'>('NONE');
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
 
   // Email modal state
@@ -59,6 +64,9 @@ export const ReportsView: React.FC<{ state: ERPState }> = ({ state }) => {
       // Category filter
       if (selectedCategory !== 'all' && t.category !== selectedCategory) return false;
 
+      // User filter
+      if (selectedUser !== 'all' && (t.creatorName || 'System') !== selectedUser) return false;
+
       // Date filter
       if (dateRange !== 'all') {
         const tDate = new Date(t.date);
@@ -76,18 +84,23 @@ export const ReportsView: React.FC<{ state: ERPState }> = ({ state }) => {
 
       return true;
     });
-  }, [state.transactions, selectedType, selectedWallet, selectedCategory, dateRange]);
+  }, [state.transactions, selectedType, selectedWallet, selectedCategory, selectedUser, dateRange]);
 
   const activeFilterCount = (dateRange !== 'all' ? 1 : 0) +
     (selectedWallet !== 'all' ? 1 : 0) +
     (selectedType !== 'all' ? 1 : 0) +
-    (selectedCategory !== 'all' ? 1 : 0);
+    (selectedCategory !== 'all' ? 1 : 0) +
+    (selectedUser !== 'all' ? 1 : 0);
 
   const resetFilters = () => {
     setDateRange('all');
     setSelectedWallet('all');
     setSelectedType('all');
     setSelectedCategory('all');
+    setSelectedUser('all');
+    setIncludeCoverPage(true);
+    setOrientation('landscape');
+    setGroupBy('NONE');
   };
 
   const totalBalance = calculateTotalBusinessBalance(state.wallets, state.transactions, state.transfers);
@@ -146,7 +159,10 @@ export const ReportsView: React.FC<{ state: ERPState }> = ({ state }) => {
       state,
       transactions: filteredTransactions,
       dateRangeLabel: dateRange.toUpperCase(),
-      reportTitle: `Financial Statement & Transaction Audit (${filteredTransactions.length} items)`
+      reportTitle: `Financial Statement & Transaction Audit (${filteredTransactions.length} items)`,
+      includeCoverPage,
+      orientation,
+      groupBy
     });
   };
 
@@ -156,7 +172,8 @@ export const ReportsView: React.FC<{ state: ERPState }> = ({ state }) => {
       state,
       transactions: filteredTransactions,
       dateRangeLabel: dateRange.toUpperCase(),
-      reportTitle: `Banking & Financial Statement Package (${filteredTransactions.length} items)`
+      reportTitle: `Banking & Financial Statement Package (${filteredTransactions.length} items)`,
+      groupBy
     });
   };
 
@@ -529,7 +546,7 @@ export const ReportsView: React.FC<{ state: ERPState }> = ({ state }) => {
                       }`}
                     >
                       <td className="p-2.5 whitespace-nowrap font-mono text-[11px] text-slate-600 dark:text-slate-300">
-                        {new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })}
+                        {formatDateByCalendar(t.date, state.calendarType || 'ETHIOPIAN', true)}
                       </td>
                       <td className="p-2.5">
                         <span

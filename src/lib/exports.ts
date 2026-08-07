@@ -2,13 +2,19 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import XLSX from 'xlsx-js-style';
 import { ERPState, Transaction } from '../types';
-import { calculateTotalBusinessBalance, calculateMonthlyStats, formatETB } from './store';
+import { calculateTotalBusinessBalance, formatETB } from './store';
+import { formatDateByCalendar } from './ethiopianCalendar';
 
-interface ExportOptions {
+export interface ExportOptions {
   state: ERPState;
   transactions?: Transaction[];
   dateRangeLabel?: string;
   reportTitle?: string;
+  includeCoverPage?: boolean;
+  orientation?: 'portrait' | 'landscape';
+  groupBy?: 'NONE' | 'CATEGORY' | 'PAYMENT_METHOD' | 'USER' | 'BRANCH' | 'DAY' | 'MONTH';
+  startDate?: string;
+  endDate?: string;
 }
 
 /**
@@ -20,107 +26,332 @@ const getWalletName = (walletId: string, state: ERPState): string => {
 };
 
 /**
+ * Financial Analysis Helper
+ */
+export const calculateFinancialAnalysis = (transactions: Transaction[], state: ERPState) => {
+  const activeTxs = transactions.filter(t => !t.reversed);
+  const incomeTxs = activeTxs.filter(t => t.type === 'INCOME');
+  const expenseTxs = activeTxs.filter(t => t.type === 'EXPENSE');
+
+  const totalIncome = incomeTxs.reduce((sum, t) => sum + t.amount, 0);
+  const totalExpense = expenseTxs.reduce((sum, t) => sum + t.amount, 0);
+  const grossProfit = totalIncome;
+  const netProfit = totalIncome - totalExpense;
+  const totalCount = activeTxs.length;
+
+  // Group by day for daily averages & extremes
+  const incomeByDay: Record<string, number> = {};
+  const expenseByDay: Record<string, number> = {};
+  const allDays = new Set<string>();
+
+  activeTxs.forEach(t => {
+    const dayStr = t.date.slice(0, 10);
+    allDays.add(dayStr);
+    if (t.type === 'INCOME') {
+      incomeByDay[dayStr] = (incomeByDay[dayStr] || 0) + t.amount;
+    } else {
+      expenseByDay[dayStr] = (expenseByDay[dayStr] || 0) + t.amount;
+    }
+  });
+
+  const uniqueDaysCount = Math.max(allDays.size, 1);
+  const avgDailyIncome = totalIncome / uniqueDaysCount;
+  const avgDailyExpense = totalExpense / uniqueDaysCount;
+
+  // Highest & lowest income days
+  let highestIncomeDay = { date: '-', amount: 0 };
+  let lowestIncomeDay = { date: '-', amount: Infinity };
+  Object.entries(incomeByDay).forEach(([d, amt]) => {
+    if (amt > highestIncomeDay.amount) highestIncomeDay = { date: d, amount: amt };
+    if (amt < lowestIncomeDay.amount) lowestIncomeDay = { date: d, amount: amt };
+  });
+  if (lowestIncomeDay.amount === Infinity) lowestIncomeDay = { date: '-', amount: 0 };
+
+  // Highest & lowest expense days
+  let highestExpenseDay = { date: '-', amount: 0 };
+  let lowestExpenseDay = { date: '-', amount: Infinity };
+  Object.entries(expenseByDay).forEach(([d, amt]) => {
+    if (amt > highestExpenseDay.amount) highestExpenseDay = { date: d, amount: amt };
+    if (amt < lowestExpenseDay.amount) lowestExpenseDay = { date: d, amount: amt };
+  });
+  if (lowestExpenseDay.amount === Infinity) lowestExpenseDay = { date: '-', amount: 0 };
+
+  // Cash vs Bank percentage
+  let cashTotal = 0;
+  let bankTotal = 0;
+  state.wallets.forEach(w => {
+    const bal = w.openingBalance + w.totalIn - w.totalOut;
+    if (w.type === 'CASH') cashTotal += bal;
+    else bankTotal += bal;
+  });
+  const totalLiquid = cashTotal + bankTotal;
+  const cashPercent = totalLiquid > 0 ? (cashTotal / totalLiquid) * 100 : 0;
+  const bankPercent = totalLiquid > 0 ? (bankTotal / totalLiquid) * 100 : 0;
+
+  return {
+    totalIncome,
+    totalExpense,
+    grossProfit,
+    netProfit,
+    totalCount,
+    avgDailyIncome,
+    avgDailyExpense,
+    highestIncomeDay,
+    lowestIncomeDay,
+    highestExpenseDay,
+    lowestExpenseDay,
+    cashTotal,
+    bankTotal,
+    cashPercent,
+    bankPercent,
+    uniqueDaysCount
+  };
+};
+
+/**
  * 1. Generate Clean Professional PDF Financial Statement
  */
 export const generatePDFReport = ({
   state,
   transactions = state.transactions,
   dateRangeLabel = 'All Time',
-  reportTitle = 'Executive Financial Statement & Transaction Ledger'
+  reportTitle = 'Executive Financial Statement & Operational Report',
+  includeCoverPage = true,
+  orientation = 'landscape',
+  groupBy = 'NONE'
 }: ExportOptions) => {
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const doc = new jsPDF({ orientation, unit: 'mm', format: 'a4' });
+  const pageWidth = orientation === 'landscape' ? 297 : 210;
+  const pageHeight = orientation === 'landscape' ? 210 : 297;
+  const reportId = `REP-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+  const generatedTimeStr = new Date().toLocaleString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+  const currentUser = state.currentUser?.name || 'Admin';
 
+  const analysis = calculateFinancialAnalysis(transactions, state);
   const totalBalance = calculateTotalBusinessBalance(state.wallets, state.transactions, state.transfers);
-  const { income, expense, profit } = calculateMonthlyStats(transactions);
   const totalAssetsValue = state.assets.reduce((sum, a) => sum + a.currentValue, 0);
   const totalLoansOutstanding = state.loans.reduce((sum, l) => sum + l.outstandingBalance, 0);
   const netWorth = totalBalance + totalAssetsValue - totalLoansOutstanding;
 
-  // Header Title
-  doc.setFillColor(19, 25, 38); // Dark Navy #131926
-  doc.rect(0, 0, 297, 24, 'F');
+  // ---------------- COVER PAGE (PDF) ----------------
+  if (includeCoverPage) {
+    // Background Dark Header Banner
+    doc.setFillColor(19, 25, 38); // #131926
+    doc.rect(0, 0, pageWidth, pageHeight * 0.35, 'F');
+
+    // Accent Stripe
+    doc.setFillColor(0, 212, 170); // #00D4AA
+    doc.rect(0, pageHeight * 0.35 - 3, pageWidth, 3, 'F');
+
+    // Logo & Company Header
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(26);
+    doc.setFont('helvetica', 'bold');
+    doc.text('PLUS GAMEZONE PLC', pageWidth / 2, 32, { align: 'center' });
+
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 212, 170);
+    doc.text('PLUSZONE FINANCE ERP • AUDITED REPORTING SYSTEM', pageWidth / 2, 42, { align: 'center' });
+
+    doc.setFontSize(20);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text(reportTitle.toUpperCase(), pageWidth / 2, 58, { align: 'center' });
+
+    // Report Details Box on Cover
+    const boxY = pageHeight * 0.42;
+    const boxWidth = pageWidth * 0.7;
+    const boxX = (pageWidth - boxWidth) / 2;
+
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(boxX, boxY, boxWidth, 90, 4, 4, 'FD');
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(100, 115, 130);
+
+    const details = [
+      { label: 'REPORT PERIOD:', val: dateRangeLabel },
+      { label: 'REPORT ID:', val: reportId },
+      { label: 'GENERATED DATE:', val: generatedTimeStr },
+      { label: 'PREPARED BY:', val: `${currentUser} (${state.currentUser?.branch || 'Main Branch'})` },
+      { label: 'GROSS REVENUE:', val: formatETB(analysis.totalIncome) },
+      { label: 'OPERATING EXPENSES:', val: formatETB(analysis.totalExpense) },
+      { label: 'NET PROFIT MARGIN:', val: formatETB(analysis.netProfit) },
+      { label: 'TOTAL RECORD COUNT:', val: `${analysis.totalCount} Transactions` }
+    ];
+
+    let currentY = boxY + 14;
+    details.forEach(item => {
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(100, 116, 139);
+      doc.text(item.label, boxX + 16, currentY);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(19, 25, 38);
+      doc.text(item.val, boxX + 75, currentY);
+
+      currentY += 9;
+    });
+
+    // Footer note on cover page
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(148, 163, 184);
+    doc.text('Confidential • Generated for internal management & auditing purposes.', pageWidth / 2, pageHeight - 15, { align: 'center' });
+
+    // Start content on page 2
+    doc.addPage();
+  }
+
+  // ---------------- HEADER BANNER ON CONTENT PAGES ----------------
+  doc.setFillColor(19, 25, 38);
+  doc.rect(0, 0, pageWidth, 22, 'F');
 
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(16);
+  doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
-  doc.text('PLUSZONE FINANCE ERP', 14, 11);
-
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(0, 212, 170); // Accent turquoise #00D4AA
-  doc.text(reportTitle.toUpperCase(), 14, 18);
+  doc.text('PLUS GAMEZONE PLC', 14, 10);
 
   doc.setFontSize(9);
-  doc.setTextColor(200, 210, 225);
-  doc.text(`Generated: ${new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`, 220, 11);
-  doc.text(`User: ${state.currentUser?.name || 'Admin'} | Branch: ${state.currentUser?.branch || 'Main'}`, 220, 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(0, 212, 170);
+  doc.text(reportTitle.toUpperCase(), 14, 17);
 
-  // Financial KPI Cards Banner
+  doc.setFontSize(8);
+  doc.setTextColor(203, 213, 225);
+  doc.text(`ID: ${reportId} | Period: ${dateRangeLabel}`, pageWidth - 14, 10, { align: 'right' });
+  doc.text(`Generated: ${generatedTimeStr} | By: ${currentUser}`, pageWidth - 14, 17, { align: 'right' });
+
+  // ---------------- SUMMARY CARDS BANNER ----------------
   doc.setFillColor(245, 247, 250);
-  doc.roundedRect(14, 28, 269, 22, 2, 2, 'F');
+  doc.roundedRect(14, 26, pageWidth - 28, 22, 2, 2, 'F');
   doc.setDrawColor(220, 225, 235);
-  doc.roundedRect(14, 28, 269, 22, 2, 2, 'D');
+  doc.roundedRect(14, 26, pageWidth - 28, 22, 2, 2, 'D');
 
-  doc.setFontSize(8);
+  const colStep = (pageWidth - 36) / 5;
+
+  // KPI 1
+  doc.setFontSize(7.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(100, 115, 130);
-
-  // KPI 1: Net Revenue
-  doc.text('GROSS REVENUE', 20, 34);
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(16, 124, 65); // Green
-  doc.text(formatETB(income), 20, 42);
-
-  // KPI 2: Expenses
-  doc.setFontSize(8);
-  doc.setTextColor(100, 115, 130);
-  doc.text('OPERATING EXPENSES', 80, 34);
-  doc.setFontSize(11);
-  doc.setTextColor(197, 34, 31); // Red
-  doc.text(formatETB(expense), 80, 42);
-
-  // KPI 3: Net Profit
-  doc.setFontSize(8);
-  doc.setTextColor(100, 115, 130);
-  doc.text('NET MARGIN', 140, 34);
-  doc.setFontSize(11);
+  doc.text('TOTAL REVENUE', 20, 32);
+  doc.setFontSize(10);
   doc.setTextColor(16, 124, 65);
-  doc.text(formatETB(profit), 140, 42);
+  doc.text(formatETB(analysis.totalIncome), 20, 40);
 
-  // KPI 4: Liquid Cash
-  doc.setFontSize(8);
+  // KPI 2
+  doc.setFontSize(7.5);
   doc.setTextColor(100, 115, 130);
-  doc.text('LIQUID WALLET CASH', 195, 34);
-  doc.setFontSize(11);
-  doc.setTextColor(15, 98, 254); // Blue
-  doc.text(formatETB(totalBalance), 195, 42);
+  doc.text('OPERATING EXPENSE', 20 + colStep, 32);
+  doc.setFontSize(10);
+  doc.setTextColor(197, 34, 31);
+  doc.text(formatETB(analysis.totalExpense), 20 + colStep, 40);
 
-  // KPI 5: Net Worth
-  doc.setFontSize(8);
+  // KPI 3
+  doc.setFontSize(7.5);
   doc.setTextColor(100, 115, 130);
-  doc.text('BUSINESS NET WORTH', 245, 34);
-  doc.setFontSize(11);
+  doc.text('NET PROFIT', 20 + colStep * 2, 32);
+  doc.setFontSize(10);
+  doc.setTextColor(analysis.netProfit >= 0 ? 16 : 197, analysis.netProfit >= 0 ? 124 : 34, analysis.netProfit >= 0 ? 65 : 31);
+  doc.text(formatETB(analysis.netProfit), 20 + colStep * 2, 40);
+
+  // KPI 4
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 115, 130);
+  doc.text('LIQUID CASH', 20 + colStep * 3, 32);
+  doc.setFontSize(10);
+  doc.setTextColor(15, 98, 254);
+  doc.text(formatETB(totalBalance), 20 + colStep * 3, 40);
+
+  // KPI 5
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 115, 130);
+  doc.text('NET WORTH', 20 + colStep * 4, 32);
+  doc.setFontSize(10);
   doc.setTextColor(19, 25, 38);
-  doc.text(formatETB(netWorth), 245, 42);
+  doc.text(formatETB(netWorth), 20 + colStep * 4, 40);
 
-  // Table Data Preparation
-  const tableData = transactions.map((t, index) => [
-    (index + 1).toString(),
-    new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
-    t.type,
-    t.category,
-    t.description.length > 35 ? t.description.slice(0, 35) + '...' : t.description,
-    getWalletName(t.walletId, state),
-    t.branch || 'Main',
-    formatETB(t.amount),
-    t.creatorName || 'System', // Who made that transaction
-    t.reversed ? 'REVERSED' : 'ACTIVE'
-  ]);
+  // ---------------- TABLE DATA & GROUPING ----------------
+  let tableData: any[][] = [];
+
+  if (groupBy === 'NONE') {
+    let runningBal = 0;
+    tableData = transactions.map((t, index) => {
+      if (!t.reversed) {
+        runningBal += t.type === 'INCOME' ? t.amount : -t.amount;
+      }
+      return [
+        (index + 1).toString(),
+        formatDateByCalendar(t.date, state.calendarType || 'ETHIOPIAN', true),
+        t.type,
+        t.category,
+        t.description.length > 30 ? t.description.slice(0, 30) + '...' : t.description,
+        getWalletName(t.walletId, state),
+        t.branch || 'Main',
+        formatETB(t.amount),
+        t.creatorName || 'System',
+        t.reversed ? 'REVERSED' : 'ACTIVE'
+      ];
+    });
+  } else {
+    // Grouped by Category, Payment Method, User, Branch, Day, Month
+    const groups: Record<string, Transaction[]> = {};
+    transactions.forEach(t => {
+      let key = 'Other';
+      if (groupBy === 'CATEGORY') key = t.category || 'Uncategorized';
+      else if (groupBy === 'PAYMENT_METHOD') key = getWalletName(t.walletId, state);
+      else if (groupBy === 'USER') key = t.creatorName || 'System';
+      else if (groupBy === 'BRANCH') key = t.branch || 'Main';
+      else if (groupBy === 'DAY') key = t.date.slice(0, 10);
+      else if (groupBy === 'MONTH') key = t.date.slice(0, 7);
+
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(t);
+    });
+
+    Object.entries(groups).forEach(([groupKey, groupTxs]) => {
+      const groupActive = groupTxs.filter(t => !t.reversed);
+      const groupInc = groupActive.filter(t => t.type === 'INCOME').reduce((s, t) => s + t.amount, 0);
+      const groupExp = groupActive.filter(t => t.type === 'EXPENSE').reduce((s, t) => s + t.amount, 0);
+      const groupSubtotal = groupInc - groupExp;
+
+      // Group Header Row
+      tableData.push([
+        `GROUP: ${groupKey.toUpperCase()} (${groupTxs.length} items)`,
+        '', '', '', '', '', '',
+        `Net: ${formatETB(groupSubtotal)}`,
+        '', ''
+      ]);
+
+      groupTxs.forEach((t, index) => {
+        tableData.push([
+          `  ${index + 1}`,
+          formatDateByCalendar(t.date, state.calendarType || 'ETHIOPIAN', true),
+          t.type,
+          t.category,
+          t.description.length > 28 ? t.description.slice(0, 28) + '...' : t.description,
+          getWalletName(t.walletId, state),
+          t.branch || 'Main',
+          formatETB(t.amount),
+          t.creatorName || 'System',
+          t.reversed ? 'REVERSED' : 'ACTIVE'
+        ]);
+      });
+    });
+  }
 
   autoTable(doc, {
-    startY: 54,
-    head: [['#', 'Date', 'Type', 'Category', 'Description', 'Wallet Account', 'Branch', 'Amount (ETB)', 'Who Made Transaction', 'Status']],
+    startY: 52,
+    head: [['#', 'Date & Time', 'Type', 'Category', 'Description', 'Wallet Account', 'Branch', 'Amount (ETB)', 'Created By', 'Status']],
     body: tableData,
     theme: 'grid',
     headStyles: {
@@ -135,44 +366,64 @@ export const generatePDFReport = ({
       textColor: [30, 40, 55]
     },
     columnStyles: {
-      0: { cellWidth: 8, halign: 'center' },
-      1: { cellWidth: 22 },
+      0: { cellWidth: 10, halign: 'center' },
+      1: { cellWidth: 26 },
       2: { cellWidth: 18, fontStyle: 'bold' },
       3: { cellWidth: 28 },
-      4: { cellWidth: 55 },
+      4: { cellWidth: orientation === 'landscape' ? 60 : 38 },
       5: { cellWidth: 32 },
       6: { cellWidth: 20 },
-      7: { cellWidth: 30, fontStyle: 'bold', halign: 'right' },
-      8: { cellWidth: 36, fontStyle: 'bold' }, // Who made transaction column
+      7: { cellWidth: 32, fontStyle: 'bold', halign: 'right' },
+      8: { cellWidth: 28, fontStyle: 'bold' },
       9: { cellWidth: 18, halign: 'center' }
     },
     didParseCell: (data) => {
       if (data.section === 'body') {
-        const typeCell = data.row.cells[2]?.text[0];
-        const statusCell = data.row.cells[9]?.text[0];
+        const firstColText = data.row.cells[0]?.text[0] || '';
+        if (firstColText.startsWith('GROUP:')) {
+          data.cell.styles.fillColor = [226, 232, 240];
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.textColor = [15, 23, 42];
+        } else {
+          const typeCell = data.row.cells[2]?.text[0];
+          const statusCell = data.row.cells[9]?.text[0];
 
-        if (statusCell === 'REVERSED') {
-          data.cell.styles.textColor = [150, 150, 150];
-        } else if (typeCell === 'INCOME') {
-          if (data.column.index === 2 || data.column.index === 7) {
-            data.cell.styles.textColor = [16, 124, 65];
+          if (statusCell === 'REVERSED') {
+            data.cell.styles.textColor = [148, 163, 184];
+          } else if (typeCell === 'INCOME') {
+            if (data.column.index === 2 || data.column.index === 7) {
+              data.cell.styles.textColor = [16, 124, 65];
+            }
+          } else if (typeCell === 'EXPENSE') {
+            if (data.column.index === 2 || data.column.index === 7) {
+              data.cell.styles.textColor = [197, 34, 31];
+            }
           }
-        } else if (typeCell === 'EXPENSE') {
-          if (data.column.index === 2 || data.column.index === 7) {
-            data.cell.styles.textColor = [197, 34, 31];
-          }
-        }
-
-        // Highlight "Who Made Transaction" column
-        if (data.column.index === 8) {
-          data.cell.styles.textColor = [30, 50, 100];
         }
       }
     },
-    margin: { left: 14, right: 14 }
+    margin: { left: 14, right: 14, bottom: 18 }
   });
 
-  doc.save(`PlusZone_Financial_Statement_${new Date().toISOString().slice(0, 10)}.pdf`);
+  // ---------------- PAGE FOOTERS (Page X of Y) ----------------
+  const pageCount = (doc as any).internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    if (includeCoverPage && i === 1) continue; // Skip cover page footer
+
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(148, 163, 184);
+
+    // Footer line
+    doc.setDrawColor(226, 232, 240);
+    doc.line(14, pageHeight - 12, pageWidth - 14, pageHeight - 12);
+
+    doc.text('PLUS GAMEZONE PLC • CONFIDENTIAL FINANCIAL STATEMENT', 14, pageHeight - 6);
+    doc.text(`Page ${i} of ${pageCount}`, pageWidth - 14, pageHeight - 6, { align: 'right' });
+  }
+
+  doc.save(`Financial_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
 };
 
 // Style Definitions for XLSX Export
@@ -203,7 +454,7 @@ const STYLES = {
   },
   tableHeaderCreator: {
     font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
-    fill: { fgColor: { rgb: '1E3A8A' } }, // Deep Blue / Indigo for "Who Made Transaction"
+    fill: { fgColor: { rgb: '1E3A8A' } },
     alignment: { horizontal: 'center', vertical: 'center' },
     border: {
       top: { style: 'thin', color: { rgb: '1E3A8A' } },
@@ -258,7 +509,7 @@ const STYLES = {
 };
 
 /**
- * Helper to apply styling to a worksheet generated by XLSX.utils.aoa_to_sheet or json_to_sheet
+ * Helper to apply styling to a worksheet generated by XLSX.utils.aoa_to_sheet
  */
 const formatWorksheet = (
   ws: any,
@@ -278,34 +529,36 @@ const formatWorksheet = (
 
   const range = XLSX.utils.decode_range(ws['!ref']);
 
+  // Set Auto-filter on header row
+  ws['!autofilter'] = {
+    ref: XLSX.utils.encode_range({
+      s: { r: headerRowIdx, c: 0 },
+      e: { r: range.e.r, c: range.e.c }
+    })
+  };
+
+  // Freeze Header Row
+  ws['!views'] = [{ state: 'frozen', ySplit: headerRowIdx + 1 }];
+
   for (let R = range.s.r; R <= range.e.r; ++R) {
     for (let C = range.s.c; C <= range.e.c; ++C) {
       const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
       if (!ws[cellRef]) continue;
 
-      // Banner Row 0
       if (R === 0) {
         ws[cellRef].s = STYLES.bannerTitle;
-      }
-      // Subtitle Row 1
-      else if (R === 1) {
+      } else if (R === 1) {
         ws[cellRef].s = STYLES.bannerSubtitle;
-      }
-      // Table Header Row
-      else if (R === headerRowIdx) {
+      } else if (R === headerRowIdx) {
         if (C === creatorColIdx) {
           ws[cellRef].s = STYLES.tableHeaderCreator;
         } else {
           ws[cellRef].s = headerStyle;
         }
-      }
-      // Data Rows below Header
-      else if (R > headerRowIdx) {
-        // Creator column highlight
+      } else if (R > headerRowIdx) {
         if (C === creatorColIdx) {
           ws[cellRef].s = STYLES.cellCreator;
         } else {
-          // Alignment for numbers / dates
           const val = ws[cellRef].v;
           if (typeof val === 'number') {
             ws[cellRef].s = {
@@ -324,34 +577,40 @@ const formatWorksheet = (
 };
 
 /**
- * 2. Generate Comprehensive Multi-Tab Banking & Financial Reporting Excel Workbook (.xlsx) with Professional Styling
+ * 2. Generate Comprehensive Multi-Tab Banking & Financial Reporting Excel Workbook (.xlsx)
  */
 export const generateExcelReport = ({
   state,
   transactions = state.transactions,
   dateRangeLabel = 'All Time',
-  reportTitle = 'Executive Banking & Financial Reporting Package'
+  reportTitle = 'Executive Financial Reporting Package'
 }: ExportOptions) => {
   const wb = XLSX.utils.book_new();
 
+  const analysis = calculateFinancialAnalysis(transactions, state);
   const totalBalance = calculateTotalBusinessBalance(state.wallets, state.transactions, state.transfers);
-  const { income, expense, profit } = calculateMonthlyStats(transactions);
   const totalAssetsValue = state.assets.reduce((sum, a) => sum + a.currentValue, 0);
   const totalLoansOutstanding = state.loans.reduce((sum, l) => sum + l.outstandingBalance, 0);
   const netWorth = totalBalance + totalAssetsValue - totalLoansOutstanding;
 
-  // ------------------- TAB 1: BANKING EXECUTIVE SUMMARY -------------------
+  // ---------------- TAB 1: EXECUTIVE DASHBOARD & SUMMARY ----------------
   const summaryAOA: any[][] = [
-    ['PLUSZONE FINANCE ERP — AUDITED BANKING & FINANCIAL STATEMENT'],
+    ['PLUS GAMEZONE PLC — AUDITED FINANCIAL DASHBOARD & SUMMARY'],
     ['Report Title', reportTitle, `Period: ${dateRangeLabel}`, `Generated: ${new Date().toLocaleString()}`, `By: ${state.currentUser?.name || 'Admin'}`],
     [],
-    ['EXECUTIVE FINANCIAL METRICS', 'AMOUNT (ETB)', 'STATUS / REMARK'],
-    ['Total Gross Revenue (Income)', income, 'Total Cash Inflow'],
-    ['Total Operating Expenses', expense, 'Total Cash Outflow'],
-    ['Net Profit Margin', profit, profit >= 0 ? 'Surplus / Profit' : 'Deficit / Loss'],
-    ['Total Liquid Cash Balance', totalBalance, 'Available Across All Accounts'],
-    ['Fixed Assets Valuation', totalAssetsValue, 'Equipment & Holdings'],
-    ['Outstanding Liabilities / Loans', totalLoansOutstanding, 'Debt Obligations'],
+    ['EXECUTIVE FINANCIAL METRICS', 'AMOUNT (ETB)', 'REMARK / STATUS'],
+    ['Total Gross Revenue (Income)', analysis.totalIncome, 'Total Inflow'],
+    ['Total Operating Expenses', analysis.totalExpense, 'Total Outflow'],
+    ['Net Profit Margin', analysis.netProfit, analysis.netProfit >= 0 ? 'Surplus / Profit' : 'Deficit / Loss'],
+    ['Average Daily Revenue', analysis.avgDailyIncome, 'Based on active record days'],
+    ['Average Daily Expense', analysis.avgDailyExpense, 'Based on active record days'],
+    ['Highest Revenue Single Day', analysis.highestIncomeDay.amount, `Date: ${analysis.highestIncomeDay.date}`],
+    ['Highest Expense Single Day', analysis.highestExpenseDay.amount, `Date: ${analysis.highestExpenseDay.date}`],
+    ['Liquid Cash Wallet Balances', analysis.cashTotal, `${analysis.cashPercent.toFixed(1)}% of total liquid cash`],
+    ['Bank Accounts Balance', analysis.bankTotal, `${analysis.bankPercent.toFixed(1)}% of total liquid cash`],
+    ['Total Liquid Cash Available', totalBalance, 'Across all wallets & bank accounts'],
+    ['Fixed Assets Valuation', totalAssetsValue, 'Equipment, Gaming units & Holdings'],
+    ['Outstanding Liabilities / Debt', totalLoansOutstanding, 'Active loans & liabilities'],
     ['Total Business Net Worth', netWorth, 'Equity Valuation'],
     [],
     ['BANK & WALLET ACCOUNTS SUMMARY', 'TYPE', 'OPENING BAL (ETB)', 'TOTAL IN (ETB)', 'TOTAL OUT (ETB)', 'CURRENT BALANCE (ETB)'],
@@ -363,7 +622,6 @@ export const generateExcelReport = ({
     ['CATEGORY PERFORMANCE SUMMARY', 'TYPE', 'RECORD COUNT', 'TOTAL AMOUNT (ETB)']
   ];
 
-  // Group transactions by category
   const categoryMap: Record<string, { type: string; count: number; total: number }> = {};
   transactions.forEach(t => {
     if (t.reversed) return;
@@ -382,85 +640,63 @@ export const generateExcelReport = ({
   formatWorksheet(wsSummary, {
     headerRowIdx: 3,
     headerStyle: STYLES.sectionHeader,
-    colWidths: [38, 24, 22, 22, 22, 24]
+    colWidths: [38, 24, 28, 22, 22, 24]
   });
 
-  XLSX.utils.book_append_sheet(wb, wsSummary, 'Banking Summary');
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Dashboard');
 
-  // ------------------- TAB 2: ALL TRANSACTIONS LEDGER -------------------
+  // ---------------- TAB 2: TRANSACTIONS AUDIT LEDGER ----------------
+  let runningBalance = 0;
   const allLedgerAOA: any[][] = [
-    ['PLUSZONE FINANCE ERP — ALL TRANSACTIONS AUDIT LEDGER'],
-    [`Report Title: ${reportTitle}`, `Scope: ${dateRangeLabel}`, `Generated: ${new Date().toLocaleString()}`, `By: ${state.currentUser?.name || 'Admin'} (${state.currentUser?.branch || 'Main'})`],
+    ['PLUS GAMEZONE PLC — ALL TRANSACTIONS AUDIT LEDGER'],
+    [`Report Title: ${reportTitle}`, `Scope: ${dateRangeLabel}`, `Generated: ${formatDateByCalendar(new Date(), state.calendarType || 'ETHIOPIAN', true)}`, `By: ${state.currentUser?.name || 'Admin'}`],
     [],
-    ['#', 'Transaction ID', 'Date & Time', 'Type', 'Category', 'Description', 'Wallet / Bank Account', 'Amount (ETB)', 'Who Made Transaction', 'Creator ID', 'Branch', 'Notes / Reference', 'Status'],
-    ...transactions.map((t, i) => [
-      i + 1,
-      t.id,
-      new Date(t.date).toLocaleString(),
-      t.type,
-      t.category,
-      t.description,
-      getWalletName(t.walletId, state),
-      t.amount,
-      t.creatorName || 'System', // Prominently highlighted "Who Made Transaction"
-      t.creatorId || '-',
-      t.branch || 'Main',
-      t.notes || t.refType || '-',
-      t.reversed ? 'Reversed' : 'Active'
-    ])
+    ['#', 'Transaction ID', 'Date & Time', 'Type', 'Category', 'Description', 'Wallet Account', 'Amount (ETB)', 'Running Balance (ETB)', 'Created By', 'Branch', 'Notes / Reference', 'Status'],
+    ...transactions.map((t, i) => {
+      if (!t.reversed) {
+        runningBalance += t.type === 'INCOME' ? t.amount : -t.amount;
+      }
+      return [
+        i + 1,
+        t.id,
+        formatDateByCalendar(t.date, state.calendarType || 'ETHIOPIAN', true),
+        t.type,
+        t.category,
+        t.description,
+        getWalletName(t.walletId, state),
+        t.amount,
+        runningBalance,
+        t.creatorName || 'System',
+        t.branch || 'Main',
+        t.notes || t.refType || '-',
+        t.reversed ? 'Reversed' : 'Active'
+      ];
+    })
   ];
 
   const wsAllLedger = XLSX.utils.aoa_to_sheet(allLedgerAOA);
-
   formatWorksheet(wsAllLedger, {
     headerRowIdx: 3,
     headerStyle: STYLES.tableHeaderNavy,
-    creatorColIdx: 8, // Column index 8 is "Who Made Transaction"
-    colWidths: [6, 16, 22, 12, 22, 36, 26, 18, 28, 15, 14, 22, 12]
+    creatorColIdx: 9,
+    colWidths: [6, 16, 22, 12, 22, 36, 26, 18, 20, 24, 14, 22, 12]
   });
 
-  // Colorize Income vs Expense vs Reversed rows in All Ledger
-  const rangeLedger = XLSX.utils.decode_range(wsAllLedger['!ref'] || 'A1:A1');
-  for (let R = 4; R <= rangeLedger.e.r; ++R) {
-    const typeCellRef = XLSX.utils.encode_cell({ r: R, c: 3 });
-    const statusCellRef = XLSX.utils.encode_cell({ r: R, c: 12 });
-    const typeVal = wsAllLedger[typeCellRef]?.v;
-    const statusVal = wsAllLedger[statusCellRef]?.v;
+  XLSX.utils.book_append_sheet(wb, wsAllLedger, 'Transactions');
 
-    let rowStyle = null;
-    if (statusVal === 'Reversed') {
-      rowStyle = STYLES.cellReversed;
-    } else if (typeVal === 'INCOME') {
-      rowStyle = STYLES.cellIncome;
-    } else if (typeVal === 'EXPENSE') {
-      rowStyle = STYLES.cellExpense;
-    }
-
-    if (rowStyle) {
-      for (let C = 0; C <= rangeLedger.e.c; ++C) {
-        if (C === 8) continue; // Keep creator column styling
-        const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
-        if (wsAllLedger[cellRef]) {
-          wsAllLedger[cellRef].s = { ...rowStyle, alignment: C === 7 ? { horizontal: 'right' } : undefined };
-        }
-      }
-    }
-  }
-
-  XLSX.utils.book_append_sheet(wb, wsAllLedger, 'All Transactions');
-
-  // ------------------- TAB 3: INCOME STATEMENT -------------------
+  // ---------------- TAB 3: INCOME STATEMENT ----------------
   const incomeTransactions = transactions.filter(t => t.type === 'INCOME');
   const incomeAOA: any[][] = [
-    ['PLUSZONE FINANCE ERP — GROSS INCOME & REVENUE LEDGER'],
-    [`Total Income: ${formatETB(income)}`, `Records: ${incomeTransactions.length}`, `Generated: ${new Date().toLocaleString()}`],
+    ['PLUS GAMEZONE PLC — GROSS REVENUE & INCOME STATEMENT'],
+    [`Total Revenue: ${formatETB(analysis.totalIncome)}`, `Records: ${incomeTransactions.length}`, `Generated: ${formatDateByCalendar(new Date(), state.calendarType || 'ETHIOPIAN', true)}`],
     [],
-    ['#', 'Date & Time', 'Category', 'Description', 'Deposit Bank / Wallet', 'Amount (ETB)', 'Who Made Transaction', 'Branch', 'Status'],
+    ['#', 'Date & Time', 'Source Category', 'Description', 'Customer', 'Deposit Bank / Wallet', 'Amount (ETB)', 'Created By', 'Branch', 'Status'],
     ...incomeTransactions.map((t, i) => [
       i + 1,
-      new Date(t.date).toLocaleString(),
+      formatDateByCalendar(t.date, state.calendarType || 'ETHIOPIAN', true),
       t.category,
       t.description,
+      t.notes || 'General Customer',
       getWalletName(t.walletId, state),
       t.amount,
       t.creatorName || 'System',
@@ -473,22 +709,22 @@ export const generateExcelReport = ({
   formatWorksheet(wsIncome, {
     headerRowIdx: 3,
     headerStyle: STYLES.tableHeaderGreen,
-    creatorColIdx: 6,
-    colWidths: [6, 22, 22, 36, 26, 18, 28, 14, 12]
+    creatorColIdx: 7,
+    colWidths: [6, 22, 22, 36, 24, 26, 18, 24, 14, 12]
   });
 
-  XLSX.utils.book_append_sheet(wb, wsIncome, 'Income Statement');
+  XLSX.utils.book_append_sheet(wb, wsIncome, 'Income');
 
-  // ------------------- TAB 4: EXPENSE STATEMENT -------------------
+  // ---------------- TAB 4: EXPENSES STATEMENT ----------------
   const expenseTransactions = transactions.filter(t => t.type === 'EXPENSE');
   const expenseAOA: any[][] = [
-    ['PLUSZONE FINANCE ERP — OPERATING EXPENSES LEDGER'],
-    [`Total Expenses: ${formatETB(expense)}`, `Records: ${expenseTransactions.length}`, `Generated: ${new Date().toLocaleString()}`],
+    ['PLUS GAMEZONE PLC — OPERATING EXPENSES LEDGER'],
+    [`Total Expenses: ${formatETB(analysis.totalExpense)}`, `Records: ${expenseTransactions.length}`, `Generated: ${formatDateByCalendar(new Date(), state.calendarType || 'ETHIOPIAN', true)}`],
     [],
-    ['#', 'Date & Time', 'Category', 'Description', 'Source Bank / Wallet', 'Amount (ETB)', 'Who Made Transaction', 'Branch', 'Status'],
+    ['#', 'Date & Time', 'Expense Category', 'Description / Vendor', 'Payment Method / Wallet', 'Amount (ETB)', 'Approved / Created By', 'Branch', 'Status'],
     ...expenseTransactions.map((t, i) => [
       i + 1,
-      new Date(t.date).toLocaleString(),
+      formatDateByCalendar(t.date, state.calendarType || 'ETHIOPIAN', true),
       t.category,
       t.description,
       getWalletName(t.walletId, state),
@@ -504,47 +740,121 @@ export const generateExcelReport = ({
     headerRowIdx: 3,
     headerStyle: STYLES.tableHeaderRed,
     creatorColIdx: 6,
-    colWidths: [6, 22, 22, 36, 26, 18, 28, 14, 12]
+    colWidths: [6, 22, 22, 36, 26, 18, 26, 14, 12]
   });
 
-  XLSX.utils.book_append_sheet(wb, wsExpense, 'Expense Statement');
+  XLSX.utils.book_append_sheet(wb, wsExpense, 'Expenses');
 
-  // ------------------- TAB 5: BANK ACCOUNTS CASH FLOW -------------------
-  const walletAOA: any[][] = [
-    ['PLUSZONE FINANCE ERP — BANK ACCOUNTS & LIQUID CASH FLOW'],
-    [`Total Cash Available: ${formatETB(totalBalance)}`, `Accounts Count: ${state.wallets.length}`],
+  // ---------------- TAB 5: RECEIVABLES & CUSTOMERS ----------------
+  const receivablesAOA: any[][] = [
+    ['PLUS GAMEZONE PLC — CUSTOMER RECEIVABLES & OUTSTANDING BALANCE LEDGER'],
+    [`Total Uncollected Receivables: ${formatETB(state.receivables.reduce((s, r) => s + (r.status === 'OUTSTANDING' ? r.amountOwed - r.amountCollected : 0), 0))}`],
     [],
-    ['#', 'Bank / Wallet Name', 'Account Type', 'Opening Balance (ETB)', 'Total Inflow (ETB)', 'Total Outflow (ETB)', 'Net Cash Movement (ETB)', 'Current Balance (ETB)', 'Transactions Count'],
-    ...state.wallets.map((w, i) => {
-      const wTxs = transactions.filter(t => t.walletId === w.id && !t.reversed);
-      const incSum = wTxs.filter(t => t.type === 'INCOME').reduce((s, t) => s + t.amount, 0);
-      const expSum = wTxs.filter(t => t.type === 'EXPENSE').reduce((s, t) => s + t.amount, 0);
-      const endingBal = w.openingBalance + incSum - expSum;
-
-      return [
-        i + 1,
-        w.name,
-        w.type,
-        w.openingBalance,
-        incSum,
-        expSum,
-        incSum - expSum,
-        endingBal,
-        wTxs.length
-      ];
-    })
+    ['#', 'Customer Name', 'Description', 'Amount Owed (ETB)', 'Amount Collected (ETB)', 'Outstanding Balance (ETB)', 'Due Date', 'Status'],
+    ...state.receivables.map((r, i) => [
+      i + 1,
+      r.customerName,
+      r.description,
+      r.amountOwed,
+      r.amountCollected,
+      r.amountOwed - r.amountCollected,
+      r.dueDate,
+      r.status
+    ])
   ];
 
-  const wsWallets = XLSX.utils.aoa_to_sheet(walletAOA);
-  formatWorksheet(wsWallets, {
+  const wsReceivables = XLSX.utils.aoa_to_sheet(receivablesAOA);
+  formatWorksheet(wsReceivables, {
     headerRowIdx: 3,
-    headerStyle: STYLES.tableHeaderTeal,
-    colWidths: [6, 30, 16, 22, 22, 22, 24, 22, 16]
+    headerStyle: STYLES.tableHeaderNavy,
+    colWidths: [6, 28, 36, 20, 20, 22, 16, 14]
   });
 
-  XLSX.utils.book_append_sheet(wb, wsWallets, 'Bank Accounts');
+  XLSX.utils.book_append_sheet(wb, wsReceivables, 'Receivables');
 
-  // ------------------- TAB 6: USER AUDIT & CREATOR SUMMARY -------------------
+  // ---------------- TAB 6: INVENTORY & FIXED ASSETS ----------------
+  const assetsAOA: any[][] = [
+    ['PLUS GAMEZONE PLC — INVENTORY & FIXED ASSETS VALUATION'],
+    [`Total Asset Holdings: ${formatETB(totalAssetsValue)}`, `Active Items: ${state.assets.length}`],
+    [],
+    ['#', 'Item / Asset Name', 'Category', 'Purchase Date', 'Purchase Price (ETB)', 'Current Valuation (ETB)', 'Depreciation Method', 'Status'],
+    ...state.assets.map((a, i) => [
+      i + 1,
+      a.name,
+      a.category,
+      a.purchaseDate,
+      a.purchasePrice,
+      a.currentValue,
+      a.depreciationMethod,
+      a.status
+    ])
+  ];
+
+  const wsAssets = XLSX.utils.aoa_to_sheet(assetsAOA);
+  formatWorksheet(wsAssets, {
+    headerRowIdx: 3,
+    headerStyle: STYLES.tableHeaderTeal,
+    colWidths: [6, 28, 20, 16, 22, 22, 22, 12]
+  });
+
+  XLSX.utils.book_append_sheet(wb, wsAssets, 'Inventory & Assets');
+
+  // ---------------- TAB 7: LOANS & LIABILITIES ----------------
+  const loansAOA: any[][] = [
+    ['PLUS GAMEZONE PLC — LOANS & DEBT LIABILITIES AUDIT'],
+    [`Total Outstanding Debt: ${formatETB(totalLoansOutstanding)}`],
+    [],
+    ['#', 'Loan Title', 'Counterparty / Lender', 'Direction', 'Initial Amount (ETB)', 'Outstanding Balance (ETB)', 'Interest Rate %', 'Due Date', 'Status'],
+    ...state.loans.map((l, i) => [
+      i + 1,
+      l.title,
+      l.counterparty,
+      l.direction || 'BORROWED',
+      l.initialAmount,
+      l.outstandingBalance,
+      l.interestRatePercent || 0,
+      l.dueDate,
+      l.status
+    ])
+  ];
+
+  const wsLoans = XLSX.utils.aoa_to_sheet(loansAOA);
+  formatWorksheet(wsLoans, {
+    headerRowIdx: 3,
+    headerStyle: STYLES.tableHeaderRed,
+    colWidths: [6, 26, 26, 16, 22, 24, 16, 16, 12]
+  });
+
+  XLSX.utils.book_append_sheet(wb, wsLoans, 'Loans & Liabilities');
+
+  // ---------------- TAB 8: EQUB LEDGER ----------------
+  const equbAOA: any[][] = [
+    ['PLUS GAMEZONE PLC — EQUB SAVINGS & POOL LEDGER'],
+    [`Active Equbs: ${state.equbs.length}`],
+    [],
+    ['#', 'Equb Group Name', 'Members Count', 'Round Contribution (ETB)', 'Current Round', 'Total Rounds', 'Interval', 'Status'],
+    ...state.equbs.map((e, i) => [
+      i + 1,
+      e.name,
+      e.members.length,
+      e.contributionPerRound,
+      e.currentRound,
+      e.totalRounds,
+      e.interval,
+      e.status
+    ])
+  ];
+
+  const wsEqub = XLSX.utils.aoa_to_sheet(equbAOA);
+  formatWorksheet(wsEqub, {
+    headerRowIdx: 3,
+    headerStyle: STYLES.tableHeaderIndigo,
+    colWidths: [6, 28, 16, 22, 16, 14, 18, 12]
+  });
+
+  XLSX.utils.book_append_sheet(wb, wsEqub, 'Equb Ledger');
+
+  // ---------------- TAB 9: USER AUDIT & CREATOR SUMMARY ----------------
   const creatorMap: Record<string, { name: string; role: string; branch: string; incTotal: number; expTotal: number; count: number }> = {};
 
   transactions.forEach(t => {
@@ -571,10 +881,10 @@ export const generateExcelReport = ({
   });
 
   const userAOA: any[][] = [
-    ['PLUSZONE FINANCE ERP — USER CREATOR AUDIT TRAIL'],
-    [`Total Users Active: ${Object.keys(creatorMap).length}`, `Generated: ${new Date().toLocaleString()}`],
+    ['PLUS GAMEZONE PLC — EMPLOYEE & CREATOR AUDIT TRAIL'],
+    [`Total Active Personnel: ${Object.keys(creatorMap).length}`, `Generated: ${new Date().toLocaleString()}`],
     [],
-    ['#', 'Who Made Transaction', 'System Role', 'Branch', 'Income Posted (ETB)', 'Expenses Posted (ETB)', 'Total Volume Handled (ETB)', 'Total Entries Created'],
+    ['#', 'Created By', 'System Role', 'Branch', 'Revenue Posted (ETB)', 'Expenses Posted (ETB)', 'Total Volume (ETB)', 'Records Created'],
     ...Object.values(creatorMap).map((u, i) => [
       i + 1,
       u.name,
@@ -591,14 +901,14 @@ export const generateExcelReport = ({
   formatWorksheet(wsUserAudit, {
     headerRowIdx: 3,
     headerStyle: STYLES.tableHeaderIndigo,
-    creatorColIdx: 1, // Highlight user column
-    colWidths: [6, 28, 16, 16, 22, 22, 26, 20]
+    creatorColIdx: 1,
+    colWidths: [6, 28, 16, 16, 22, 22, 26, 18]
   });
 
-  XLSX.utils.book_append_sheet(wb, wsUserAudit, 'User Audit Trail');
+  XLSX.utils.book_append_sheet(wb, wsUserAudit, 'Employee Audit');
 
   // Export Complete Multi-Tab Excel Workbook
-  XLSX.writeFile(wb, `PlusZone_Financial_Statement_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  XLSX.writeFile(wb, `Financial_Report_${new Date().toISOString().slice(0, 10)}.xlsx`);
 };
 
 /**

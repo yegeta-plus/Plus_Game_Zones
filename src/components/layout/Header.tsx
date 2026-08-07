@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut, Gamepad2, Send, Sparkles } from 'lucide-react';
 import { UserProfile, UserRole, NavTab } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
-import gameZoneLogo from '../../assets/images/game_zone_logo_clean_1786002952694.jpg';
+import gameZoneLogo from '../../assets/images/ps5_joystick_logo_1786093001391.jpg';
 import { requestNotificationPermission, sendExternalNotification } from '../../lib/notifications';
 
 export interface HeaderNotificationItem {
@@ -29,6 +29,8 @@ interface HeaderProps {
   lastRefreshedAt?: Date;
   isRefreshing?: boolean;
   autoRefreshEnabled?: boolean;
+  calendarType?: 'ETHIOPIAN' | 'GREGORIAN';
+  onToggleCalendarType?: (type: 'ETHIOPIAN' | 'GREGORIAN') => void;
   onToggleAutoRefresh?: () => void;
   onManualRefresh?: () => void;
 }
@@ -48,6 +50,8 @@ export const Header: React.FC<HeaderProps> = ({
   lastRefreshedAt,
   isRefreshing = false,
   autoRefreshEnabled = true,
+  calendarType = 'ETHIOPIAN',
+  onToggleCalendarType,
   onToggleAutoRefresh,
   onManualRefresh
 }) => {
@@ -132,6 +136,42 @@ export const Header: React.FC<HeaderProps> = ({
             <span className={`relative inline-flex rounded-full h-2 w-2 ${autoRefreshEnabled ? 'bg-emerald-500 dark:bg-[#00D4AA]' : 'bg-slate-400'}`}></span>
           </span>
         </button>
+
+        {/* Calendar Switcher Pill */}
+        {onToggleCalendarType && (
+          <div className="flex items-center bg-slate-100 dark:bg-[#1C2333] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40] text-xs">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                onToggleCalendarType('ETHIOPIAN');
+              }}
+              title="Switch to Ethiopian Calendar (E.C.)"
+              className={`px-2 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                calendarType === 'ETHIOPIAN'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              🇪🇹 E.C.
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                onToggleCalendarType('GREGORIAN');
+              }}
+              title="Switch to Gregorian Calendar (G.C.)"
+              className={`px-2 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                calendarType === 'GREGORIAN'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              🌐 G.C.
+            </button>
+          </div>
+        )}
 
         {/* Hide Amounts Toggle */}
         <button

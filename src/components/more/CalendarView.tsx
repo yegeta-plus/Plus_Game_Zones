@@ -33,6 +33,7 @@ import { formatETB } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 import {
   formatEthiopianDate,
+  formatDateByCalendar,
   toEthiopianDate,
   evaluatePagumeExemption,
   calculateNextEthiopianDueDate,
@@ -874,12 +875,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               SELECTED DAY LEDGER
             </span>
             <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-              {new Date(selectedDateStr).toLocaleDateString('en-US', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              })}
+              {formatDateByCalendar(selectedDateStr, calendarType, true)}
             </h4>
           </div>
 

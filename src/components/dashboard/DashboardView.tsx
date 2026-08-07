@@ -69,6 +69,7 @@ import {
 } from '../../lib/store';
 import {
   formatEthiopianDate,
+  formatDateByCalendar,
   toEthiopianDate,
   evaluatePagumeExemption,
   calculateNextEthiopianDueDate
@@ -90,6 +91,7 @@ interface DashboardViewProps {
   onOpenQuickEntry: () => void;
   onOpenTransferModal: () => void;
   onNavigateTab: (tab: any, subView?: any) => void;
+  onAddIncome?: (amount: number, category: string, description: string) => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -106,7 +108,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onToggleHideBalances,
   onOpenQuickEntry,
   onOpenTransferModal,
-  onNavigateTab
+  onNavigateTab,
+  onAddIncome
 }) => {
   const totalBalance = calculateTotalBusinessBalance(wallets, transactions, transfers);
   const { income, expense, profit } = calculateMonthlyStats(transactions);
@@ -372,10 +375,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-[#8899BB]">
             <span className="font-semibold text-slate-900 dark:text-white flex items-center gap-1">
               <Calendar className="w-3.5 h-3.5 text-emerald-500" />
-              {formattedEthDateStr}
+              {formatDateByCalendar(today, calendarType, true)}
             </span>
             <span className="text-slate-300 dark:text-slate-700">•</span>
-            <span className="font-medium text-slate-500 dark:text-slate-400">Gregorian: {formattedGregorianDate}</span>
+            <span className="font-medium text-slate-500 dark:text-slate-400">
+              {calendarType === 'GREGORIAN' ? `E.C.: ${formattedEthDateStr}` : `Gregorian: ${formattedGregorianDate}`}
+            </span>
             <span className="text-slate-300 dark:text-slate-700">•</span>
             <span className="text-slate-800 dark:text-slate-200 font-semibold">{currentUser.branch}</span>
           </div>
@@ -388,9 +393,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               triggerHaptic('medium');
               onOpenQuickEntry();
             }}
-            className="flex-1 md:flex-none px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#00D4AA] to-[#00B894] text-[#0A0E1A] font-semibold text-xs flex items-center justify-center gap-2 shadow-md hover:brightness-110 cursor-pointer active:scale-95 transition-all"
+            className="flex-1 md:flex-none px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-800 dark:text-white font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all"
           >
-            <PlusCircle className="w-4 h-4" />
+            <PlusCircle className="w-4 h-4 text-emerald-600 dark:text-[#00D4AA]" />
             <span>New Revenue / Expense</span>
           </button>
 
@@ -905,7 +910,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     }`}>
                       {tx.type === 'INCOME' ? '+' : '-'}{hideBalances ? '••••' : formatETB(tx.amount)}
                     </p>
-                    <span className="text-[10px] text-slate-400 font-mono">{tx.date}</span>
+                    <span className="text-[10px] text-slate-400 font-mono">{formatDateByCalendar(tx.date, calendarType, false)}</span>
                   </div>
                 </div>
               ))}

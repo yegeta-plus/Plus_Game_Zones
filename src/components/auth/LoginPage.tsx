@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { UserProfile } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
-import gameZoneLogo from '../../assets/images/game_zone_logo_clean_1786002952694.jpg';
+import gameZoneLogo from '../../assets/images/ps5_joystick_logo_1786093001391.jpg';
 import { FingerprintModal } from './FingerprintModal';
 import { getEnrolledBiometric } from '../../lib/biometrics';
 
