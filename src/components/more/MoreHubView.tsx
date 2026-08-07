@@ -32,9 +32,12 @@ import { CalendarView } from './CalendarView';
 import { BackupView } from './BackupView';
 import { CategoriesView } from './CategoriesView';
 import { SettingsView, SettingsTabType } from './SettingsView';
+import { ProfileView } from './ProfileView';
+import { User, Camera, Mail } from 'lucide-react';
 
 export type SubViewType =
   | 'HUB'
+  | 'PROFILE'
   | 'SETTINGS'
   | 'GOALS'
   | 'RECURRING'
@@ -199,6 +202,9 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
           <span>Back to More Operations</span>
         </button>
 
+        {subView === 'PROFILE' && (
+          <ProfileView currentUser={state.currentUser} onUpdateState={onUpdateState} />
+        )}
         {subView === 'SETTINGS' && (
           <SettingsView
             state={state}
@@ -294,6 +300,48 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
       <div>
         <h2 className="text-xl font-bold text-slate-900 dark:text-[#F0F4FF]">ERP Operations Hub</h2>
         <p className="text-xs text-slate-500 dark:text-[#8899BB] mt-0.5">Advanced business modules, compliance & settings</p>
+      </div>
+
+      {/* User Account Profile Card */}
+      <div
+        onClick={() => {
+          triggerHaptic('light');
+          setSubView('PROFILE');
+        }}
+        className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] hover:border-[#00D4AA]/60 rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all shadow-sm hover:bg-slate-50 dark:hover:bg-[#1C2333] group"
+      >
+        <div className="flex items-center gap-3">
+          {state.currentUser.avatarUrl ? (
+            <img
+              src={state.currentUser.avatarUrl}
+              alt={state.currentUser.name}
+              className="w-12 h-12 rounded-xl object-cover border-2 border-[#00D4AA]/40 group-hover:scale-105 transition-transform"
+            />
+          ) : (
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-emerald-500 to-indigo-600 text-white flex items-center justify-center font-black text-sm border border-[#00D4AA]/40 group-hover:scale-105 transition-transform">
+              {state.currentUser.name ? state.currentUser.name.substring(0, 2).toUpperCase() : 'US'}
+            </div>
+          )}
+
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                {state.currentUser.name || 'User Account'}
+              </h3>
+              <span className="text-[9px] bg-[#00D4AA]/20 text-[#00D4AA] px-1.5 py-0.2 rounded font-mono font-extrabold uppercase">
+                {state.currentUser.role}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-[#8899BB] mt-0.5">
+              {state.currentUser.email || 'Manage profile photo, password & account details'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 text-xs font-bold text-[#00D4AA]">
+          <span className="hidden sm:inline">Manage Account</span>
+          <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+        </div>
       </div>
 
       {/* Operational Modules Section */}

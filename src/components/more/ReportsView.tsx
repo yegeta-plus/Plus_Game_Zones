@@ -33,6 +33,8 @@ export const ReportsView: React.FC<{ state: ERPState }> = ({ state }) => {
   const [dateRange, setDateRange] = useState<'all' | 'today' | 'month' | 'last_month'>('all');
   const [selectedWallet, setSelectedWallet] = useState<string>('all');
   const [selectedType, setSelectedType] = useState<'all' | 'INCOME' | 'EXPENSE'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
 
   // Email modal state
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
@@ -54,6 +56,9 @@ export const ReportsView: React.FC<{ state: ERPState }> = ({ state }) => {
       // Wallet filter
       if (selectedWallet !== 'all' && t.walletId !== selectedWallet) return false;
 
+      // Category filter
+      if (selectedCategory !== 'all' && t.category !== selectedCategory) return false;
+
       // Date filter
       if (dateRange !== 'all') {
         const tDate = new Date(t.date);
@@ -71,7 +76,19 @@ export const ReportsView: React.FC<{ state: ERPState }> = ({ state }) => {
 
       return true;
     });
-  }, [state.transactions, selectedType, selectedWallet, dateRange]);
+  }, [state.transactions, selectedType, selectedWallet, selectedCategory, dateRange]);
+
+  const activeFilterCount = (dateRange !== 'all' ? 1 : 0) +
+    (selectedWallet !== 'all' ? 1 : 0) +
+    (selectedType !== 'all' ? 1 : 0) +
+    (selectedCategory !== 'all' ? 1 : 0);
+
+  const resetFilters = () => {
+    setDateRange('all');
+    setSelectedWallet('all');
+    setSelectedType('all');
+    setSelectedCategory('all');
+  };
 
   const totalBalance = calculateTotalBusinessBalance(state.wallets, state.transactions, state.transfers);
   
@@ -227,62 +244,80 @@ export const ReportsView: React.FC<{ state: ERPState }> = ({ state }) => {
         </div>
       </div>
 
-      {/* Filter Toolbar */}
-      <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-3.5 space-y-3 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-[#8899BB]">
+      {/* Filter Toolbar Header with Icon Button */}
+      <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-3.5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Filter Icon Trigger Button */}
+          <button
+            onClick={() => {
+              triggerHaptic('light');
+              setIsFilterModalOpen(true);
+            }}
+            className="px-3.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/80 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95"
+          >
             <Filter className="w-4 h-4 text-indigo-500" />
-            <span>Statement Filters & Scope</span>
-          </div>
-          <span className="text-[11px] font-mono font-bold text-indigo-600 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2.5 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800/60">
-            {filteredTransactions.length} Transactions Match
-          </span>
+            <span>Filter Statements</span>
+            {activeFilterCount > 0 && (
+              <span className="w-5 h-5 rounded-full bg-indigo-600 text-white font-mono text-[10px] flex items-center justify-center font-extrabold">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+
+          {/* Active Filter Pills */}
+          {dateRange !== 'all' && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] px-2.5 py-1 rounded-lg text-slate-800 dark:text-slate-200">
+              Period: {dateRange.replace('_', ' ').toUpperCase()}
+              <button onClick={() => setDateRange('all')} className="text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer ml-0.5">
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+
+          {selectedWallet !== 'all' && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] px-2.5 py-1 rounded-lg text-slate-800 dark:text-slate-200">
+              Wallet: {getWalletName(selectedWallet)}
+              <button onClick={() => setSelectedWallet('all')} className="text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer ml-0.5">
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+
+          {selectedType !== 'all' && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] px-2.5 py-1 rounded-lg text-slate-800 dark:text-slate-200">
+              Type: {selectedType}
+              <button onClick={() => setSelectedType('all')} className="text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer ml-0.5">
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+
+          {selectedCategory !== 'all' && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] px-2.5 py-1 rounded-lg text-slate-800 dark:text-slate-200">
+              Cat: {selectedCategory}
+              <button onClick={() => setSelectedCategory('all')} className="text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer ml-0.5">
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+
+          {activeFilterCount > 0 && (
+            <button
+              onClick={() => {
+                triggerHaptic('light');
+                resetFilters();
+              }}
+              className="text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer ml-1"
+            >
+              Reset All
+            </button>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-          {/* Date Range Selector */}
-          <div>
-            <label className="text-[10px] text-slate-500 dark:text-[#8899BB] block mb-1 font-semibold uppercase">Period Range</label>
-            <select
-              value={dateRange}
-              onChange={(e) => setDateRange(e.target.value as any)}
-              className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2 text-xs text-slate-900 dark:text-white font-bold outline-none"
-            >
-              <option value="all">All Time History</option>
-              <option value="today">Today Only</option>
-              <option value="month">This Month</option>
-              <option value="last_month">Last Month</option>
-            </select>
-          </div>
-
-          {/* Wallet Selector */}
-          <div>
-            <label className="text-[10px] text-slate-500 dark:text-[#8899BB] block mb-1 font-semibold uppercase">Wallet / Account</label>
-            <select
-              value={selectedWallet}
-              onChange={(e) => setSelectedWallet(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2 text-xs text-slate-900 dark:text-white font-bold outline-none"
-            >
-              <option value="all">All Wallets & Accounts</option>
-              {state.wallets.map(w => (
-                <option key={w.id} value={w.id}>{w.name} ({w.type})</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Type Selector */}
-          <div>
-            <label className="text-[10px] text-slate-500 dark:text-[#8899BB] block mb-1 font-semibold uppercase">Transaction Type</label>
-            <select
-              value={selectedType}
-              onChange={(e) => setSelectedType(e.target.value as any)}
-              className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2 text-xs text-slate-900 dark:text-white font-bold outline-none"
-            >
-              <option value="all">All Types (Income & Expense)</option>
-              <option value="INCOME">Income Only</option>
-              <option value="EXPENSE">Expense Only</option>
-            </select>
-          </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-mono font-bold text-indigo-600 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800/60 shrink-0">
+            {filteredTransactions.length} Match
+          </span>
         </div>
       </div>
 
@@ -541,6 +576,146 @@ export const ReportsView: React.FC<{ state: ERPState }> = ({ state }) => {
           </p>
         )}
       </div>
+
+      {/* Filter Modal Overlay */}
+      {isFilterModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-3xl max-w-md w-full p-5 space-y-4 shadow-2xl relative">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#1E2D40] pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                  <Filter className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Filter Statement Scope</h3>
+                  <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">Select filter parameters to refine financial records</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsFilterModalOpen(false)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#1C2333] text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              {/* Period Range */}
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 dark:text-[#8899BB] block mb-1.5 uppercase tracking-wider">
+                  Period Range
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'all', label: 'All Time' },
+                    { id: 'today', label: 'Today Only' },
+                    { id: 'month', label: 'This Month' },
+                    { id: 'last_month', label: 'Last Month' },
+                  ].map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setDateRange(p.id as any)}
+                      className={`p-2.5 rounded-xl font-bold border text-xs text-left transition-all cursor-pointer ${
+                        dateRange === p.id
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                          : 'bg-slate-50 dark:bg-[#1C2333] border-slate-200 dark:border-[#1E2D40] text-slate-700 dark:text-slate-200 hover:border-indigo-400'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Wallet / Account Selector */}
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 dark:text-[#8899BB] block mb-1.5 uppercase tracking-wider">
+                  Wallet / Account Source
+                </label>
+                <select
+                  value={selectedWallet}
+                  onChange={(e) => setSelectedWallet(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-bold outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  <option value="all">All Wallets & Accounts</option>
+                  {state.wallets.map(w => (
+                    <option key={w.id} value={w.id}>{w.name} ({w.type})</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Transaction Type Selector */}
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 dark:text-[#8899BB] block mb-1.5 uppercase tracking-wider">
+                  Transaction Type
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'all', label: 'All Types' },
+                    { id: 'INCOME', label: 'Income Only' },
+                    { id: 'EXPENSE', label: 'Expense Only' },
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setSelectedType(t.id as any)}
+                      className={`p-2 rounded-xl font-bold border text-xs text-center transition-all cursor-pointer ${
+                        selectedType === t.id
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                          : 'bg-slate-50 dark:bg-[#1C2333] border-slate-200 dark:border-[#1E2D40] text-slate-700 dark:text-slate-200 hover:border-indigo-400'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Category Filter */}
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 dark:text-[#8899BB] block mb-1.5 uppercase tracking-wider">
+                  Specific Category
+                </label>
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-bold outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  <option value="all">All Categories</option>
+                  {state.categories.map(c => (
+                    <option key={c.id} value={c.name}>{c.name} ({c.type})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="pt-3 border-t border-slate-100 dark:border-[#1E2D40] flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  resetFilters();
+                }}
+                className="px-3 py-2 rounded-xl border border-slate-200 dark:border-[#1E2D40] text-rose-600 dark:text-rose-400 font-bold text-xs hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+              >
+                Reset All
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  setIsFilterModalOpen(false);
+                }}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
+              >
+                Apply ({filteredTransactions.length} Matches)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MONTHLY REPORT EMAIL DISPATCH MODAL */}
       {isEmailModalOpen && (
