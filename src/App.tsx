@@ -281,8 +281,14 @@ export default function App() {
 
     if (data.isCreditSale) {
       triggerToast(`📋 Credit Sale recorded for ${data.customerName}! Saved to Receivables ledger.`);
+      sendExternalNotification('PlusZone ERP - Credit Sale 📋', {
+        body: `Credit Sale of ${formatETB(data.amount)} recorded for customer ${data.customerName}.`
+      });
     } else {
       triggerToast(`${formatETB(data.amount)} ${(data.type || '').toLowerCase()} logged to ${targetWallet?.name || 'wallet'}`);
+      sendExternalNotification(`PlusZone ERP - ${data.type === 'INCOME' ? 'Income' : 'Expense'} Logged 💰`, {
+        body: `${formatETB(data.amount)} ${data.type.toLowerCase()} logged to ${targetWallet?.name || 'wallet'} (${data.category}).`
+      });
     }
     performRefresh(true);
   };
@@ -306,6 +312,9 @@ export default function App() {
       transactions: [newTx, ...prev.transactions]
     }));
     triggerToast(`🎮 ${formatETB(amount)} PS5 Gaming revenue logged to ${mainWallet.name}!`);
+    sendExternalNotification('PlusZone ERP - Gaming Revenue 🎮', {
+      body: `PS5 Revenue ${formatETB(amount)} logged (${category}) to ${mainWallet.name}.`
+    });
     performRefresh(true);
   };
 
@@ -399,6 +408,9 @@ export default function App() {
     }));
 
     triggerToast(`${formatETB(data.amount)} transferred from ${fromW?.name} to ${toW?.name}`);
+    sendExternalNotification('PlusZone ERP - Wallet Transfer 🔄', {
+      body: `Transferred ${formatETB(data.amount)} from ${fromW?.name || 'Wallet'} to ${toW?.name || 'Wallet'} (${data.reason}).`
+    });
     performRefresh(true);
   };
 
@@ -606,6 +618,9 @@ export default function App() {
       const targetW = state.wallets.find(w => w.id === splits[0]?.walletId);
       triggerToast(`${formatETB(totalPaid)} Equb contribution paid via ${targetW?.name || 'wallet'}`);
     }
+    sendExternalNotification('PlusZone ERP - Equb Contribution 🤝', {
+      body: `Paid ${formatETB(totalPaid)} Equb round contribution for ${targetEqub.name}.`
+    });
     performRefresh(true);
   };
 
@@ -636,6 +651,9 @@ export default function App() {
     }));
 
     triggerToast(`🎉 ${formatETB(netPool)} Equb Payout credited to ${targetWallet?.name}!`);
+    sendExternalNotification('PlusZone ERP - Equb Payout Claimed 🎉', {
+      body: `${formatETB(netPool)} Equb payout claimed & credited to ${targetWallet?.name || 'wallet'}!`
+    });
     performRefresh(true);
   };
 
@@ -755,6 +773,9 @@ export default function App() {
     }));
 
     triggerToast(isLent ? `Lent loan recorded for ${created.counterparty}` : `Borrowed loan "${created.title}" recorded.`);
+    sendExternalNotification('PlusZone ERP - Loan Activity 🏦', {
+      body: `${isLent ? 'Lent' : 'Borrowed'} loan of ${formatETB(created.initialAmount)} recorded (${created.counterparty}).`
+    });
     performRefresh(true);
   };
 
@@ -814,6 +835,11 @@ export default function App() {
         ? `Collected ${formatETB(amount)} loan repayment from ${targetLoan.counterparty}!`
         : `Paid ${formatETB(amount)} installment to ${targetLoan.counterparty}!`
     );
+    sendExternalNotification('PlusZone ERP - Loan Payment 💳', {
+      body: isLent
+        ? `Collected ${formatETB(amount)} loan repayment from ${targetLoan.counterparty}.`
+        : `Paid ${formatETB(amount)} loan installment to ${targetLoan.counterparty}.`
+    });
     performRefresh(true);
   };
 
@@ -1019,6 +1045,16 @@ export default function App() {
       handleUpdateLoan(req.targetId, req.payload);
     } else if (req.actionType === 'DELETE_LOAN') {
       handleDeleteLoan(req.targetId);
+    } else if (req.actionType === 'REVERSE_TRANSACTION') {
+      handleReverseTransaction(req.targetId);
+    } else if (req.actionType === 'DELETE_TRANSACTION') {
+      handleDeleteTransaction(req.targetId);
+    } else if (req.actionType === 'EDIT_TRANSACTION' && req.payload) {
+      handleUpdateTransaction(req.targetId, req.payload);
+    } else if (req.actionType === 'DELETE_WALLET') {
+      handleDeleteWallet(req.targetId);
+    } else if (req.actionType === 'EDIT_WALLET' && req.payload) {
+      handleUpdateWallet(req.targetId, req.payload);
     }
 
     setState(prev => ({
@@ -1032,7 +1068,7 @@ export default function App() {
       } : r)
     }));
 
-    triggerToast(`✅ Co-admin request approved and executed!`);
+    triggerToast(`✅ Request approved and executed!`);
     performRefresh(true);
   };
 
@@ -1062,7 +1098,18 @@ export default function App() {
       actionTab?: NavTab;
     }> = [];
 
-    // Equb notifications
+    // Pending Approval Requests for Admins & SuperAdmins
+    const pendingReqs = (state.approvalRequests || []).filter(r => r.status === 'PENDING');
+    if (pendingReqs.length > 0 && (state.currentUser.role === 'SuperAdmin' || state.currentUser.role === 'Admin')) {
+      list.unshift({
+        id: `notif-approval-summary`,
+        title: `⚠️ ${pendingReqs.length} Action(s) Pending Admin Approval`,
+        message: `Major changes requested by ${pendingReqs[0].requestedByName} (${pendingReqs[0].actionType.replace(/_/g, ' ')}) need sign-off.`,
+        type: 'HIGH',
+        time: 'Urgent',
+        actionTab: 'equb'
+      });
+    }
     state.equbs.filter(e => e.status === 'ACTIVE').forEach(eq => {
       list.push({
         id: `notif-eq-${eq.id}`,
@@ -1115,7 +1162,7 @@ export default function App() {
     }
 
     return list;
-  }, [state.equbs, state.loans, state.wallets, state.transactions, state.transfers]);
+  }, [state.equbs, state.loans, state.wallets, state.transactions, state.transfers, state.approvalRequests, state.currentUser]);
 
   if (!isLoggedIn) {
     return (
@@ -1231,6 +1278,7 @@ export default function App() {
             onUpdateTransaction={handleUpdateTransaction}
             onDeleteTransaction={handleDeleteTransaction}
             onClearAllTransactions={handleClearAllTransactions}
+            onRequestApproval={handleCreateApprovalRequest}
           />
         )}
 

@@ -277,27 +277,31 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
         </div>
 
         <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
-          <button
-            onClick={() => {
-              triggerHaptic('medium');
-              setShowShegerModal(true);
-            }}
-            className="px-3 py-2 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:brightness-110 transition-all border border-blue-400/30"
-          >
-            <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">Verify ShegerPay FT</span>
-          </button>
+          {currentUser.role === 'SuperAdmin' && (
+            <>
+              <button
+                onClick={() => {
+                  triggerHaptic('medium');
+                  setShowShegerModal(true);
+                }}
+                className="px-3 py-2 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:brightness-110 transition-all border border-blue-400/30"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Verify ShegerPay FT</span>
+              </button>
 
-          <button
-            onClick={() => {
-              triggerHaptic('medium');
-              setShowIntegrationModal(true);
-            }}
-            className="px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:brightness-110 transition-all border border-emerald-400/30"
-          >
-            <Zap className="w-3.5 h-3.5 fill-current shrink-0" />
-            <span className="truncate">Bank Sync</span>
-          </button>
+              <button
+                onClick={() => {
+                  triggerHaptic('medium');
+                  setShowIntegrationModal(true);
+                }}
+                className="px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:brightness-110 transition-all border border-emerald-400/30"
+              >
+                <Zap className="w-3.5 h-3.5 fill-current shrink-0" />
+                <span className="truncate">Bank Sync</span>
+              </button>
+            </>
+          )}
 
           <button
             onClick={() => {
@@ -1256,6 +1260,9 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
         isOpen={showIntegrationModal}
         onClose={() => setShowIntegrationModal(false)}
         wallets={wallets}
+        transactions={transactions}
+        transfers={transfers}
+        onUpdateWallet={onUpdateWallet}
         onAddTransaction={onAddTransaction}
         onBatchPostTransactions={onBatchPostTransactions}
       />

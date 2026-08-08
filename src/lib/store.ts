@@ -88,7 +88,7 @@ const DEFAULT_WALLETS: Wallet[] = [
     id: 'w-telebirr',
     name: 'Telebirr Merchant Wallet',
     type: 'TELEBIRR',
-    accountNumber: '0911002233',
+    accountNumber: '0989367877',
     openingBalance: 0,
     totalIn: 0,
     totalOut: 0,
@@ -225,7 +225,11 @@ export function loadInitialState(): ERPState {
             return { ...w, color: '#F97316' }; // Orange
           }
           if (w.type === 'TELEBIRR') {
-            return { ...w, color: '#0EA5E9' }; // Light Blue
+            return {
+              ...w,
+              accountNumber: w.accountNumber && w.accountNumber !== '0911002233' ? w.accountNumber : '0989367877',
+              color: '#0EA5E9'
+            };
           }
           if (w.type === 'EBIRR') {
             return { ...w, color: '#10B981' }; // Green

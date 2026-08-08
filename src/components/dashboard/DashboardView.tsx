@@ -75,6 +75,7 @@ import {
   calculateNextEthiopianDueDate
 } from '../../lib/ethiopianCalendar';
 import { triggerHaptic } from '../../lib/haptics';
+import { BrandLogo } from '../common/BrandLogo';
 
 interface DashboardViewProps {
   currentUser: UserProfile;
@@ -144,16 +145,52 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       .reduce((sum, l) => sum + (l.remainingBalance ?? l.outstandingBalance ?? 0), 0);
   }, [loans]);
 
-  // Recharts 7-Day Cash Flow Data
-  const chartData = [
-    { day: 'Mon', income: 45000, expense: 12000, net: 33000 },
-    { day: 'Tue', income: 38000, expense: 28000, net: 10000 },
-    { day: 'Wed', income: 52000, expense: 15000, net: 37000 },
-    { day: 'Thu', income: 29000, expense: 21000, net: 8000 },
-    { day: 'Fri', income: 68000, expense: 34000, net: 34000 },
-    { day: 'Sat', income: 84000, expense: 42000, net: 42000 },
-    { day: 'Sun', income: 34500, expense: 18000, net: 16500 }
-  ];
+  // Dynamic 7-Day Cash Flow Data calculated directly from posted transactions
+  const chartData = useMemo(() => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const result: Array<{ day: string; income: number; expense: number; net: number }> = [];
+
+    const now = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const dayName = days[d.getDay()];
+
+      let dayIncome = 0;
+      let dayExpense = 0;
+
+      transactions.forEach(t => {
+        if (t.date && t.date.startsWith(dateStr)) {
+          if (t.type === 'INCOME') dayIncome += t.amount;
+          if (t.type === 'EXPENSE') dayExpense += t.amount;
+        }
+      });
+
+      result.push({
+        day: dayName,
+        income: dayIncome,
+        expense: dayExpense,
+        net: dayIncome - dayExpense
+      });
+    }
+
+    // If no transactions recorded yet for the week, provide default sample curve so chart renders cleanly
+    const totalWeekActivity = result.reduce((s, r) => s + r.income + r.expense, 0);
+    if (totalWeekActivity === 0) {
+      return [
+        { day: 'Mon', income: 45000, expense: 12000, net: 33000 },
+        { day: 'Tue', income: 38000, expense: 28000, net: 10000 },
+        { day: 'Wed', income: 52000, expense: 15000, net: 37000 },
+        { day: 'Thu', income: 29000, expense: 21000, net: 8000 },
+        { day: 'Fri', income: 68000, expense: 34000, net: 34000 },
+        { day: 'Sat', income: 84000, expense: 42000, net: 42000 },
+        { day: 'Sun', income: 34500, expense: 18000, net: 16500 }
+      ];
+    }
+
+    return result;
+  }, [transactions]);
 
   // Highest wallet balance for relative progress scaling
   const maxWalletBalance = useMemo(() => {
@@ -747,10 +784,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     className="bg-slate-50 dark:bg-[#1C2333] border rounded-2xl p-3.5 cursor-pointer hover:border-emerald-400 dark:hover:border-[#00D4AA]/60 transition-all space-y-2.5 relative overflow-hidden group"
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div
-                          className="w-3 h-3 rounded-full shrink-0 shadow-xs"
-                          style={{ backgroundColor: w.color }}
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <BrandLogo
+                          type={w.type}
+                          size="sm"
+                          customColor={w.color}
+                          customLogoUrl={w.customLogoUrl}
                         />
                         <span className="text-xs font-semibold text-slate-900 dark:text-white truncate">
                           {w.name}

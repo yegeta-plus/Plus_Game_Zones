@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut, Gamepad2, Send, Sparkles } from 'lucide-react';
 import { UserProfile, UserRole, NavTab } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
-import gameZoneLogo from '../../assets/images/ps5_joystick_logo_1786093001391.jpg';
 import { requestNotificationPermission, sendExternalNotification } from '../../lib/notifications';
 
 export interface HeaderNotificationItem {
@@ -96,15 +95,15 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-3">
           <div className="relative w-10 h-10 rounded-xl overflow-hidden border border-emerald-500/30 shadow-md shadow-emerald-500/10 shrink-0 bg-[#0A0E1A]">
             <img
-              src={gameZoneLogo}
-              alt="PlusZone Game Zone Logo"
+              src="/app-logo-transparent.png"
+              alt="Plus Game Zone Logo"
               referrerPolicy="no-referrer"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain p-0.5"
             />
           </div>
           <div>
             <h1 className="text-sm font-bold text-slate-900 dark:text-[#F0F4FF] leading-tight">
-              PlusZone Game Zone
+              Plus Game Zone
             </h1>
             
             {/* User Badge */}

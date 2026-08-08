@@ -44,6 +44,7 @@ interface TransactionsViewProps {
   }) => void;
   onDeleteTransaction?: (txId: string) => void;
   onClearAllTransactions?: () => void;
+  onRequestApproval?: (req: Omit<import('../../types').AdminApprovalRequest, 'id' | 'createdAt' | 'requestedBy' | 'requestedByName' | 'status'>) => void;
 }
 
 export const TransactionsView: React.FC<TransactionsViewProps> = ({
@@ -56,7 +57,8 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   onReverseTransaction,
   onUpdateTransaction,
   onDeleteTransaction,
-  onClearAllTransactions
+  onClearAllTransactions,
+  onRequestApproval
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedWalletId, setSelectedWalletId] = useState('ALL');
@@ -131,9 +133,24 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   };
 
   const handleConfirmDelete = () => {
-    if (confirmDeleteTxId && onDeleteTransaction) {
+    if (confirmDeleteTxId) {
       triggerHaptic('warning');
-      onDeleteTransaction(confirmDeleteTxId);
+      const targetTx = transactions.find(t => t.id === confirmDeleteTxId);
+
+      if ((currentUser.role === 'Partner' || currentUser.role === 'Viewer') && onRequestApproval) {
+        onRequestApproval({
+          actionType: 'DELETE_TRANSACTION',
+          targetId: confirmDeleteTxId,
+          targetTitle: targetTx ? `${targetTx.description} (${formatETB(targetTx.amount)})` : 'Transaction Deletion'
+        });
+        setConfirmDeleteTxId(null);
+        setActiveTxDetail(null);
+        return;
+      }
+
+      if (onDeleteTransaction) {
+        onDeleteTransaction(confirmDeleteTxId);
+      }
       setConfirmDeleteTxId(null);
       setActiveTxDetail(null);
     }
@@ -218,6 +235,20 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
   const handleConfirmReversal = (txId: string) => {
     triggerHaptic('warning');
+    const targetTx = transactions.find(t => t.id === txId);
+    
+    // If current user is Partner/Viewer or non-SuperAdmin requesting reversal on locked tx
+    if ((currentUser.role === 'Partner' || currentUser.role === 'Viewer') && onRequestApproval) {
+      onRequestApproval({
+        actionType: 'REVERSE_TRANSACTION',
+        targetId: txId,
+        targetTitle: targetTx ? `${targetTx.description} (${formatETB(targetTx.amount)})` : 'Transaction Reversal'
+      });
+      setConfirmReversalTxId(null);
+      setActiveTxDetail(null);
+      return;
+    }
+
     onReverseTransaction(txId);
     setConfirmReversalTxId(null);
     setActiveTxDetail(null);

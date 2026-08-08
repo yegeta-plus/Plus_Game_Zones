@@ -103,7 +103,7 @@ export async function registerBiometricCredential(user: { id: string; email: str
       const publicKeyCredentialCreationOptions: PublicKeyCredentialCreationOptions = {
         challenge,
         rp: {
-          name: 'PlusZone Game Zone Finance ERP',
+          name: 'Plus Game Zone',
           id: window.location.hostname || 'localhost'
         },
         user: {

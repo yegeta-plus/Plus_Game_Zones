@@ -18,16 +18,21 @@ import {
   Sliders,
   ShieldCheck,
   RefreshCw,
-  Database
+  Database,
+  Scale,
+  AlertCircle
 } from 'lucide-react';
-import { Wallet, TransactionType } from '../../types';
-import { formatETB } from '../../lib/store';
+import { Wallet, TransactionType, Transaction, Transfer } from '../../types';
+import { formatETB, calculateWalletBalance } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 
 interface TelebirrIntegrationModalProps {
   isOpen: boolean;
   onClose: () => void;
   wallets: Wallet[];
+  transactions?: Transaction[];
+  transfers?: Transfer[];
+  onUpdateWallet?: (walletId: string, updates: Partial<Wallet>) => void;
   onAddTransaction?: (data: {
     type: TransactionType;
     amount: number;
@@ -52,8 +57,8 @@ type ActiveTab = 'SMS_PARSER' | 'BULK_IMPORT' | 'API_CONFIG' | 'SHEGERPAY_VERIFY
 const SAMPLE_MESSAGES = {
   TELEBIRR: [
     {
-      label: 'Telebirr Received (Income)',
-      text: 'Dear Customer, you have received ETB 12,500.00 from ABEBE KEBEDE (251911223344) on 2026-08-05 10:15:20. Transaction ID: 8A49204829. Your current balance is ETB 45,200.00. Thank you for using telebirr.'
+      label: 'Telebirr 0989367877 Received (Income)',
+      text: 'Dear Customer, you have received ETB 12,500.00 from ABEBE KEBEDE (251989367877) on 2026-08-05 10:15:20. Transaction ID: 8A49204829. Your current balance is ETB 45,200.00. Thank you for using telebirr.'
     },
     {
       label: 'Telebirr Payment (Expense)',
@@ -62,22 +67,22 @@ const SAMPLE_MESSAGES = {
   ],
   CBE: [
     {
-      label: 'CBE Transfer Received (Income)',
+      label: 'CBE 1000751694559 Credit (Income)',
       text: 'Dear Customer, your account 1000751694559 has been credited with ETB 35,000.00 by BIRHANU WORKU on 05-AUG-2026. Ref: FT2608059082. Available balance ETB 145,200.00. Commercial Bank of Ethiopia.'
     },
     {
-      label: 'CBE Transfer Sent (Expense)',
+      label: 'CBE 1000751694559 Debit (Expense)',
       text: 'Dear Customer, your account 1000751694559 has been debited with ETB 8,500.00 to TELEBIRR TRANSFER on 05-AUG-2026. Ref: FT2608054412. Available balance ETB 136,700.00. Commercial Bank of Ethiopia.'
     }
   ],
   EBIRR: [
     {
       label: 'eBirr Received (Income)',
-      text: 'You have received 5,800.00 ETB from eBirr User 251922334455. TxnRef: EB908231. Date: 05/08/2026. eBirr Mobile Money.'
+      text: 'You have received 5,800.00 ETB from eBirr User 251922334455. TxnRef: EB908231. Date: 05/08/2026. Current balance: 18,500.00 ETB. eBirr Mobile Money.'
     },
     {
       label: 'eBirr Payment (Expense)',
-      text: 'Payment of 1,200.00 ETB to Merchant POS-882 successful. TxnRef: EB771209. Date: 05/08/2026. eBirr.'
+      text: 'Payment of 1,200.00 ETB to Merchant POS-882 successful. TxnRef: EB771209. Date: 05/08/2026. Balance: 17,300.00 ETB. eBirr.'
     }
   ]
 };
@@ -86,6 +91,9 @@ export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> =
   isOpen,
   onClose,
   wallets,
+  transactions = [],
+  transfers = [],
+  onUpdateWallet,
   onAddTransaction,
   onBatchPostTransactions
 }) => {
@@ -97,6 +105,9 @@ export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> =
   // SMS Parser state
   const [smsText, setSmsText] = useState('');
   const [copiedWebhook, setCopiedWebhook] = useState(false);
+  const [overrideWalletId, setOverrideWalletId] = useState<string>('');
+  const [autoReconcile, setAutoReconcile] = useState(true);
+
   const [parsedTx, setParsedTx] = useState<{
     amount: number;
     type: TransactionType;
@@ -105,6 +116,8 @@ export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> =
     date: string;
     category: string;
     description: string;
+    standingBalance?: number;
+    matchedAccount?: string;
   } | null>(null);
 
   // Bulk Import state
@@ -133,17 +146,50 @@ export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> =
   const [shegerResult, setShegerResult] = useState<any>(null);
   const [shegerError, setShegerError] = useState<string | null>(null);
 
-  // Helper: auto select wallet matching provider
-  const getMatchingWallet = (prov: Provider): Wallet | undefined => {
+  // Helper: auto select wallet matching provider & account number filter
+  const getMatchingWallet = (prov: Provider, text: string = smsText): Wallet | undefined => {
+    if (overrideWalletId) {
+      const found = wallets.find(w => w.id === overrideWalletId);
+      if (found) return found;
+    }
+
+    const cleanText = text.replace(/[\s-]/g, '');
+
+    // 1. Direct match by specific account number in text
+    for (const w of wallets) {
+      if (w.accountNumber && w.accountNumber.length > 3) {
+        const cleanAcc = w.accountNumber.replace(/[\s-]/g, '');
+        if (cleanText.includes(cleanAcc)) {
+          return w;
+        }
+      }
+    }
+
+    // 2. Account filter rules: CBE -> 1000751694559, Telebirr -> 0989367877
+    if (prov === 'CBE' || text.includes('1000751694559')) {
+      const cbeAcc = wallets.find(w => w.type === 'CBE_BANK' && w.accountNumber === '1000751694559');
+      if (cbeAcc) return cbeAcc;
+    }
+    if (prov === 'TELEBIRR' || text.includes('0989367877') || text.includes('251989367877')) {
+      const tbAcc = wallets.find(w => w.type === 'TELEBIRR' && (w.accountNumber === '0989367877' || w.accountNumber?.includes('989367877')));
+      if (tbAcc) return tbAcc;
+    }
+
+    // 3. Fallback to first wallet of provider type
     if (prov === 'TELEBIRR') return wallets.find(w => w.type === 'TELEBIRR') || wallets[0];
     if (prov === 'CBE') return wallets.find(w => w.type === 'CBE_BANK') || wallets[0];
     if (prov === 'EBIRR') return wallets.find(w => w.type === 'EBIRR') || wallets[0];
     return wallets[0];
   };
 
-  const selectedWallet = getMatchingWallet(provider);
+  const selectedWallet = getMatchingWallet(provider, smsText);
 
-  // Parse Single SMS
+  // Calculate wallet balance prior to this transaction
+  const walletPreviousBalance = selectedWallet
+    ? calculateWalletBalance(selectedWallet, transactions, transfers)
+    : 0;
+
+  // Parse Single SMS with account filter & standing balance extraction
   const parseSingleSMS = (text: string, prov: Provider) => {
     if (!text.trim()) {
       setParsedTx(null);
@@ -153,16 +199,20 @@ export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> =
     const cleanText = text.replace(/,/g, '');
     
     // Amount extraction regex
-    const amountMatch = cleanText.match(/(?:ETB| Birr)\s*([\d.]+)|([\d.]+)\s*(?:ETB|Birr)/i);
+    const amountMatch = cleanText.match(/(?:ETB|Birr)\s*([\d.]+)|([\d.]+)\s*(?:ETB|Birr)/i);
     let amount = amountMatch ? parseFloat(amountMatch[1] || amountMatch[2]) : 0;
 
     // Direction detection
-    const isIncome = /received|credited|credited with|received from|received \d/i.test(text);
+    const isIncome = /received|credited|credited with|received from|deposit|credited by|received \d/i.test(text);
     const type: TransactionType = isIncome ? 'INCOME' : 'EXPENSE';
 
     // Ref ID extraction
     const refMatch = text.match(/(?:Transaction ID|Ref|Ref:|Txn ID|TxnRef|TxnRef:)\s*:?\s*([A-Z0-9_-]+)/i);
     const refId = refMatch ? refMatch[1] : `REF-${Math.floor(Math.random() * 100000)}`;
+
+    // Standing Balance extraction (e.g. "Your current balance is ETB 45,200.00" or "Available balance ETB 145,200.00")
+    const balanceMatch = cleanText.match(/(?:current balance|available balance|balance|bal|new balance)\s*(?:is)?\s*:?\s*(?:ETB|Birr)?\s*([\d.]+)/i) || cleanText.match(/(?:ETB|Birr)\s*([\d.]+)\s*(?:Available|Current|Balance)/i);
+    let standingBalance = balanceMatch ? parseFloat(balanceMatch[1]) : undefined;
 
     // Counterparty extraction
     let counterparty = prov + ' User';
@@ -170,6 +220,11 @@ export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> =
     if (fromMatch && fromMatch[1].trim()) {
       counterparty = fromMatch[1].trim();
     }
+
+    // Account match extraction
+    let matchedAccount: string | undefined = undefined;
+    if (text.includes('1000751694559')) matchedAccount = '1000751694559 (CBE)';
+    else if (text.includes('0989367877') || text.includes('251989367877')) matchedAccount = '0989367877 (Telebirr)';
 
     const date = new Date().toISOString().split('T')[0];
     const category = isIncome ? 'Sales' : 'Operational';
@@ -182,7 +237,9 @@ export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> =
       counterparty,
       date,
       category,
-      description
+      description,
+      standingBalance,
+      matchedAccount
     });
   };
 
@@ -197,16 +254,35 @@ export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> =
     parseSingleSMS(sampleText, provider);
   };
 
+  // Balance cross-check calculation
+  const expectedNewBalance = parsedTx
+    ? walletPreviousBalance + (parsedTx.type === 'INCOME' ? parsedTx.amount : -parsedTx.amount)
+    : walletPreviousBalance;
+
+  const balanceDiscrepancy = (parsedTx && parsedTx.standingBalance !== undefined)
+    ? (parsedTx.standingBalance - expectedNewBalance)
+    : 0;
+
+  const isEquationBalanced = Math.abs(balanceDiscrepancy) < 0.01;
+
   const handleRegisterSingle = () => {
     if (!parsedTx || !selectedWallet || !onAddTransaction) return;
     triggerHaptic('success');
+
+    // Auto-reconcile opening balance if discrepancy exists and auto-reconcile is enabled
+    if (parsedTx.standingBalance !== undefined && !isEquationBalanced && autoReconcile && onUpdateWallet) {
+      const adjustedOpeningBalance = (selectedWallet.openingBalance || 0) + balanceDiscrepancy;
+      onUpdateWallet(selectedWallet.id, { openingBalance: adjustedOpeningBalance });
+    }
 
     onAddTransaction({
       type: parsedTx.type,
       amount: parsedTx.amount,
       walletId: selectedWallet.id,
       category: parsedTx.category,
-      description: parsedTx.description,
+      description: parsedTx.standingBalance !== undefined
+        ? `${parsedTx.description} (Standing Balance Verified: ${formatETB(parsedTx.standingBalance)})`
+        : parsedTx.description,
       date: parsedTx.date
     });
 
@@ -455,18 +531,33 @@ export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> =
           </button>
         </div>
 
-        {/* Selected Target Wallet Bar */}
-        <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-[#1C2333]/70 border border-slate-200 dark:border-[#1E2D40] text-xs font-mono">
-          <span className="text-slate-500 dark:text-[#8899BB] flex items-center gap-1.5">
-            <span>Target Destination Wallet:</span>
-          </span>
-          <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-            <span
-              className="w-2.5 h-2.5 rounded-full"
-              style={{ backgroundColor: selectedWallet?.color || '#00D4AA' }}
-            />
-            <span>{selectedWallet?.name || provider + ' Wallet'}</span>
-          </span>
+        {/* Selected Target Wallet Bar & Multi-Account Selector */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-[#1C2333]/70 border border-slate-200 dark:border-[#1E2D40] text-xs font-mono gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-slate-500 dark:text-[#8899BB]">Target Wallet:</span>
+            <select
+              value={overrideWalletId || selectedWallet?.id || ''}
+              onChange={(e) => setOverrideWalletId(e.target.value)}
+              className="bg-white dark:bg-[#0A0E1A] border border-slate-200 dark:border-[#1E2D40] text-slate-900 dark:text-white font-bold rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#00D4AA]"
+            >
+              {wallets.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name} ({w.accountNumber || w.type})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {parsedTx?.matchedAccount && (
+              <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-md flex items-center gap-1 border border-emerald-500/30">
+                <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                <span>Auto-Matched Account: {parsedTx.matchedAccount}</span>
+              </span>
+            )}
+            <span className="text-[11px] text-slate-400">
+              Current Bal: <strong className="text-slate-900 dark:text-white">{formatETB(walletPreviousBalance)}</strong>
+            </span>
+          </div>
         </div>
 
         {/* 2. Mode Sub-Tabs */}
@@ -559,9 +650,9 @@ export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> =
               </div>
             </div>
 
-            {/* Parsed Result Card */}
+            {/* Parsed Result Card & Standing Balance Equation Reconciler */}
             {parsedTx && (
-              <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 space-y-2 animate-in fade-in duration-150">
+              <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 space-y-3 animate-in fade-in duration-150">
                 <div className="flex items-center justify-between border-b border-emerald-500/20 pb-2">
                   <span className="text-xs font-bold text-emerald-700 dark:text-[#00D4AA] flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4" />
@@ -604,12 +695,76 @@ export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> =
                   </div>
                 </div>
 
+                {/* Standing Balance Cross-Check Equation Box */}
+                {parsedTx.standingBalance !== undefined && (
+                  <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-700/60 space-y-2 text-xs font-mono text-slate-200">
+                    <div className="flex items-center justify-between border-b border-slate-700/60 pb-1.5">
+                      <span className="font-bold text-emerald-400 flex items-center gap-1.5">
+                        <Scale className="w-3.5 h-3.5" />
+                        <span>Standing Balance Equation Check:</span>
+                      </span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                        SMS Standing: {formatETB(parsedTx.standingBalance)}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5 text-center text-[11px]">
+                      <div className="p-1.5 rounded bg-slate-800/80 border border-slate-700/50">
+                        <span className="text-[9px] text-slate-400 block">Previous Balance</span>
+                        <span className="font-bold text-slate-200">{formatETB(walletPreviousBalance)}</span>
+                      </div>
+                      <div className="p-1.5 rounded bg-slate-800/80 border border-slate-700/50">
+                        <span className="text-[9px] text-slate-400 block">{parsedTx.type}</span>
+                        <span className={`font-bold ${parsedTx.type === 'INCOME' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {parsedTx.type === 'INCOME' ? '+' : '-'}{formatETB(parsedTx.amount)}
+                        </span>
+                      </div>
+                      <div className="p-1.5 rounded bg-slate-800/80 border border-slate-700/50">
+                        <span className="text-[9px] text-slate-400 block">Calculated Total</span>
+                        <span className="font-bold text-white">{formatETB(expectedNewBalance)}</span>
+                      </div>
+                    </div>
+
+                    {isEquationBalanced ? (
+                      <div className="p-2 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>
+                          <strong>Equation Verified!</strong> Previous ({formatETB(walletPreviousBalance)}) + {parsedTx.type === 'INCOME' ? 'Income' : 'Expense'} ({formatETB(parsedTx.amount)}) = SMS Standing Balance ({formatETB(parsedTx.standingBalance)}).
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="p-2 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-200 text-[11px] space-y-1.5">
+                        <div className="flex items-center gap-1.5 font-semibold text-amber-300">
+                          <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+                          <span>
+                            Balance Discrepancy: SMS reports standing balance as <strong>{formatETB(parsedTx.standingBalance)}</strong> (Difference: {balanceDiscrepancy > 0 ? '+' : ''}{formatETB(balanceDiscrepancy)}).
+                          </span>
+                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer pt-1 border-t border-amber-500/30">
+                          <input
+                            type="checkbox"
+                            checked={autoReconcile}
+                            onChange={(e) => setAutoReconcile(e.target.checked)}
+                            className="w-3.5 h-3.5 accent-[#00D4AA] rounded"
+                          />
+                          <span className="text-[11px] text-slate-200">
+                            Auto-adjust wallet opening balance by {balanceDiscrepancy > 0 ? '+' : ''}{formatETB(balanceDiscrepancy)} so total equals SMS standing balance ({formatETB(parsedTx.standingBalance)}).
+                          </span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <button
                   onClick={handleRegisterSingle}
                   className="w-full mt-2 py-2.5 rounded-xl bg-emerald-600 dark:bg-[#00D4AA] text-white dark:text-[#0A0E1A] font-bold text-xs flex items-center justify-center gap-2 shadow-md hover:brightness-110 transition-all cursor-pointer"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>Register {formatETB(parsedTx.amount)} to {selectedWallet?.name}</span>
+                  <span>
+                    Register {formatETB(parsedTx.amount)} to {selectedWallet?.name}
+                    {!isEquationBalanced && autoReconcile && parsedTx.standingBalance !== undefined ? ' & Reconcile Balance' : ''}
+                  </span>
                 </button>
               </div>
             )}

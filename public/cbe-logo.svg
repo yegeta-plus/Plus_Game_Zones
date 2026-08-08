@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <!-- Transparent background vector for Commercial Bank of Ethiopia (CBE) -->
+  <g transform="translate(10, 10)">
+    <!-- Outer Golden Shield/Emblem -->
+    <path d="M90 10 L155 45 V105 C155 145 125 170 90 180 C55 170 25 145 25 105 V45 L90 10 Z" 
+          fill="url(#cbeGoldGrad)" stroke="#F59E0B" stroke-width="4" />
+    
+    <!-- Inner Dark Purple Accent Shield -->
+    <path d="M90 22 L143 52 V102 C143 135 118 157 90 166 C62 157 37 135 37 102 V52 L90 22 Z" 
+          fill="#4C1D95" opacity="0.95" />
+    
+    <!-- Bank Pillars / Scales Symbol -->
+    <!-- Roof Triangle -->
+    <path d="M90 38 L60 62 H120 L90 38 Z" fill="#FBBF24" />
+    <!-- Arch / Header Bar -->
+    <rect x="58" y="65" width="64" height="6" rx="2" fill="#F59E0B" />
+    <!-- Pillars -->
+    <rect x="63" y="75" width="8" height="42" rx="2" fill="#FBBF24" />
+    <rect x="78" y="75" width="8" height="42" rx="2" fill="#FBBF24" />
+    <rect x="94" y="75" width="8" height="42" rx="2" fill="#FBBF24" />
+    <rect x="109" y="75" width="8" height="42" rx="2" fill="#FBBF24" />
+    <!-- Base Bar -->
+    <rect x="54" y="121" width="72" height="8" rx="2" fill="#F59E0B" />
+    <rect x="50" y="131" width="80" height="6" rx="2" fill="#FBBF24" />
+    
+    <!-- Scales of Justice overlay ring -->
+    <circle cx="90" cy="98" r="48" stroke="#FBBF24" stroke-width="3" stroke-dasharray="6 4" opacity="0.6" />
+  </g>
+  <defs>
+    <linearGradient id="cbeGoldGrad" x1="25" y1="10" x2="155" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FCD34D"/>
+      <stop offset="50%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#B45309"/>
+    </linearGradient>
+  </defs>
+</svg>

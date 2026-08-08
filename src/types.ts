@@ -248,7 +248,21 @@ export interface AdminApprovalRequest {
   requestedByName: string;
   targetAdminId?: string;
   targetAdminName?: string;
-  actionType: 'EDIT_EQUB' | 'DELETE_EQUB' | 'EDIT_LOAN' | 'DELETE_LOAN';
+  actionType:
+    | 'EDIT_EQUB'
+    | 'DELETE_EQUB'
+    | 'EDIT_LOAN'
+    | 'DELETE_LOAN'
+    | 'REVERSE_TRANSACTION'
+    | 'DELETE_TRANSACTION'
+    | 'EDIT_TRANSACTION'
+    | 'DELETE_WALLET'
+    | 'EDIT_WALLET'
+    | 'DELETE_USER'
+    | 'RESTORE_BACKUP'
+    | 'DELETE_ASSET'
+    | 'DELETE_RECEIVABLE'
+    | 'SYSTEM_RESET';
   targetId: string;
   targetTitle: string;
   payload?: any;

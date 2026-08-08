@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import { UserProfile } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
-import gameZoneLogo from '../../assets/images/ps5_joystick_logo_1786093001391.jpg';
 import { FingerprintModal } from './FingerprintModal';
 import { getEnrolledBiometric } from '../../lib/biometrics';
 
@@ -349,15 +348,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-2xl overflow-hidden border border-emerald-500/30 shadow-lg shadow-[#00D4AA]/20 bg-[#070A12] shrink-0">
             <img
-              src={gameZoneLogo}
-              alt="PlusZone Game Zone Logo"
+              src="/app-logo-transparent.png"
+              alt="Plus Game Zone Logo"
               referrerPolicy="no-referrer"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain p-0.5"
             />
           </div>
           <div>
             <h1 className="text-base font-black tracking-tight text-white flex items-center gap-2">
-              PlusZone Game Zone
+              Plus Game Zone
             </h1>
             <p className="text-[11px] text-slate-400">PlayStation House & Gaming Lounge Management</p>
           </div>
@@ -651,7 +650,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
       {/* Footer */}
       <footer className="w-full max-w-5xl mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2 z-10 border-t border-slate-900">
-        <div>PlusZone Enterprise ERP System</div>
+        <div>Plus Game Zone Enterprise System</div>
         <div className="flex items-center gap-4 text-slate-600">
           <span className="hover:text-slate-400 transition-colors cursor-pointer">Security</span>
           <span>•</span>

@@ -27,12 +27,9 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
-  
-  // Service worker event handlers for push & external OS notifications
+// Service worker event handlers for push & external OS notifications
 self.addEventListener('push', (event) => {
-  let data = { title: 'PlusZone Finance Alert', body: 'You have a new transaction update.', icon: '/pwa-192.png' };
+  let data = { title: 'Plus Game Zone Alert', body: 'You have a new transaction update.', icon: '/pwa-192.png' };
   try {
     if (event.data) {
       data = event.data.json();
@@ -56,7 +53,7 @@ self.addEventListener('push', (event) => {
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title || 'PlusZone ERP Alert', options)
+    self.registration.showNotification(data.title || 'Plus Game Zone Alert', options)
   );
 });
 
@@ -84,7 +81,7 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
     const { title, body, icon, tag, data } = event.data.payload || {};
     const options = {
-      body: body || 'New update in PlusZone ERP',
+      body: body || 'New update in Plus Game Zone',
       icon: icon || '/pwa-192.png',
       badge: '/pwa-192.png',
       tag: tag || `notif-${Date.now()}`,
@@ -92,9 +89,13 @@ self.addEventListener('message', (event) => {
       data: data || { url: '/' },
       renotify: true
     };
-    self.registration.showNotification(title || 'PlusZone ERP', options);
+    self.registration.showNotification(title || 'Plus Game Zone', options);
   }
 });
+
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+
   if (event.request.url.includes('/api/')) {
     event.respondWith(
       fetch(event.request).catch(() => {

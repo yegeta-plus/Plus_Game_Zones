@@ -49,19 +49,29 @@ if (isQuotaExceeded) {
   disableNetwork(db).catch(() => {});
 }
 
-// Suppress unhandled Firestore quota error warnings in background
+// Suppress unhandled Firestore quota and connection errors in background
 if (typeof window !== 'undefined') {
   window.addEventListener('unhandledrejection', (event) => {
-    if (
+    const isQuota =
       event.reason?.code === 'resource-exhausted' ||
       event.reason?.message?.includes('Quota') ||
       event.reason?.message?.includes('quota') ||
-      event.reason?.message?.includes('resource-exhausted')
-    ) {
+      event.reason?.message?.includes('resource-exhausted');
+    
+    const isUnavailable =
+      event.reason?.code === 'unavailable' ||
+      event.reason?.message?.includes('unavailable') ||
+      event.reason?.message?.includes('Could not reach Cloud Firestore') ||
+      event.reason?.message?.includes('offline');
+
+    if (isQuota) {
       isQuotaExceeded = true;
       markQuotaExceeded();
       disableNetwork(db).catch(() => {});
-      event.preventDefault(); // Prevent uncaught error reporting for quota limits
+      event.preventDefault();
+    } else if (isUnavailable) {
+      // Gracefully handle offline / connection error without breaking app flow
+      event.preventDefault();
     }
   });
 }
@@ -102,12 +112,18 @@ export function subscribeToFirebaseState(onUpdate: (remoteState: Partial<ERPStat
       }
     },
     (error) => {
-      if (
+      const isQuota =
         error?.code === 'resource-exhausted' ||
         error?.message?.includes('Quota') ||
         error?.message?.includes('quota') ||
-        error?.message?.includes('resource-exhausted')
-      ) {
+        error?.message?.includes('resource-exhausted');
+
+      const isUnavailable =
+        error?.code === 'unavailable' ||
+        error?.message?.includes('unavailable') ||
+        error?.message?.includes('Could not reach Cloud Firestore');
+
+      if (isQuota) {
         isQuotaExceeded = true;
         markQuotaExceeded();
         disableNetwork(db).catch(() => {});
@@ -116,6 +132,8 @@ export function subscribeToFirebaseState(onUpdate: (remoteState: Partial<ERPStat
           quotaExceededLogged = true;
         }
         setTimeout(safeUnsubscribe, 0);
+      } else if (isUnavailable) {
+        console.info('Firestore operates in offline mode: ', error.message);
       } else {
         console.warn('Firebase Firestore snapshot listener warning:', error);
       }
