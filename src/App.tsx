@@ -112,11 +112,7 @@ export default function App() {
     setIsRefreshing(true);
     if (isManual) triggerHaptic('light');
 
-    // 1. Immediately persist current state to Local Storage & sync to Firebase Firestore
-    saveStateToStorage(state);
-    await syncStateToFirebaseNow(state);
-
-    // 2. Fetch latest remote state directly from Firebase Firestore
+    // 1. Fetch latest remote state directly from Firebase Firestore on manual refresh
     const remoteState = await fetchLatestFirebaseState();
     if (remoteState && typeof remoteState === 'object') {
       setState(prev => {
@@ -139,7 +135,7 @@ export default function App() {
       });
     }
 
-    // 3. Auto-check for active recurring templates due today or earlier and auto-process if enabled
+    // 2. Auto-check for active recurring templates due today or earlier and auto-process if enabled
     const todayStr = new Date().toISOString().split('T')[0];
     setState(prev => {
       let updatedTransactions = [...prev.transactions];
@@ -179,34 +175,30 @@ export default function App() {
         updatedAudit.unshift({
           id: `aud-${Date.now()}`,
           timestamp: new Date().toISOString(),
-          actorId: 'system',
-          actorName: 'Automated Auto-Refresh System',
-          action: 'AUTO_PROCESS_RECURRING',
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'PROCESS_RECURRING',
           entity: 'RecurringTemplate',
-          entityId: 'recurring-batch',
-          diffAfter: { autoProcessedCount: 1 },
+          entityId: 'auto',
+          diffAfter: { processedAt: todayStr },
           branch: prev.currentUser.branch
         });
-      }
 
-      return {
-        ...prev,
-        transactions: updatedTransactions,
-        recurring: updatedRecurring,
-        auditLogs: updatedAudit
-      };
+        const updated = {
+          ...prev,
+          transactions: updatedTransactions,
+          recurring: updatedRecurring,
+          auditLogs: updatedAudit
+        };
+        saveStateToStorage(updated);
+        syncStateToFirebaseNow(updated);
+        return updated;
+      }
+      return prev;
     });
 
     setLastRefreshedAt(new Date());
-
-    if (isManual) {
-      // Reload page immediately as requested to show fresh updates instantly
-      window.location.reload();
-    } else {
-      setTimeout(() => {
-        setIsRefreshing(false);
-      }, 450);
-    }
+    setIsRefreshing(false);
   };
 
   // Background Auto-Refresh Timer (every 15 seconds)
@@ -656,35 +648,47 @@ export default function App() {
       totalOut: 0
     };
 
-    setState(prev => ({
-      ...prev,
-      wallets: [...prev.wallets, created]
-    }));
+    setState(prev => {
+      const updated = {
+        ...prev,
+        wallets: [...prev.wallets, created]
+      };
+      saveStateToStorage(updated);
+      syncStateToFirebaseNow(updated);
+      return updated;
+    });
 
     triggerToast(`Wallet "${created.name}" initialized.`);
-    performRefresh(true);
   };
 
   const handleUpdateWallet = (walletId: string, updates: Partial<Wallet>) => {
-    setState(prev => ({
-      ...prev,
-      wallets: prev.wallets.map(w => w.id === walletId ? { ...w, ...updates } : w)
-    }));
+    setState(prev => {
+      const updated = {
+        ...prev,
+        wallets: prev.wallets.map(w => w.id === walletId ? { ...w, ...updates } : w)
+      };
+      saveStateToStorage(updated);
+      syncStateToFirebaseNow(updated);
+      return updated;
+    });
     triggerToast(`Wallet settings updated.`);
-    performRefresh(true);
   };
 
   const handleDeleteWallet = (walletId: string) => {
     const targetWallet = state.wallets.find(w => w.id === walletId);
     if (!targetWallet) return;
 
-    setState(prev => ({
-      ...prev,
-      wallets: prev.wallets.filter(w => w.id !== walletId)
-    }));
+    setState(prev => {
+      const updated = {
+        ...prev,
+        wallets: prev.wallets.filter(w => w.id !== walletId)
+      };
+      saveStateToStorage(updated);
+      syncStateToFirebaseNow(updated);
+      return updated;
+    });
 
     triggerToast(`🗑️ Wallet "${targetWallet.name}" removed.`);
-    performRefresh(true);
   };
 
   // 7. Add Equb

@@ -61,16 +61,52 @@ const DEFAULT_USERS: UserProfile[] = [
 
 const DEFAULT_WALLETS: Wallet[] = [
   {
-    id: 'w-1',
-    name: 'HabeshaBiz Main Cash Account',
+    id: 'w-cash',
+    name: 'Main Cash Vault',
     type: 'CASH',
-    accountNumber: 'HB-CASH-2026',
+    accountNumber: 'CASH-VAULT-01',
     openingBalance: 0,
     totalIn: 0,
     totalOut: 0,
-    color: '#00D4AA',
-    iconName: 'Building2',
+    color: '#F97316', // Orange background
+    iconName: 'Banknote',
     isDefault: true
+  },
+  {
+    id: 'w-cbe',
+    name: 'Commercial Bank of Ethiopia (CBE)',
+    type: 'CBE_BANK',
+    accountNumber: '1000751694559', // CBE Account requested
+    openingBalance: 0,
+    totalIn: 0,
+    totalOut: 0,
+    color: '#8B5CF6', // Purple background
+    iconName: 'Building2',
+    isDefault: false
+  },
+  {
+    id: 'w-telebirr',
+    name: 'Telebirr Merchant Wallet',
+    type: 'TELEBIRR',
+    accountNumber: '0911002233',
+    openingBalance: 0,
+    totalIn: 0,
+    totalOut: 0,
+    color: '#0EA5E9', // Light Blue background
+    iconName: 'Smartphone',
+    isDefault: false
+  },
+  {
+    id: 'w-ebirr',
+    name: 'eBirr Digital Wallet',
+    type: 'EBIRR',
+    accountNumber: 'EB-998877',
+    openingBalance: 0,
+    totalIn: 0,
+    totalOut: 0,
+    color: '#10B981', // Green background
+    iconName: 'CreditCard',
+    isDefault: false
   }
 ];
 
@@ -170,8 +206,41 @@ export function loadInitialState(): ERPState {
         parsed.loans = Array.isArray(parsed.loans) ? parsed.loans : DEFAULT_LOANS;
         parsed.assets = Array.isArray(parsed.assets) ? parsed.assets : DEFAULT_ASSETS;
         parsed.receivables = Array.isArray(parsed.receivables) ? parsed.receivables : DEFAULT_RECEIVABLES;
-        parsed.transactions = [];
-        parsed.wallets = Array.isArray(parsed.wallets) && parsed.wallets.length > 0 ? parsed.wallets : DEFAULT_WALLETS;
+        parsed.transactions = Array.isArray(parsed.transactions) ? parsed.transactions : DEFAULT_TRANSACTIONS;
+        // Enforce wallet brand colors & CBE account number update
+        let currentWallets: Wallet[] = Array.isArray(parsed.wallets) && parsed.wallets.length > 0 ? parsed.wallets : DEFAULT_WALLETS;
+        
+        // Ensure default 4 wallets exist and are formatted
+        const defaultMap = new Map(DEFAULT_WALLETS.map(w => [w.type, w]));
+        
+        currentWallets = currentWallets.map(w => {
+          if (w.type === 'CBE_BANK') {
+            return {
+              ...w,
+              accountNumber: w.accountNumber && w.accountNumber !== '1000123456789' ? w.accountNumber : '1000751694559',
+              color: '#8B5CF6' // Purple
+            };
+          }
+          if (w.type === 'CASH') {
+            return { ...w, color: '#F97316' }; // Orange
+          }
+          if (w.type === 'TELEBIRR') {
+            return { ...w, color: '#0EA5E9' }; // Light Blue
+          }
+          if (w.type === 'EBIRR') {
+            return { ...w, color: '#10B981' }; // Green
+          }
+          return w;
+        });
+
+        // Add missing default types if not present
+        DEFAULT_WALLETS.forEach(def => {
+          if (!currentWallets.some(w => w.type === def.type)) {
+            currentWallets.push(def);
+          }
+        });
+
+        parsed.wallets = currentWallets;
         parsed.categories = Array.isArray(parsed.categories) && parsed.categories.length > 0 ? parsed.categories : DEFAULT_CATEGORIES;
         parsed.recurring = Array.isArray(parsed.recurring) ? parsed.recurring : DEFAULT_RECURRING;
         parsed.transfers = Array.isArray(parsed.transfers) ? parsed.transfers : [];

@@ -14,12 +14,18 @@ import {
   DollarSign,
   Palette,
   Trash2,
-  Zap
+  Zap,
+  ShieldCheck,
+  Upload,
+  Image,
+  X
 } from 'lucide-react';
 import { Wallet, Transaction, Transfer, UserProfile, TransactionType } from '../../types';
 import { calculateWalletBalance, formatETB } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 import { TelebirrIntegrationModal } from './TelebirrIntegrationModal';
+import { ShegerPayVerificationModal } from './ShegerPayVerificationModal';
+import { BrandLogo } from '../common/BrandLogo';
 
 interface WalletsViewProps {
   wallets: Wallet[];
@@ -65,11 +71,11 @@ const COLOR_PALETTE = [
 ];
 
 const DEFAULT_TYPE_COLORS: Record<Wallet['type'], string> = {
-  TELEBIRR: '#00D4AA',
-  CBE_BANK: '#3B82F6',
-  EBIRR: '#F5A623',
-  CASH: '#10B981',
-  SAVINGS: '#8B5CF6',
+  CASH: '#F97316',      // Orange background
+  CBE_BANK: '#8B5CF6',  // Purple background
+  TELEBIRR: '#0EA5E9',  // Light Blue background
+  EBIRR: '#10B981',     // Green background
+  SAVINGS: '#3B82F6',
   OTHER: '#06B6D4'
 };
 
@@ -93,6 +99,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
   
   // Integration Modal state
   const [showIntegrationModal, setShowIntegrationModal] = useState(false);
+  const [showShegerModal, setShowShegerModal] = useState(false);
   
   // Create Wallet Modal state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -101,6 +108,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
   const [newWalletAccNum, setNewWalletAccNum] = useState('');
   const [newWalletBal, setNewWalletBal] = useState('');
   const [newWalletColor, setNewWalletColor] = useState('#00D4AA');
+  const [newCustomLogoUrl, setNewCustomLogoUrl] = useState('');
 
   // Edit Wallet Modal state
   const [editingWallet, setEditingWallet] = useState<Wallet | null>(null);
@@ -108,6 +116,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
   const [editType, setEditType] = useState<Wallet['type']>('TELEBIRR');
   const [editColor, setEditColor] = useState('#00D4AA');
   const [editAccNum, setEditAccNum] = useState('');
+  const [editCustomLogoUrl, setEditCustomLogoUrl] = useState('');
 
   // Delete Wallet Confirmation Modal state
   const [deletingWallet, setDeletingWallet] = useState<Wallet | null>(null);
@@ -125,6 +134,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
     setEditType(w.type);
     setEditAccNum(w.accountNumber || '');
     setEditColor(w.color);
+    setEditCustomLogoUrl(w.customLogoUrl || '');
   };
 
   const openDeleteModal = (w: Wallet) => {
@@ -173,6 +183,27 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     : [];
 
+  const handleLogoFileUpload = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setLogoUrl: (url: string) => void
+  ) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 3 * 1024 * 1024) {
+        alert('File size must be under 3MB');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          triggerHaptic('success');
+          setLogoUrl(reader.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleTypeChange = (type: Wallet['type']) => {
     setNewWalletType(type);
     setNewWalletColor(DEFAULT_TYPE_COLORS[type] || '#00D4AA');
@@ -195,7 +226,8 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
       accountNumber: newWalletAccNum.trim() || undefined,
       openingBalance: parseFloat(newWalletBal) || 0,
       color: newWalletColor,
-      iconName: defaultIcon
+      iconName: defaultIcon,
+      customLogoUrl: newCustomLogoUrl.trim() || undefined
     });
 
     setShowAddModal(false);
@@ -203,6 +235,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
     setNewWalletAccNum('');
     setNewWalletBal('');
     setNewWalletColor('#00D4AA');
+    setNewCustomLogoUrl('');
   };
 
   const handleSaveEditWallet = (e: React.FormEvent) => {
@@ -222,28 +255,15 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
       type: editType,
       color: editColor,
       accountNumber: editAccNum.trim() || undefined,
-      iconName: defaultIcon
+      iconName: defaultIcon,
+      customLogoUrl: editCustomLogoUrl.trim() || undefined
     });
 
     setEditingWallet(null);
   };
 
-  const getWalletIcon = (type: Wallet['type'], color: string) => {
-    const props = { className: "w-4 h-4", style: { color } };
-    switch (type) {
-      case 'TELEBIRR':
-        return <Smartphone {...props} />;
-      case 'CBE_BANK':
-        return <Building2 {...props} />;
-      case 'EBIRR':
-        return <CreditCard {...props} />;
-      case 'CASH':
-        return <Banknote {...props} />;
-      case 'SAVINGS':
-        return <Vault {...props} />;
-      default:
-        return <WalletIcon {...props} />;
-    }
+  const getWalletIcon = (type: Wallet['type'], color: string, customLogoUrl?: string) => {
+    return <BrandLogo type={type} size="sm" customColor={color} customLogoUrl={customLogoUrl} />;
   };
 
   return (
@@ -257,6 +277,17 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
         </div>
 
         <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
+          <button
+            onClick={() => {
+              triggerHaptic('medium');
+              setShowShegerModal(true);
+            }}
+            className="px-3 py-2 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:brightness-110 transition-all border border-blue-400/30"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Verify ShegerPay FT</span>
+          </button>
+
           <button
             onClick={() => {
               triggerHaptic('medium');
@@ -478,7 +509,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                       borderColor: `${w.color}40`
                     }}
                   >
-                    {getWalletIcon(w.type, w.color)}
+                    {getWalletIcon(w.type, w.color, w.customLogoUrl)}
                   </div>
 
                   <div>
@@ -721,6 +752,51 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                 </div>
               </div>
 
+              {/* Custom Logo Upload Section */}
+              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-[#1E2D40]">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <Upload className="w-3.5 h-3.5 text-emerald-600 dark:text-[#00D4AA]" />
+                    <span>Custom Brand Logo (Upload / URL)</span>
+                  </label>
+                  {newCustomLogoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setNewCustomLogoUrl('')}
+                      className="text-[10px] text-rose-500 hover:underline flex items-center gap-0.5"
+                    >
+                      <X className="w-3 h-3" /> Reset Logo
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label className="flex-1 cursor-pointer bg-slate-50 dark:bg-[#1C2333] border border-dashed border-slate-300 dark:border-[#1E2D40] hover:border-emerald-500 dark:hover:border-[#00D4AA] rounded-xl p-2.5 flex items-center justify-center gap-2 transition-colors">
+                    <Upload className="w-4 h-4 text-emerald-600 dark:text-[#00D4AA]" />
+                    <span className="text-xs text-slate-700 dark:text-[#F0F4FF] font-medium">
+                      {newCustomLogoUrl ? 'Change Image File...' : 'Upload Logo File (PNG/JPG/SVG)'}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => handleLogoFileUpload(e, setNewCustomLogoUrl)}
+                    />
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-500 dark:text-[#8899BB]">Or Web URL:</span>
+                  <input
+                    type="text"
+                    value={newCustomLogoUrl}
+                    onChange={(e) => setNewCustomLogoUrl(e.target.value)}
+                    placeholder="https://... / logo.png"
+                    className="flex-1 bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-1.5 text-xs text-slate-900 dark:text-white outline-none"
+                  />
+                </div>
+              </div>
+
               {/* Live Preview of Wallet Card */}
               <div className="pt-2">
                 <p className="text-[10px] text-slate-500 dark:text-[#8899BB] mb-1 font-bold">Live Theme Preview:</p>
@@ -733,10 +809,10 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                 >
                   <div className="flex items-center gap-2.5">
                     <div
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-white"
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-white overflow-hidden"
                       style={{ backgroundColor: `${newWalletColor}30` }}
                     >
-                      {getWalletIcon(newWalletType, newWalletColor)}
+                      {getWalletIcon(newWalletType, newWalletColor, newCustomLogoUrl)}
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5">
@@ -900,6 +976,58 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                     value={editColor}
                     onChange={e => setEditColor(e.target.value)}
                     className="flex-1 bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2 text-xs font-mono text-slate-900 dark:text-white outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Custom Logo Upload Section */}
+              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-[#1E2D40]">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <Upload className="w-3.5 h-3.5 text-purple-500" />
+                    <span>Upload Custom Brand Logo</span>
+                  </label>
+                  {editCustomLogoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setEditCustomLogoUrl('')}
+                      className="text-[10px] text-rose-500 hover:underline flex items-center gap-0.5"
+                    >
+                      <X className="w-3 h-3" /> Remove Custom Logo
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white border overflow-hidden shrink-0"
+                    style={{ backgroundColor: `${editColor}25`, borderColor: `${editColor}50` }}
+                  >
+                    {getWalletIcon(editType, editColor, editCustomLogoUrl)}
+                  </div>
+
+                  <label className="flex-1 cursor-pointer bg-slate-50 dark:bg-[#1C2333] border border-dashed border-slate-300 dark:border-[#1E2D40] hover:border-purple-500 rounded-xl p-2.5 flex items-center justify-center gap-2 transition-colors">
+                    <Upload className="w-4 h-4 text-purple-500" />
+                    <span className="text-xs text-slate-700 dark:text-[#F0F4FF] font-medium">
+                      {editCustomLogoUrl ? 'Replace Logo File...' : 'Choose Logo File (PNG/JPG/SVG)'}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => handleLogoFileUpload(e, setEditCustomLogoUrl)}
+                    />
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-500 dark:text-[#8899BB]">Or Web URL:</span>
+                  <input
+                    type="text"
+                    value={editCustomLogoUrl}
+                    onChange={(e) => setEditCustomLogoUrl(e.target.value)}
+                    placeholder="https://... / logo.png"
+                    className="flex-1 bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-1.5 text-xs text-slate-900 dark:text-white outline-none"
                   />
                 </div>
               </div>
@@ -1130,6 +1258,14 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
         wallets={wallets}
         onAddTransaction={onAddTransaction}
         onBatchPostTransactions={onBatchPostTransactions}
+      />
+
+      {/* ShegerPay & CBE FT Verification Modal */}
+      <ShegerPayVerificationModal
+        isOpen={showShegerModal}
+        onClose={() => setShowShegerModal(false)}
+        wallets={wallets}
+        onAddTransaction={onAddTransaction}
       />
 
     </div>

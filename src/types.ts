@@ -58,6 +58,7 @@ export interface Wallet {
   totalOut: number;
   color: string;
   iconName: string;
+  customLogoUrl?: string;
   isDefault?: boolean;
 }
 
