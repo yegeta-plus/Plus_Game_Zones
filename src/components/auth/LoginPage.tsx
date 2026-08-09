@@ -348,10 +348,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-2xl overflow-hidden border border-emerald-500/30 shadow-lg shadow-[#00D4AA]/20 bg-[#070A12] shrink-0">
             <img
-              src="/app-logo-transparent.png"
+              src="/app-logo.jpg"
               alt="Plus Game Zone Logo"
               referrerPolicy="no-referrer"
-              className="w-full h-full object-contain p-0.5"
+              className="w-full h-full object-cover"
             />
           </div>
           <div>

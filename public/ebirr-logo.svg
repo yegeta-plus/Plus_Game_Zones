@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <!-- E-Birr Emerald Green Background Container -->
+  <rect width="200" height="200" fill="#0F9945" />
+  
+  <g transform="translate(15, 15)">
+    <!-- White E-Birr 'ed' / 'e' Logo Frame -->
+    <path d="M 90 20 L 130 20 L 130 50 L 122 50 C 122 50 128 65 128 85 C 128 122 102 142 60 142 C 28 142 18 118 18 85 C 18 45 45 25 90 25 L 90 20 Z" fill="#FFFFFF" />
+    
+    <!-- Inner Green 'e' cut out -->
+    <circle cx="73" cy="85" r="36" fill="#0F9945" />
+    
+    <!-- White Inner 'e' crossbar & upper bowl -->
+    <path d="M 50 85 L 98 85 C 98 68 88 58 73 58 C 58 58 50 68 50 85 Z" fill="#FFFFFF" />
+  </g>
+</svg>

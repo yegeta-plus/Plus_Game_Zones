@@ -1,36 +1,55 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
-  <!-- Transparent background vector for Commercial Bank of Ethiopia (CBE) -->
-  <g transform="translate(10, 10)">
-    <!-- Outer Golden Shield/Emblem -->
-    <path d="M90 10 L155 45 V105 C155 145 125 170 90 180 C55 170 25 145 25 105 V45 L90 10 Z" 
-          fill="url(#cbeGoldGrad)" stroke="#F59E0B" stroke-width="4" />
-    
-    <!-- Inner Dark Purple Accent Shield -->
-    <path d="M90 22 L143 52 V102 C143 135 118 157 90 166 C62 157 37 135 37 102 V52 L90 22 Z" 
-          fill="#4C1D95" opacity="0.95" />
-    
-    <!-- Bank Pillars / Scales Symbol -->
-    <!-- Roof Triangle -->
-    <path d="M90 38 L60 62 H120 L90 38 Z" fill="#FBBF24" />
-    <!-- Arch / Header Bar -->
-    <rect x="58" y="65" width="64" height="6" rx="2" fill="#F59E0B" />
-    <!-- Pillars -->
-    <rect x="63" y="75" width="8" height="42" rx="2" fill="#FBBF24" />
-    <rect x="78" y="75" width="8" height="42" rx="2" fill="#FBBF24" />
-    <rect x="94" y="75" width="8" height="42" rx="2" fill="#FBBF24" />
-    <rect x="109" y="75" width="8" height="42" rx="2" fill="#FBBF24" />
-    <!-- Base Bar -->
-    <rect x="54" y="121" width="72" height="8" rx="2" fill="#F59E0B" />
-    <rect x="50" y="131" width="80" height="6" rx="2" fill="#FBBF24" />
-    
-    <!-- Scales of Justice overlay ring -->
-    <circle cx="90" cy="98" r="48" stroke="#FBBF24" stroke-width="3" stroke-dasharray="6 4" opacity="0.6" />
+  <!-- Black Background for CBE Metallic Emblem -->
+  <rect width="200" height="200" fill="#050505" />
+  
+  <g transform="translate(100, 100)">
+    <!-- Fanning Spiral Golden Wireframe Ribbon Loops -->
+    <!-- Loop Fan Right-Up -->
+    <g stroke="#D4AF37" stroke-width="1.6" fill="none" opacity="0.9">
+      <ellipse cx="18" cy="-22" rx="46" ry="18" transform="rotate(-38)" />
+      <ellipse cx="23" cy="-27" rx="49" ry="20" transform="rotate(-32)" />
+      <ellipse cx="28" cy="-32" rx="52" ry="22" transform="rotate(-26)" />
+      <ellipse cx="33" cy="-37" rx="55" ry="24" transform="rotate(-20)" />
+      <ellipse cx="38" cy="-42" rx="58" ry="26" transform="rotate(-14)" />
+      <ellipse cx="43" cy="-47" rx="61" ry="28" transform="rotate(-8)" />
+    </g>
+    <!-- Loop Fan Right-Down -->
+    <g stroke="#D4AF37" stroke-width="1.6" fill="none" opacity="0.9">
+      <ellipse cx="22" cy="18" rx="46" ry="18" transform="rotate(28)" />
+      <ellipse cx="27" cy="23" rx="49" ry="20" transform="rotate(34)" />
+      <ellipse cx="32" cy="28" rx="52" ry="22" transform="rotate(40)" />
+      <ellipse cx="37" cy="33" rx="55" ry="24" transform="rotate(46)" />
+      <ellipse cx="42" cy="38" rx="58" ry="26" transform="rotate(52)" />
+    </g>
+    <!-- Loop Fan Left -->
+    <g stroke="#D4AF37" stroke-width="1.6" fill="none" opacity="0.9">
+      <ellipse cx="-32" cy="8" rx="48" ry="20" transform="rotate(158)" />
+      <ellipse cx="-37" cy="12" rx="51" ry="22" transform="rotate(164)" />
+      <ellipse cx="-42" cy="16" rx="54" ry="24" transform="rotate(170)" />
+      <ellipse cx="-47" cy="20" rx="57" ry="26" transform="rotate(176)" />
+    </g>
+
+    <!-- Center CBE Golden Coin / Seal -->
+    <circle cx="0" cy="0" r="44" fill="url(#cbeGoldGrad)" stroke="#B8860B" stroke-width="2.5" />
+    <circle cx="0" cy="0" r="39" fill="none" stroke="#8B6508" stroke-width="1.2" stroke-dasharray="3 2" />
+
+    <!-- Amharic Text Ring "የኢትዮጵያ ንግድ ባንክ" -->
+    <path id="cbeTextRing" d="M -31,0 A 31,31 0 1,1 31,0" fill="none" />
+    <text font-size="6.5" font-family="sans-serif" font-weight="900" fill="#3B2602" text-anchor="middle">
+      <textPath href="#cbeTextRing" startOffset="50%">የኢትዮጵያ ንግድ ባንክ</textPath>
+    </text>
+
+    <!-- Center CBE Monogram -->
+    <circle cx="0" cy="0" r="26" fill="#E2BA48" stroke="#966F09" stroke-width="1.8" />
+    <text x="0" y="7" font-family="'Times New Roman', Georgia, serif" font-weight="900" font-size="20" fill="#2D1C01" text-anchor="middle" letter-spacing="-1">CBE</text>
   </g>
+
   <defs>
-    <linearGradient id="cbeGoldGrad" x1="25" y1="10" x2="155" y2="180" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#FCD34D"/>
-      <stop offset="50%" stop-color="#F59E0B"/>
-      <stop offset="100%" stop-color="#B45309"/>
-    </linearGradient>
+    <radialGradient id="cbeGoldGrad" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#FFF5C2"/>
+      <stop offset="35%" stop-color="#E2BA48"/>
+      <stop offset="75%" stop-color="#B8860B"/>
+      <stop offset="100%" stop-color="#735000"/>
+    </radialGradient>
   </defs>
 </svg>

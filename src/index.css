@@ -77,3 +77,27 @@
     scrollbar-color: #1E2D40 rgba(10, 14, 26, 0.4);
   }
 }
+
+/* App Anti-Copy & Anti-Scraping Protection Rules */
+body.app-protected,
+body.app-protected *:not(input):not(textarea):not([contenteditable="true"]) {
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
+  -khtml-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+}
+
+input, textarea, [contenteditable="true"] {
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+  user-select: text !important;
+}
+
+img, svg {
+  -webkit-user-drag: none !important;
+  user-drag: none !important;
+  pointer-events: auto;
+}

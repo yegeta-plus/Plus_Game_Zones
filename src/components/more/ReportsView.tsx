@@ -560,7 +560,16 @@ export const ReportsView: React.FC<{ state: ERPState }> = ({ state }) => {
                         </span>
                       </td>
                       <td className="p-2.5 font-bold text-slate-800 dark:text-slate-200">{t.category}</td>
-                      <td className="p-2.5 text-slate-700 dark:text-slate-300 max-w-xs truncate">{t.description}</td>
+                      <td className="p-2.5 text-slate-700 dark:text-slate-300 max-w-xs">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>{t.description}</span>
+                          {(t.description.toLowerCase().includes('split') || t.refType === 'EQUB') && t.description.toLowerCase().includes('split') && (
+                            <span className="px-1.5 py-0.2 text-[9px] font-bold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 rounded inline-flex items-center gap-0.5 shrink-0">
+                              ⚡ Split Payment
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="p-2.5 text-slate-600 dark:text-[#8899BB] font-mono">{getWalletName(t.walletId)}</td>
                       <td
                         className={`p-2.5 text-right font-mono font-bold whitespace-nowrap ${

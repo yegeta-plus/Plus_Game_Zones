@@ -62,6 +62,7 @@ export const UsersView: React.FC<UsersViewProps> = ({
   const [createdNotice, setCreatedNotice] = useState<{ user: string; tempPass: string } | null>(null);
 
   const isSuperAdmin = currentUser.role === 'SuperAdmin';
+  const isAdminOrSuperAdmin = currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin';
 
   const filteredUsers = users
     .filter((u) => {
@@ -88,8 +89,8 @@ export const UsersView: React.FC<UsersViewProps> = ({
   };
 
   const handleOpenAdd = () => {
-    if (!isSuperAdmin) {
-      alert('Security Protocol: Only SuperAdmins can register or create new users.');
+    if (!isAdminOrSuperAdmin) {
+      alert('Security Protocol: Only Admins and SuperAdmins can register or create new users.');
       return;
     }
     triggerHaptic('light');
@@ -105,8 +106,8 @@ export const UsersView: React.FC<UsersViewProps> = ({
   };
 
   const handleOpenEdit = (user: UserProfile) => {
-    if (!isSuperAdmin && user.id !== currentUser.id) {
-      alert('Security Protocol: Only SuperAdmins can modify user roles & permissions.');
+    if (!isAdminOrSuperAdmin && user.id !== currentUser.id) {
+      alert('Security Protocol: Only Admins and SuperAdmins can modify user roles & permissions.');
       return;
     }
     triggerHaptic('light');

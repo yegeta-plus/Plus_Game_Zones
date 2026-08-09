@@ -74,13 +74,30 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
 export function getEffectivePermissions(user?: UserProfile | null): UserPermissions {
   if (!user) return DEFAULT_ROLE_PERMISSIONS.Viewer;
   if (user.role === 'SuperAdmin') return FULL_PERMISSIONS;
-  if (user.permissions) {
+  if (user.role === 'Admin') {
     return {
-      ...DEFAULT_ROLE_PERMISSIONS[user.role || 'Partner'],
-      ...user.permissions
+      ...FULL_PERMISSIONS,
+      ...(user.permissions || {}),
+      canAdd: user.permissions?.canAdd !== false,
+      canEdit: user.permissions?.canEdit !== false,
+      canDelete: user.permissions?.canDelete !== false,
+      canReverse: user.permissions?.canReverse !== false,
+      viewOnly: Boolean(user.permissions?.viewOnly)
     };
   }
-  return DEFAULT_ROLE_PERMISSIONS[user.role] || DEFAULT_ROLE_PERMISSIONS.Partner;
+
+  const defaultRolePerms = DEFAULT_ROLE_PERMISSIONS[user.role || 'Partner'] || DEFAULT_ROLE_PERMISSIONS.Partner;
+  const userPerms: Partial<UserPermissions> = user.permissions || {};
+
+  return {
+    ...defaultRolePerms,
+    ...userPerms,
+    canAdd: userPerms.canAdd !== false && !userPerms.viewOnly,
+    canEdit: userPerms.canEdit !== false && !userPerms.viewOnly,
+    canDelete: Boolean(userPerms.canDelete) && !userPerms.viewOnly,
+    canReverse: Boolean(userPerms.canReverse) && !userPerms.viewOnly,
+    viewOnly: Boolean(userPerms.viewOnly)
+  };
 }
 
 export function hasModuleAccess(user: UserProfile | null | undefined, moduleName: keyof UserPermissions): boolean {

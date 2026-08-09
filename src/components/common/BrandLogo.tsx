@@ -49,13 +49,13 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
     case 'CBE_BANK':
       return (
         <div
-          title="Commercial Bank of Ethiopia (CBE) - 1000751694559"
-          className={`rounded-xl flex items-center justify-center font-bold text-white shadow-sm shrink-0 overflow-hidden relative p-1 bg-white border border-slate-200 dark:border-slate-800 ${sizeClasses} ${className}`}
+          title="Commercial Bank of Ethiopia (CBE)"
+          className={`rounded-xl flex items-center justify-center font-bold text-slate-900 shadow-sm shrink-0 overflow-hidden relative bg-[#050505] border border-amber-900/30 ${sizeClasses} ${className}`}
         >
           <img
             src="/cbe-logo.svg"
             alt="CBE Logo"
-            className="w-full h-full object-contain"
+            className="w-full h-full object-cover"
             onError={() => setImgError(true)}
           />
         </div>
@@ -65,7 +65,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
       return (
         <div
           title="Telebirr Mobile Money"
-          className={`rounded-xl flex items-center justify-center font-bold text-white shadow-sm shrink-0 overflow-hidden relative p-1 bg-white border border-slate-200 dark:border-slate-800 ${sizeClasses} ${className}`}
+          className={`rounded-xl flex items-center justify-center font-bold text-slate-900 shadow-sm shrink-0 overflow-hidden relative bg-white border border-blue-200 dark:border-blue-900/40 ${sizeClasses} ${className}`}
         >
           <img
             src="/telebirr-logo.svg"
@@ -80,36 +80,14 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
       return (
         <div
           title="eBirr Financial Gateway"
-          className={`rounded-xl flex items-center justify-center font-bold text-white shadow-sm shrink-0 overflow-hidden relative ${sizeClasses} ${className}`}
-          style={{ backgroundColor: customColor || '#10B981' }}
+          className={`rounded-xl flex items-center justify-center font-bold text-white shadow-sm shrink-0 overflow-hidden relative bg-[#0F9945] ${sizeClasses} ${className}`}
         >
-          <svg
-            className="w-full h-full"
-            viewBox="0 0 32 32"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <rect width="32" height="32" rx="8" fill="#10B981" />
-            <path
-              d="M16 5C9.9 5 5 9.9 5 16C5 22.1 9.9 27 16 27C20.5 27 24.3 24.3 26 20"
-              stroke="white"
-              strokeWidth="3.2"
-              strokeLinecap="round"
-            />
-            <path
-              d="M21 14.5H10.5C9 14.5 7.8 15.7 7.8 17.2C7.8 18.7 9 19.9 10.5 19.9H21"
-              stroke="white"
-              strokeWidth="3.2"
-              strokeLinecap="round"
-            />
-            <path
-              d="M21 11H10.5"
-              stroke="white"
-              strokeWidth="3.2"
-              strokeLinecap="round"
-            />
-            <circle cx="24.5" cy="11" r="3" fill="#F59E0B" />
-          </svg>
+          <img
+            src="/ebirr-logo.svg"
+            alt="eBirr Logo"
+            className="w-full h-full object-cover"
+            onError={() => setImgError(true)}
+          />
         </div>
       );
 

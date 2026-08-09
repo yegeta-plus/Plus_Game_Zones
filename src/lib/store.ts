@@ -250,7 +250,13 @@ export function loadInitialState(): ERPState {
         parsed.transfers = Array.isArray(parsed.transfers) ? parsed.transfers : [];
         parsed.goals = Array.isArray(parsed.goals) ? parsed.goals : DEFAULT_GOALS;
         parsed.auditLogs = Array.isArray(parsed.auditLogs) ? parsed.auditLogs : DEFAULT_AUDIT_LOGS;
-        parsed.currentUser = parsed.users?.[0] || DEFAULT_USERS[0];
+        // Preserve currently logged-in user session if available
+        if (parsed.currentUser && parsed.currentUser.id && Array.isArray(parsed.users)) {
+          const matchingUser = parsed.users.find((u: UserProfile) => u.id === parsed.currentUser.id || u.email === parsed.currentUser.email);
+          parsed.currentUser = matchingUser || parsed.currentUser;
+        } else {
+          parsed.currentUser = parsed.users?.[0] || DEFAULT_USERS[0];
+        }
         parsed.calendarType = parsed.calendarType || 'ETHIOPIAN';
         return parsed;
       }

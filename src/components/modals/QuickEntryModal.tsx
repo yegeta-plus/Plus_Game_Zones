@@ -80,15 +80,16 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
 
   // Date helper functions
   const isSuperAdmin = currentUser.role === 'SuperAdmin';
+  const isAdminOrSuperAdmin = currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin';
   const getTodayStr = () => new Date().toISOString().split('T')[0];
   const getMinDateStr = () => {
     const d = new Date();
-    if (isSuperAdmin) {
-      // SuperAdmin can select dates going back to the start of previous month
+    if (isAdminOrSuperAdmin) {
+      // SuperAdmin & Admin can select dates going back to the start of previous month
       const firstDayPrevMonth = new Date(d.getFullYear(), d.getMonth() - 1, 1);
       return firstDayPrevMonth.toISOString().split('T')[0];
     }
-    d.setDate(d.getDate() - 7);
+    d.setDate(d.getDate() - 30);
     return d.toISOString().split('T')[0];
   };
   const getYesterdayStr = () => {
@@ -737,7 +738,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                 <span>Posting Date</span>
               </span>
               <span className="text-[10px] font-mono text-slate-500 dark:text-[#8899BB]">
-                {isSuperAdmin ? '⚡ SuperAdmin: Past Month Allowed' : '(Max 7 days back)'}
+                {isAdminOrSuperAdmin ? '⚡ Admin Privilege: Past Month Allowed' : '(Up to 30 days back)'}
               </span>
             </div>
 
@@ -767,7 +768,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                 >
                   Yesterday
                 </button>
-                {isSuperAdmin && (
+                {isAdminOrSuperAdmin && (
                   <button
                     type="button"
                     onClick={() => {
