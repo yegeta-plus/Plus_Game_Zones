@@ -697,7 +697,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                   required
                   value={newWalletName}
                   onChange={e => setNewWalletName(e.target.value)}
-                  placeholder="e.g. Telebirr Bole Merchant, CBE Main Account"
+                  placeholder="Wallet name"
                   className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 dark:focus:border-[#00D4AA]"
                 />
               </div>
@@ -724,7 +724,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                   type="text"
                   value={newWalletAccNum}
                   onChange={e => setNewWalletAccNum(e.target.value)}
-                  placeholder="e.g. 10002938104 or 0911223344"
+                  placeholder="Account or phone"
                   className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 dark:focus:border-[#00D4AA]"
                 />
               </div>
@@ -931,7 +931,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                   required
                   value={editName}
                   onChange={e => setEditName(e.target.value)}
-                  placeholder="e.g. Telebirr Primary Business Account"
+                  placeholder="Wallet name"
                   className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none focus:border-purple-500"
                 />
               </div>
@@ -964,7 +964,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                   type="text"
                   value={editAccNum}
                   onChange={e => setEditAccNum(e.target.value)}
-                  placeholder="e.g. 1000284918231"
+                  placeholder="Account number"
                   className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none"
                 />
               </div>

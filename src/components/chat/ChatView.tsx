@@ -23,7 +23,9 @@ import {
   Pin,
   Flame,
   UserCheck,
-  Check
+  Check,
+  ShieldCheck,
+  ShieldAlert
 } from 'lucide-react';
 import { ERPState, ChatMessage, ChatChannel, UserProfile, Transaction, Wallet as WalletType, Equb } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
@@ -34,6 +36,8 @@ interface ChatViewProps {
   onAddReaction: (messageId: string, emoji: string) => void;
   onCreateChannel: (channel: Omit<ChatChannel, 'id' | 'createdDate'>) => void;
   onNavigateTab?: (tab: any) => void;
+  onApproveRequest?: (reqId: string, note?: string) => void;
+  onRejectRequest?: (reqId: string, note?: string) => void;
 }
 
 const COMMON_EMOJIS = ['👍', '❤️', '🚀', '💡', '💰', '✅', '🔥', '🙏', '👏', '🎯'];
@@ -42,7 +46,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
   state,
   onSendMessage,
   onAddReaction,
-  onCreateChannel
+  onCreateChannel,
+  onApproveRequest,
+  onRejectRequest
 }) => {
   const currentUser = state.currentUser;
   const chatMessages = state.chatMessages || [];
@@ -470,22 +476,81 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
                         <p className="whitespace-pre-wrap break-words">{msg.text}</p>
 
-                        {/* Financial Reference Card if attached */}
+                        {/* Financial or Approval Reference Card if attached */}
                         {msg.reference && (
-                          <div className="mt-2.5 p-2.5 rounded-xl bg-slate-950/10 dark:bg-slate-950/30 border border-slate-200/30 dark:border-slate-800 flex items-center justify-between gap-3 text-left">
-                            <div className="flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-500 flex items-center justify-center shrink-0">
-                                <DollarSign className="w-4 h-4" />
+                          <div className={`mt-2.5 p-3 rounded-xl border text-left flex flex-col gap-2 ${
+                            msg.reference.type === 'APPROVAL'
+                              ? 'bg-amber-500/10 dark:bg-amber-950/40 border-amber-500/30 text-slate-900 dark:text-slate-100'
+                              : 'bg-slate-950/10 dark:bg-slate-950/30 border-slate-200/30 dark:border-slate-800'
+                          }`}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                                  msg.reference.type === 'APPROVAL'
+                                    ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
+                                    : 'bg-emerald-500/20 text-emerald-500'
+                                }`}>
+                                  {msg.reference.type === 'APPROVAL' ? <ShieldCheck className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-bold text-[11px] truncate">{msg.reference.title}</p>
+                                  <p className="text-[10px] opacity-80 truncate">{msg.reference.subtitle}</p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="font-bold text-[11px] truncate">{msg.reference.title}</p>
-                                <p className="text-[10px] opacity-80 truncate">{msg.reference.subtitle}</p>
-                              </div>
+
+                              {msg.reference.type === 'APPROVAL' && msg.reference.status && (
+                                <span className={`text-[9px] px-2 py-0.5 rounded font-extrabold uppercase shrink-0 ${
+                                  msg.reference.status === 'APPROVED'
+                                    ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                                    : msg.reference.status === 'REJECTED'
+                                    ? 'bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30'
+                                    : 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30'
+                                }`}>
+                                  {msg.reference.status}
+                                </span>
+                              )}
+
+                              {msg.reference.amount !== undefined && (
+                                <span className="font-mono font-extrabold text-[11px] shrink-0">
+                                  ETB {msg.reference.amount.toLocaleString()}
+                                </span>
+                              )}
                             </div>
-                            {msg.reference.amount !== undefined && (
-                              <span className="font-mono font-extrabold text-[11px] shrink-0">
-                                ETB {msg.reference.amount.toLocaleString()}
-                              </span>
+
+                            {/* Reason Display Block */}
+                            {msg.reference.reason && (
+                              <div className="text-[11px] font-medium bg-amber-500/10 dark:bg-amber-950/30 p-2 rounded-lg border border-amber-500/20 text-amber-950 dark:text-amber-200">
+                                <span className="font-extrabold text-amber-700 dark:text-amber-300">💬 Reason: </span>
+                                <span>{msg.reference.reason}</span>
+                              </div>
+                            )}
+
+                            {/* Quick Approve / Reject action inside Chat if request is pending */}
+                            {msg.reference.type === 'APPROVAL' && msg.reference.status === 'PENDING' && (currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && onApproveRequest && onRejectRequest && (
+                              <div className="flex items-center gap-2 pt-1 border-t border-amber-500/20">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    triggerHaptic('success');
+                                    onApproveRequest(msg.reference!.id);
+                                  }}
+                                  className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer transition-all shadow-sm"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Approve Request</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    triggerHaptic('warning');
+                                    onRejectRequest(msg.reference!.id);
+                                  }}
+                                  className="flex-1 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer transition-all shadow-sm"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  <span>Reject Request</span>
+                                </button>
+                              </div>
                             )}
                           </div>
                         )}
@@ -780,6 +845,39 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   </div>
                 </button>
               ))}
+
+              {(state.approvalRequests || []).length > 0 && (
+                <>
+                  <p className="text-[11px] font-extrabold uppercase text-amber-500 pt-2">Approval Requests</p>
+                  {(state.approvalRequests || []).map(req => (
+                    <button
+                      key={req.id}
+                      onClick={() => {
+                        setSelectedRef({
+                          type: 'APPROVAL',
+                          id: req.id,
+                          title: req.targetTitle,
+                          subtitle: `Action: ${req.actionType.replace(/_/g, ' ')}`,
+                          reason: req.reason || 'Co-admin authorization requested',
+                          status: req.status
+                        });
+                        setShowRefPicker(false);
+                      }}
+                      className="w-full text-left p-3 rounded-xl bg-amber-500/10 hover:border-amber-500 border border-amber-500/30 flex items-center justify-between transition-all cursor-pointer"
+                    >
+                      <div>
+                        <p className="text-xs font-bold text-slate-800 dark:text-slate-100">{req.targetTitle}</p>
+                        <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                          {req.actionType.replace(/_/g, ' ')} • Reason: {req.reason || 'Verification requested'}
+                        </p>
+                      </div>
+                      <span className="text-[9px] px-2 py-0.5 rounded font-extrabold uppercase bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                        {req.status}
+                      </span>
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           </div>
         </div>

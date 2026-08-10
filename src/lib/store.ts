@@ -70,8 +70,16 @@ const DEFAULT_CHAT_MESSAGES: ChatMessage[] = [
     senderId: 'u-1',
     senderName: 'Yegeta Huawei',
     senderRole: 'SuperAdmin',
-    text: 'Please tag or link any pending transaction references here when requesting urgent admin approval.',
-    timestamp: new Date(Date.now() - 1800000).toISOString()
+    text: '📋 **Approval Request Submitted**\n• **Item:** Merkato Equb Round #4 Payout\n• **Action:** EDIT EQUB\n• **Reason:** Adjusting payout date to align with CBE bank clearance holiday schedule.\n• **Requested By:** Yegeta Huawei',
+    timestamp: new Date(Date.now() - 1800000).toISOString(),
+    reference: {
+      type: 'APPROVAL',
+      id: 'req-sample-1',
+      title: 'Merkato Equb Round #4 Payout',
+      subtitle: 'Action: EDIT EQUB',
+      reason: 'Adjusting payout date to align with CBE bank clearance holiday schedule.',
+      status: 'PENDING'
+    }
   }
 ];
 
@@ -79,7 +87,7 @@ const DEFAULT_USERS: UserProfile[] = [
   {
     id: 'u-1',
     name: 'Yegeta Huawei',
-    email: 'yegeta.huawei@gmail.com',
+    email: 'ygyegeta@gmail.com',
     username: 'yegeta',
     role: 'SuperAdmin',
     active: true,
@@ -208,7 +216,58 @@ const DEFAULT_LOANS: Loan[] = [];
 const DEFAULT_ASSETS: Asset[] = [];
 const DEFAULT_GOALS: Goal[] = [];
 const DEFAULT_RECURRING: RecurringTemplate[] = [];
-const DEFAULT_RECEIVABLES: Receivable[] = [];
+const DEFAULT_RECEIVABLES: Receivable[] = [
+  {
+    id: 'rcv-sample-1',
+    customerName: 'Abebe Wholesale Retailers',
+    description: 'Bulk store inventory sale on credit',
+    amountOwed: 25000,
+    amountCollected: 5000,
+    dueDate: new Date(Date.now() - 18 * 86400000).toISOString(),
+    status: 'LATE',
+    createdDate: new Date(Date.now() - 20 * 86400000).toISOString()
+  },
+  {
+    id: 'rcv-sample-2',
+    customerName: 'Tigist Electronics',
+    description: 'Accessories delivery invoice #104',
+    amountOwed: 12000,
+    amountCollected: 0,
+    dueDate: new Date(Date.now() + 5 * 86400000).toISOString(),
+    status: 'OUTSTANDING',
+    createdDate: new Date(Date.now() - 3 * 86400000).toISOString()
+  }
+];
+
+export function evaluateReceivableStatus(r: Receivable): 'OUTSTANDING' | 'COLLECTED' | 'WRITTEN_OFF' | 'LATE' {
+  if (r.status === 'COLLECTED' || r.amountCollected >= r.amountOwed) {
+    return 'COLLECTED';
+  }
+  if (r.status === 'WRITTEN_OFF') {
+    return 'WRITTEN_OFF';
+  }
+  const createdTime = r.createdDate ? new Date(r.createdDate).getTime() : 0;
+  const dueTime = r.dueDate ? new Date(r.dueDate).getTime() : 0;
+  const now = Date.now();
+  const daysSinceCreated = createdTime ? (now - createdTime) / (1000 * 60 * 60 * 24) : 0;
+  const daysSinceDue = dueTime ? (now - dueTime) / (1000 * 60 * 60 * 24) : 0;
+
+  if (daysSinceCreated >= 15 || daysSinceDue >= 15 || r.status === 'LATE' || r.status === 'OVERDUE') {
+    return 'LATE';
+  }
+  return 'OUTSTANDING';
+}
+
+export function syncReceivablesLateStatus(receivables: Receivable[]): Receivable[] {
+  if (!Array.isArray(receivables)) return [];
+  return receivables.map(r => {
+    const computedStatus = evaluateReceivableStatus(r);
+    if (computedStatus !== r.status) {
+      return { ...r, status: computedStatus };
+    }
+    return r;
+  });
+}
 
 const DEFAULT_AUDIT_LOGS: AuditLogEntry[] = [];
 
@@ -223,7 +282,7 @@ export function loadInitialState(): ERPState {
       if (parsed) {
         if (Array.isArray(parsed.users) && parsed.users.length > 0) {
           parsed.users = parsed.users.map((u: UserProfile) => {
-            if (u.email === 'yegeta.huawei@gmail.com' || u.username === 'yegeta') {
+            if (u.email === 'ygyegeta@gmail.com' || u.email === 'yegeta.huawei@gmail.com' || u.username === 'yegeta') {
               return {
                 ...u,
                 role: 'SuperAdmin' as UserRole,
@@ -243,7 +302,7 @@ export function loadInitialState(): ERPState {
         parsed.equbs = Array.isArray(parsed.equbs) && parsed.equbs.length > 0 ? parsed.equbs : DEFAULT_EQUBS;
         parsed.loans = Array.isArray(parsed.loans) ? parsed.loans : DEFAULT_LOANS;
         parsed.assets = Array.isArray(parsed.assets) ? parsed.assets : DEFAULT_ASSETS;
-        parsed.receivables = Array.isArray(parsed.receivables) ? parsed.receivables : DEFAULT_RECEIVABLES;
+        parsed.receivables = syncReceivablesLateStatus(Array.isArray(parsed.receivables) && parsed.receivables.length > 0 ? parsed.receivables : DEFAULT_RECEIVABLES);
         parsed.transactions = Array.isArray(parsed.transactions) ? parsed.transactions : DEFAULT_TRANSACTIONS;
         // Enforce wallet brand colors & CBE account number update
         let currentWallets: Wallet[] = Array.isArray(parsed.wallets) && parsed.wallets.length > 0 ? parsed.wallets : DEFAULT_WALLETS;
@@ -625,17 +684,17 @@ export function mergeListById<T extends { id: string }>(localList: T[] = [], rem
   if (!Array.isArray(remoteList)) remoteList = [];
   const map = new Map<string, T>();
 
+  // 1. Populate remote items first
   remoteList.forEach(item => {
     if (item && typeof item === 'object' && item.id) {
       map.set(item.id, item);
     }
   });
 
+  // 2. Local items overwrite remote items with the same ID, preserving local state and active session details
   localList.forEach(item => {
     if (item && typeof item === 'object' && item.id) {
-      if (!map.has(item.id)) {
-        map.set(item.id, item);
-      }
+      map.set(item.id, item);
     }
   });
 

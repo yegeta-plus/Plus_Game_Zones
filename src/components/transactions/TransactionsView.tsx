@@ -116,6 +116,30 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       isoDate = editingTx.date;
     }
 
+    const isOld = !isTransactionEditable(editingTx.date);
+    const activeOtherUsers = (users || []).filter(u => u.id !== currentUser.id && u.active !== false);
+    const hasOtherUsers = activeOtherUsers.length > 0;
+
+    if (isOld && hasOtherUsers && onRequestApproval) {
+      onRequestApproval({
+        actionType: 'EDIT_TRANSACTION',
+        targetId: editingTx.id,
+        targetTitle: `Edit Entry: ${editingTx.description || editingTx.category}`,
+        reason: `Edit requested for ledger entry older than 7 days: ETB ${numAmount.toLocaleString()} (${editForm.category})`,
+        payload: {
+          date: isoDate,
+          amount: numAmount,
+          type: editForm.type,
+          category: editForm.category || 'General',
+          description: editForm.description,
+          walletId: editForm.walletId
+        }
+      });
+      setEditingTx(null);
+      setActiveTxDetail(null);
+      return;
+    }
+
     onUpdateTransaction(editingTx.id, {
       date: isoDate,
       amount: numAmount,
@@ -132,26 +156,32 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   const handleConfirmDelete = () => {
     if (confirmDeleteTxId) {
       triggerHaptic('warning');
-      const targetTx = transactions.find(t => t.id === confirmDeleteTxId);
+    const targetTx = transactions.find(t => t.id === confirmDeleteTxId);
+    const isOld = targetTx ? !isTransactionEditable(targetTx.date) : false;
+    const activeOtherUsers = (users || []).filter(u => u.id !== currentUser.id && u.active !== false);
+    const hasOtherUsers = activeOtherUsers.length > 0;
 
-      if ((currentUser.role === 'Partner' || currentUser.role === 'Viewer') && onRequestApproval) {
-        onRequestApproval({
-          actionType: 'DELETE_TRANSACTION',
-          targetId: confirmDeleteTxId,
-          targetTitle: targetTx ? `${targetTx.description} (${formatETB(targetTx.amount)})` : 'Transaction Deletion'
-        });
-        setConfirmDeleteTxId(null);
-        setActiveTxDetail(null);
-        return;
-      }
-
-      if (onDeleteTransaction) {
-        onDeleteTransaction(confirmDeleteTxId);
-      }
+    if ((isOld || currentUser.role === 'Partner' || currentUser.role === 'Viewer') && hasOtherUsers && onRequestApproval) {
+      onRequestApproval({
+        actionType: 'DELETE_TRANSACTION',
+        targetId: confirmDeleteTxId,
+        targetTitle: targetTx ? `${targetTx.description || targetTx.category} (ETB ${targetTx.amount.toLocaleString()})` : 'Transaction Deletion',
+        reason: targetTx
+          ? `Transaction deletion requested (${isOld ? 'older than 7 days' : 'authorization required'}): ${targetTx.category} - ${targetTx.description || 'No notes'}`
+          : 'Transaction deletion authorization requested'
+      });
       setConfirmDeleteTxId(null);
       setActiveTxDetail(null);
+      return;
     }
-  };
+
+    if (onDeleteTransaction) {
+      onDeleteTransaction(confirmDeleteTxId);
+    }
+    setConfirmDeleteTxId(null);
+    setActiveTxDetail(null);
+  }
+};
 
   // Filter transactions (sorted latest first)
   const filtered = transactions
@@ -239,7 +269,8 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       onRequestApproval({
         actionType: 'REVERSE_TRANSACTION',
         targetId: txId,
-        targetTitle: targetTx ? `${targetTx.description} (${formatETB(targetTx.amount)})` : 'Transaction Reversal'
+        targetTitle: targetTx ? `${targetTx.description || targetTx.category} (ETB ${targetTx.amount.toLocaleString()})` : 'Transaction Reversal',
+        reason: targetTx ? `Transaction reversal requested: ${targetTx.category} - ${targetTx.description || 'No notes'}` : 'Transaction reversal authorization requested'
       });
       setConfirmReversalTxId(null);
       setActiveTxDetail(null);
@@ -340,7 +371,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search description, category, partner..."
+            placeholder="Search transactions..."
             className="w-full bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] focus:border-emerald-500 dark:focus:border-[#00D4AA] rounded-xl pl-9 pr-4 py-2.5 text-xs text-slate-900 dark:text-[#F0F4FF] outline-none transition-colors"
           />
           {searchTerm && (
@@ -524,7 +555,10 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       {/* Transaction Detail Sheet Modal */}
       {activeTxDetail && (() => {
         const isSuperAdmin = currentUser.role === 'SuperAdmin';
-        const editable = (isTransactionEditable(activeTxDetail.date) || isSuperAdmin) && !activeTxDetail.reversed;
+        const activeOtherUsers = (users || []).filter(u => u.id !== currentUser.id && u.active !== false);
+        const hasOtherUsers = activeOtherUsers.length > 0;
+        const isWithin7Days = isTransactionEditable(activeTxDetail.date);
+        const canDirectEdit = (isWithin7Days || !hasOtherUsers) && !activeTxDetail.reversed;
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fadeIn">
@@ -535,13 +569,13 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                   <span>Ledger Entry Audit</span>
                   {activeTxDetail.reversed ? (
                     <span className="text-[9px] bg-rose-100 text-rose-800 dark:bg-red-500/20 dark:text-red-400 border border-rose-200 dark:border-red-500/30 px-2 py-0.5 rounded-full font-bold">Reversed</span>
-                  ) : editable ? (
+                  ) : canDirectEdit ? (
                     <span className="text-[9px] bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-                      <CheckCircle2 className="w-2.5 h-2.5" /> {isSuperAdmin && !isTransactionEditable(activeTxDetail.date) ? 'SuperAdmin Authorized' : 'Editable'}
+                      <CheckCircle2 className="w-2.5 h-2.5" /> Direct Edit Enabled
                     </span>
                   ) : (
                     <span className="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-                      <Lock className="w-2.5 h-2.5" /> Can't be edited
+                      <Lock className="w-2.5 h-2.5" /> 2-User Approval Protocol
                     </span>
                   )}
                 </h3>
@@ -562,13 +596,13 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                 </div>
 
                 {/* Status Notice about Edit Rule */}
-                {!editable && !activeTxDetail.reversed && (
+                {!isWithin7Days && hasOtherUsers && !activeTxDetail.reversed && (
                   <div className="p-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl flex items-start gap-2">
                     <Lock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-xs font-bold text-amber-800 dark:text-amber-400">Can't be edited (Older than 1 week)</p>
+                      <p className="text-xs font-bold text-amber-800 dark:text-amber-400">Past 7-Day Window (2-User Rule Active)</p>
                       <p className="text-[10px] text-slate-600 dark:text-[#8899BB]">
-                        This transaction is past the 7-day editing window. Date, amount, and ledger details are locked for audit compliance.
+                        Because other users exist and this entry is older than 7 days, modifications or deletions will generate an approval request for co-admin review.
                       </p>
                     </div>
                   </div>
@@ -614,14 +648,14 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
                 {/* Action Buttons: Edit & Delete */}
                 <div className="space-y-2 pt-1">
-                  {editable ? (
+                  {!activeTxDetail.reversed && (
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         onClick={() => handleOpenEdit(activeTxDetail)}
                         className="py-2.5 px-3 rounded-xl bg-emerald-50 text-emerald-700 dark:bg-[#00D4AA]/15 border border-emerald-200 dark:border-[#00D4AA]/40 dark:text-[#00D4AA] hover:bg-emerald-100 dark:hover:bg-[#00D4AA]/25 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                       >
                         <Edit3 className="w-3.5 h-3.5" />
-                        <span>Edit Details</span>
+                        <span>{canDirectEdit ? 'Edit Details' : 'Request Edit'}</span>
                       </button>
 
                       <button
@@ -629,27 +663,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                         className="py-2.5 px-3 rounded-xl bg-rose-50 text-rose-700 dark:bg-red-500/15 border border-rose-200 dark:border-red-500/30 dark:text-red-400 hover:bg-rose-100 dark:hover:bg-red-500/25 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                        <span>Delete Entry</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        disabled
-                        title="Can't be edited: Older than 1 week"
-                        className="py-2.5 px-3 rounded-xl bg-slate-100 text-slate-400 dark:bg-gray-800/40 border border-slate-200 dark:border-gray-700/40 font-bold text-xs flex items-center justify-center gap-1.5 cursor-not-allowed"
-                      >
-                        <Lock className="w-3.5 h-3.5" />
-                        <span>Can't be edited</span>
-                      </button>
-
-                      <button
-                        disabled
-                        title="Can't be deleted: Older than 1 week"
-                        className="py-2.5 px-3 rounded-xl bg-slate-100 text-slate-400 dark:bg-gray-800/40 border border-slate-200 dark:border-gray-700/40 font-bold text-xs flex items-center justify-center gap-1.5 cursor-not-allowed"
-                      >
-                        <Lock className="w-3.5 h-3.5" />
-                        <span>Locked</span>
+                        <span>{canDirectEdit ? 'Delete Entry' : 'Request Delete'}</span>
                       </button>
                     </div>
                   )}
@@ -717,7 +731,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                   required
                   value={editForm.amount}
                   onChange={(e) => setEditForm(prev => ({ ...prev, amount: e.target.value }))}
-                  placeholder="0.00 or 40,50"
+                  placeholder="0.00"
                   className="w-full bg-slate-50 dark:bg-[#0A0E1A] border border-slate-200 dark:border-[#1E2D40] rounded-xl px-3 py-2 text-sm text-emerald-700 dark:text-[#00D4AA] font-mono font-bold focus:outline-none focus:border-emerald-500 dark:focus:border-[#00D4AA]"
                 />
                 {(() => {

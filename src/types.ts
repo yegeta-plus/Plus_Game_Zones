@@ -207,7 +207,7 @@ export interface Receivable {
   amountOwed: number;
   amountCollected: number;
   dueDate: string;
-  status: 'OUTSTANDING' | 'COLLECTED' | 'WRITTEN_OFF';
+  status: 'OUTSTANDING' | 'COLLECTED' | 'WRITTEN_OFF' | 'LATE' | 'OVERDUE';
   createdDate: string;
 }
 
@@ -266,6 +266,7 @@ export interface AdminApprovalRequest {
     | 'SYSTEM_RESET';
   targetId: string;
   targetTitle: string;
+  reason?: string;
   payload?: any;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   approvedBy?: string;
@@ -310,11 +311,13 @@ export interface ChatMessageReaction {
 }
 
 export interface ChatMessageReference {
-  type: 'TRANSACTION' | 'WALLET' | 'EQUB' | 'LOAN' | 'RECEIVABLE';
+  type: 'TRANSACTION' | 'WALLET' | 'EQUB' | 'LOAN' | 'RECEIVABLE' | 'APPROVAL';
   id: string;
   title: string;
   subtitle?: string;
   amount?: number;
+  reason?: string;
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED';
 }
 
 export interface ChatMessage {

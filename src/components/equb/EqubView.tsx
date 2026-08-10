@@ -61,6 +61,7 @@ interface EqubViewProps {
   onRepayLoan?: (loanId: string, walletId: string, amount: number) => void;
   onCreateReceivable?: (receivable: Omit<Receivable, 'id' | 'amountCollected' | 'status' | 'createdDate'>) => void;
   onCollectReceivable?: (receivableId: string, walletId: string, amount: number) => void;
+  onDeleteReceivable?: (receivableId: string) => void;
   onRequestApproval?: (req: Omit<AdminApprovalRequest, 'id' | 'createdAt' | 'requestedBy' | 'requestedByName' | 'status'>) => void;
   onApproveRequest?: (reqId: string) => void;
   onRejectRequest?: (reqId: string) => void;
@@ -88,6 +89,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
   onRepayLoan,
   onCreateReceivable,
   onCollectReceivable,
+  onDeleteReceivable,
   onRequestApproval,
   onApproveRequest,
   onRejectRequest
@@ -144,7 +146,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
 
   // Co-Admin Confirmation Modal State
   const [pendingAdminAction, setPendingAdminAction] = useState<{
-    type: 'EDIT_EQUB' | 'DELETE_EQUB' | 'EDIT_LOAN' | 'DELETE_LOAN';
+    type: 'EDIT_EQUB' | 'DELETE_EQUB' | 'EDIT_LOAN' | 'DELETE_LOAN' | 'DELETE_RECEIVABLE';
     targetId: string;
     targetTitle: string;
     payload?: any;
@@ -154,6 +156,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
   const [coAdminPassword, setCoAdminPassword] = useState('');
   const [coAdminVerifiedCheck, setCoAdminVerifiedCheck] = useState(false);
   const [coAdminErrorMsg, setCoAdminErrorMsg] = useState('');
+  const [coAdminReason, setCoAdminReason] = useState('');
 
   // Other active admins list
   const otherAdmins = users.filter(u => u.id !== currentUser.id && u.active && (u.role === 'Admin' || u.role === 'SuperAdmin'));
@@ -175,7 +178,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
   };
 
   const executeOrConfirmAction = (
-    type: 'EDIT_EQUB' | 'DELETE_EQUB' | 'EDIT_LOAN' | 'DELETE_LOAN',
+    type: 'EDIT_EQUB' | 'DELETE_EQUB' | 'EDIT_LOAN' | 'DELETE_LOAN' | 'DELETE_RECEIVABLE',
     targetId: string,
     targetTitle: string,
     payload?: any
@@ -185,10 +188,11 @@ export const EqubView: React.FC<EqubViewProps> = ({
     setCoAdminPassword('');
     setCoAdminVerifiedCheck(false);
     setCoAdminErrorMsg('');
+    setCoAdminReason('');
   };
 
   const performDirectAction = (
-    type: 'EDIT_EQUB' | 'DELETE_EQUB' | 'EDIT_LOAN' | 'DELETE_LOAN',
+    type: 'EDIT_EQUB' | 'DELETE_EQUB' | 'EDIT_LOAN' | 'DELETE_LOAN' | 'DELETE_RECEIVABLE',
     targetId: string,
     payload?: any
   ) => {
@@ -200,6 +204,8 @@ export const EqubView: React.FC<EqubViewProps> = ({
       onUpdateLoan(targetId, payload);
     } else if (type === 'DELETE_LOAN' && onDeleteLoan) {
       onDeleteLoan(targetId);
+    } else if (type === 'DELETE_RECEIVABLE' && onDeleteReceivable) {
+      onDeleteReceivable(targetId);
     }
     setEditingEqub(null);
     setEditingLoan(null);
@@ -238,6 +244,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
       actionType: pendingAdminAction.type,
       targetId: pendingAdminAction.targetId,
       targetTitle: pendingAdminAction.targetTitle,
+      reason: coAdminReason.trim() || undefined,
       payload: pendingAdminAction.payload,
       targetAdminId: targetAdmin?.id,
       targetAdminName: targetAdmin?.name
@@ -246,6 +253,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
     setEditingEqub(null);
     setEditingLoan(null);
     setPendingAdminAction(null);
+    setCoAdminReason('');
   };
 
   // --- RECEIVABLES STATE ---
@@ -523,6 +531,8 @@ export const EqubView: React.FC<EqubViewProps> = ({
     });
 
   const sortedReceivables = [...receivables].sort((a, b) => {
+    if (a.status === 'LATE' && b.status !== 'LATE') return -1;
+    if (b.status === 'LATE' && a.status !== 'LATE') return 1;
     if (a.status !== b.status) return a.status === 'OUTSTANDING' ? -1 : 1;
     const dateA = new Date(a.createdDate || 0).getTime();
     const dateB = new Date(b.createdDate || 0).getTime();
@@ -667,6 +677,11 @@ export const EqubView: React.FC<EqubViewProps> = ({
                   <p className="text-[10px] text-slate-500 dark:text-[#8899BB] mt-0.5">
                     Requested by <strong className="text-slate-800 dark:text-slate-200">{req.requestedByName}</strong> on {new Date(req.createdAt).toLocaleString()}
                   </p>
+                  {req.reason && (
+                    <p className="text-[11px] text-amber-900 dark:text-amber-200 font-medium mt-1 bg-amber-100/60 dark:bg-amber-900/40 px-2 py-1 rounded-lg border border-amber-200/50 dark:border-amber-800/40">
+                      💬 <strong className="font-bold">Reason:</strong> {req.reason}
+                    </p>
+                  )}
                 </div>
 
                 {(currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
@@ -1299,20 +1314,42 @@ export const EqubView: React.FC<EqubViewProps> = ({
                           className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${
                             rcv.status === 'COLLECTED'
                               ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-500/30'
+                              : rcv.status === 'LATE' || rcv.status === 'OVERDUE'
+                              ? 'bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-400 border border-rose-300 dark:border-rose-500/30'
                               : 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-400 border border-amber-300 dark:border-amber-500/30'
                           }`}
                         >
-                          {rcv.status}
+                          {rcv.status === 'LATE' ? 'LATE PAYMENT' : rcv.status}
                         </span>
                         <h4 className="text-sm font-bold text-slate-900 dark:text-white mt-1">{rcv.customerName}</h4>
                         <p className="text-[11px] text-slate-500 dark:text-[#8899BB]">{rcv.description}</p>
                       </div>
 
-                      <div className="text-right">
-                        <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">Outstanding Debt</p>
-                        <p className="text-sm font-black font-mono text-blue-600 dark:text-[#3B82F6]">
-                          {hideBalances ? '••••••' : formatETB(outstanding)}
-                        </p>
+                      <div className="flex items-center gap-2">
+                        <div className="text-right">
+                          <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">Outstanding Debt</p>
+                          <p className="text-sm font-black font-mono text-blue-600 dark:text-[#3B82F6]">
+                            {hideBalances ? '••••••' : formatETB(outstanding)}
+                          </p>
+                        </div>
+                        {onDeleteReceivable && (currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('warning');
+                              const activeOtherUsers = (users || []).filter(u => u.id !== currentUser.id && u.active !== false);
+                              if (activeOtherUsers.length > 0) {
+                                executeOrConfirmAction('DELETE_RECEIVABLE', rcv.id, `Receivable: ${rcv.customerName} (ETB ${rcv.amountOwed.toLocaleString()})`);
+                              } else if (onDeleteReceivable) {
+                                onDeleteReceivable(rcv.id);
+                              }
+                            }}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors cursor-pointer"
+                            title="Delete Receivable"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -1386,7 +1423,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
                     required
                     value={equbName}
                     onChange={e => setEqubName(e.target.value)}
-                    placeholder="e.g. Merkato Wholesale Merchants Equb"
+                    placeholder="Equb circle name"
                     className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-300 dark:border-[#1E2D40] focus:border-indigo-500 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-medium outline-none"
                   />
                 </div>
@@ -1800,7 +1837,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
                   required
                   value={newLoanTitle}
                   onChange={e => setNewLoanTitle(e.target.value)}
-                  placeholder={newLoanDirection === 'LENT' ? "e.g. Stock Capital Lent to Ato Solomon" : "e.g. CBE Store Expansion Loan"}
+                  placeholder={newLoanDirection === 'LENT' ? "Contract title" : "Loan title"}
                   className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none"
                 />
               </div>
@@ -1814,7 +1851,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
                   required
                   value={newLoanCounterparty}
                   onChange={e => setNewLoanCounterparty(e.target.value)}
-                  placeholder={newLoanDirection === 'LENT' ? "e.g. Ato Solomon Retail" : "e.g. Commercial Bank of Ethiopia"}
+                  placeholder={newLoanDirection === 'LENT' ? "Borrower name" : "Lender name"}
                   className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none"
                 />
               </div>
@@ -1996,7 +2033,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
                   required
                   value={newRcvCustomer}
                   onChange={e => setNewRcvCustomer(e.target.value)}
-                  placeholder="e.g. Merkato Wholesale Supermarket"
+                  placeholder="Customer or client"
                   className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none"
                 />
               </div>
@@ -2007,7 +2044,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
                   type="text"
                   value={newRcvDescription}
                   onChange={e => setNewRcvDescription(e.target.value)}
-                  placeholder="e.g. Bulk wholesale beverage delivery invoice #412"
+                  placeholder="Invoice details"
                   className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none"
                 />
               </div>
@@ -2379,6 +2416,17 @@ export const EqubView: React.FC<EqubViewProps> = ({
                       <option key={adm.id} value={adm.id}>{adm.name} ({adm.role})</option>
                     ))}
                   </select>
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1 font-semibold">Reason for Request / Action Note</label>
+                  <input
+                    type="text"
+                    value={coAdminReason}
+                    onChange={e => setCoAdminReason(e.target.value)}
+                    placeholder="e.g. Schedule adjustment, payout date change, or amount adjustment"
+                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none"
+                  />
                 </div>
 
                 <div>

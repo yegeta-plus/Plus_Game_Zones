@@ -432,7 +432,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
                   type="text"
                   value={name}
                   onChange={e => setName(e.target.value)}
-                  placeholder="e.g. Shipping Freight, Bonus Income"
+                  placeholder="Category name"
                   className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] focus:border-[#00D4AA] rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white outline-none"
                 />
               </div>

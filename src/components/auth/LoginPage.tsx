@@ -34,7 +34,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   onToggleTheme
 }) => {
   // Sign In state - default to superadmin credentials for seamless experience
-  const [username, setUsername] = useState<string>('yegeta.huawei@gmail.com');
+  const [username, setUsername] = useState<string>('ygyegeta@gmail.com');
   const [password, setPassword] = useState<string>('password123');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [rememberMe, setRememberMe] = useState<boolean>(true);
@@ -63,7 +63,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     ) || {
       id: 'u-1',
       name: 'Yegeta Huawei',
-      email: 'yegeta.huawei@gmail.com',
+      email: 'ygyegeta@gmail.com',
       username: 'yegeta',
       role: 'SuperAdmin' as const,
       active: true,
@@ -133,11 +133,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     );
 
     // Hardened Super Admin fallback
-    if (!matchedUser && (inputClean === 'yegeta' || inputClean === 'yegeta.huawei@gmail.com' || inputClean.includes('yegeta'))) {
+    if (!matchedUser && (inputClean === 'yegeta' || inputClean === 'ygyegeta@gmail.com' || inputClean === 'yegeta.huawei@gmail.com' || inputClean.includes('yegeta'))) {
       matchedUser = {
         id: 'u-1',
         name: 'Yegeta Huawei',
-        email: 'yegeta.huawei@gmail.com',
+        email: inputClean.includes('@') ? inputClean : 'ygyegeta@gmail.com',
         username: 'yegeta',
         role: 'SuperAdmin',
         active: true,
@@ -275,11 +275,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         (u.username && u.username.toLowerCase() === email)
     );
 
-    if (!matchedUser && (email.includes('yegeta') || email === 'yegeta.huawei@gmail.com')) {
+    if (!matchedUser && (email.includes('yegeta') || email === 'ygyegeta@gmail.com' || email === 'yegeta.huawei@gmail.com')) {
       matchedUser = {
         id: 'u-1',
         name: 'Yegeta Huawei',
-        email: 'yegeta.huawei@gmail.com',
+        email: email.includes('@') ? email : 'ygyegeta@gmail.com',
         username: 'yegeta',
         role: 'SuperAdmin',
         active: true,
@@ -704,7 +704,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               {/* Real Active Account Button */}
               <button
                 type="button"
-                onClick={() => handleGoogleLoginSubmit('yegeta.huawei@gmail.com')}
+                onClick={() => handleGoogleLoginSubmit('ygyegeta@gmail.com')}
                 disabled={isSubmitting}
                 className="w-full text-left p-3.5 rounded-2xl bg-slate-900 border border-slate-700 hover:border-[#4285F4] hover:bg-slate-800 transition-all flex items-center justify-between cursor-pointer group shadow-sm"
               >
@@ -719,7 +719,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                         Authorized
                       </span>
                     </div>
-                    <div className="text-[11px] text-slate-400 font-mono">yegeta.huawei@gmail.com</div>
+                    <div className="text-[11px] text-slate-400 font-mono">ygyegeta@gmail.com</div>
                   </div>
                 </div>
                 <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-[#4285F4] group-hover:translate-x-1 transition-all" />

@@ -10,7 +10,6 @@ import { WalletsView } from './components/wallets/WalletsView';
 import { EqubView } from './components/equb/EqubView';
 import { MoreHubView, SubViewType } from './components/more/MoreHubView';
 import { ChatView } from './components/chat/ChatView';
-import { FloatingChatWidget } from './components/chat/FloatingChatWidget';
 import { AiAssistantWidget } from './components/ai/AiAssistantWidget';
 import { LoginPage } from './components/auth/LoginPage';
 
@@ -21,7 +20,8 @@ import {
   calculateWalletBalance,
   isTransactionEditable,
   formatETB,
-  mergeListById
+  mergeListById,
+  syncReceivablesLateStatus
 } from './lib/store';
 import { calculateNextEthiopianDueDate } from './lib/ethiopianCalendar';
 import {
@@ -144,11 +144,13 @@ export default function App() {
     const unsubscribe = subscribeToFirebaseState((remoteState) => {
       if (remoteState && typeof remoteState === 'object') {
         setState(prev => {
-          const mergedUsers = Array.isArray(remoteState.users) && remoteState.users.length > 0
-            ? remoteState.users
-            : prev.users;
+          const mergedUsers = mergeListById(prev.users, remoteState.users);
 
-          const activeUser = mergedUsers.find(u => u.id === prev.currentUser?.id || u.email === prev.currentUser?.email) || prev.currentUser;
+          const activeUser = (prev.currentUser?.email
+            ? mergedUsers.find(u => u.email.toLowerCase() === prev.currentUser.email.toLowerCase())
+            : null) || (prev.currentUser?.id
+            ? mergedUsers.find(u => u.id === prev.currentUser.id)
+            : null) || prev.currentUser;
 
           const calType = prev.calendarType || remoteState.calendarType || 'ETHIOPIAN';
 
@@ -203,12 +205,16 @@ export default function App() {
         const mergedAssets = mergeListById(prev.assets, remoteState.assets);
         const mergedGoals = mergeListById(prev.goals, remoteState.goals);
         const mergedRecurring = mergeListById(prev.recurring, remoteState.recurring);
-        const mergedReceivables = mergeListById(prev.receivables, remoteState.receivables);
+        const mergedReceivables = syncReceivablesLateStatus(mergeListById(prev.receivables, remoteState.receivables));
         const mergedCategories = mergeListById(prev.categories, remoteState.categories);
         const mergedAuditLogs = mergeListById(prev.auditLogs, remoteState.auditLogs);
         const mergedPending = mergeListById(prev.pendingReviewTransactions, remoteState.pendingReviewTransactions);
 
-        const activeUser = mergedUsers.find(u => u.id === prev.currentUser?.id || u.email === prev.currentUser?.email) || prev.currentUser;
+        const activeUser = (prev.currentUser?.email
+          ? mergedUsers.find(u => u.email.toLowerCase() === prev.currentUser.email.toLowerCase())
+          : null) || (prev.currentUser?.id
+          ? mergedUsers.find(u => u.id === prev.currentUser.id)
+          : null) || prev.currentUser;
         const calType = prev.calendarType || remoteState.calendarType || 'ETHIOPIAN';
 
         const updated = {
@@ -987,7 +993,7 @@ export default function App() {
 
     setState(prev => ({
       ...prev,
-      receivables: prev.receivables.map(r =>
+      receivables: syncReceivablesLateStatus(prev.receivables.map(r =>
         r.id === receivableId
           ? {
               ...r,
@@ -995,7 +1001,7 @@ export default function App() {
               status: isFull ? 'COLLECTED' : 'OUTSTANDING'
             }
           : r
-      ),
+      )),
       transactions: [newTx, ...prev.transactions]
     }));
 
@@ -1113,10 +1119,44 @@ export default function App() {
     performRefresh(true);
   };
 
+  const handleDeleteReceivable = (receivableId: string) => {
+    const targetRcv = (state.receivables || []).find(r => r.id === receivableId);
+    if (!targetRcv) return;
+
+    setState(prev => {
+      const updatedState = {
+        ...prev,
+        receivables: (prev.receivables || []).filter(r => r.id !== receivableId),
+        auditLogs: [
+          {
+            id: `aud-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            actorId: prev.currentUser.id,
+            actorName: prev.currentUser.name,
+            action: 'DELETE_RECEIVABLE',
+            entity: 'Receivable',
+            entityId: receivableId,
+            diffAfter: { deleted: true, customerName: targetRcv.customerName },
+            branch: prev.currentUser.branch
+          },
+          ...(prev.auditLogs || [])
+        ]
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
+
+    triggerToast(`🗑️ Customer receivable for "${targetRcv.customerName}" deleted.`);
+    performRefresh(true);
+  };
+
   // 14. Approval Request Handlers
   const handleCreateApprovalRequest = (reqData: Omit<AdminApprovalRequest, 'id' | 'createdAt' | 'requestedBy' | 'requestedByName' | 'status'>) => {
+    const reasonText = reqData.reason || `Co-admin authorization requested for ${reqData.actionType.replace(/_/g, ' ')}`;
     const newReq: AdminApprovalRequest = {
       ...reqData,
+      reason: reasonText,
       id: `req-${Date.now()}`,
       createdAt: new Date().toISOString(),
       requestedBy: state.currentUser.id,
@@ -1124,18 +1164,48 @@ export default function App() {
       status: 'PENDING'
     };
 
-    setState(prev => ({
-      ...prev,
-      approvalRequests: [newReq, ...(prev.approvalRequests || [])]
-    }));
+    const chatMsg: ChatMessage = {
+      id: `msg-appr-${Date.now()}`,
+      channelId: 'financial-approvals',
+      senderId: state.currentUser.id,
+      senderName: state.currentUser.name,
+      senderRole: state.currentUser.role,
+      text: `📋 **New Approval Request Submitted**\n• **Item:** ${newReq.targetTitle}\n• **Action:** ${newReq.actionType.replace(/_/g, ' ')}\n• **Reason:** ${reasonText}\n• **Requested By:** ${newReq.requestedByName}${newReq.targetAdminName ? `\n• **Assigned Co-Admin:** ${newReq.targetAdminName}` : ''}`,
+      timestamp: new Date().toISOString(),
+      reference: {
+        type: 'APPROVAL',
+        id: newReq.id,
+        title: `Approval Request: ${newReq.targetTitle}`,
+        subtitle: `Action: ${newReq.actionType.replace(/_/g, ' ')}`,
+        reason: reasonText,
+        status: 'PENDING'
+      }
+    };
 
-    triggerToast(`📋 Approval request sent to co-admin.`);
+    setState(prev => {
+      const updatedState = {
+        ...prev,
+        approvalRequests: [newReq, ...(prev.approvalRequests || [])],
+        chatMessages: [...(prev.chatMessages || []), chatMsg]
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
+
+    triggerToast(`📋 Approval request with reason posted to live chat.`);
     performRefresh(true);
   };
 
-  const handleApproveRequest = (reqId: string) => {
+  const handleApproveRequest = (reqId: string, approvalNote?: string) => {
     const req = (state.approvalRequests || []).find(r => r.id === reqId);
     if (!req) return;
+
+    const activeOtherUsers = (state.users || []).filter(u => u.id !== state.currentUser.id && u.active !== false);
+    if (req.requestedBy === state.currentUser.id && activeOtherUsers.length > 0) {
+      triggerToast(`⚠️ 2-User Rule: Requests must be approved by a different admin or user!`);
+      return;
+    }
 
     if (req.actionType === 'EDIT_EQUB' && req.payload) {
       handleUpdateEqub(req.targetId, req.payload);
@@ -1145,6 +1215,8 @@ export default function App() {
       handleUpdateLoan(req.targetId, req.payload);
     } else if (req.actionType === 'DELETE_LOAN') {
       handleDeleteLoan(req.targetId);
+    } else if (req.actionType === 'DELETE_RECEIVABLE') {
+      handleDeleteReceivable(req.targetId);
     } else if (req.actionType === 'REVERSE_TRANSACTION') {
       handleReverseTransaction(req.targetId);
     } else if (req.actionType === 'DELETE_TRANSACTION') {
@@ -1155,36 +1227,101 @@ export default function App() {
       handleDeleteWallet(req.targetId);
     } else if (req.actionType === 'EDIT_WALLET' && req.payload) {
       handleUpdateWallet(req.targetId, req.payload);
+    } else if (req.actionType === 'DELETE_USER') {
+      setState(prev => ({
+        ...prev,
+        users: prev.users.filter(u => u.id !== req.targetId)
+      }));
+    } else if (req.actionType === 'DELETE_CATEGORY') {
+      setState(prev => ({
+        ...prev,
+        categories: prev.categories.filter(c => c.id !== req.targetId)
+      }));
+    } else if (req.actionType === 'SYSTEM_RESET') {
+      handleResetAllData();
     }
 
-    setState(prev => ({
-      ...prev,
-      approvalRequests: (prev.approvalRequests || []).map(r => r.id === reqId ? {
-        ...r,
-        status: 'APPROVED',
-        approvedBy: prev.currentUser.id,
-        approvedByName: prev.currentUser.name,
-        approvedAt: new Date().toISOString()
-      } : r)
-    }));
+    const effectiveReason = approvalNote || req.reason || 'Verified and approved by co-admin';
+    const approveMsg: ChatMessage = {
+      id: `msg-appr-ok-${Date.now()}`,
+      channelId: 'financial-approvals',
+      senderId: state.currentUser.id,
+      senderName: state.currentUser.name,
+      senderRole: state.currentUser.role,
+      text: `✅ **Approval Granted**\n• **Item:** ${req.targetTitle}\n• **Action:** ${req.actionType.replace(/_/g, ' ')}\n• **Reason for Approval:** ${effectiveReason}\n• **Approved By:** ${state.currentUser.name}`,
+      timestamp: new Date().toISOString(),
+      reference: {
+        type: 'APPROVAL',
+        id: req.id,
+        title: `Approved: ${req.targetTitle}`,
+        subtitle: `Action: ${req.actionType.replace(/_/g, ' ')}`,
+        reason: effectiveReason,
+        status: 'APPROVED'
+      }
+    };
 
-    triggerToast(`✅ Request approved and executed!`);
+    setState(prev => {
+      const updatedState = {
+        ...prev,
+        approvalRequests: (prev.approvalRequests || []).map(r => r.id === reqId ? {
+          ...r,
+          status: 'APPROVED' as const,
+          approvedBy: prev.currentUser.id,
+          approvedByName: prev.currentUser.name,
+          approvedAt: new Date().toISOString()
+        } : r),
+        chatMessages: [...(prev.chatMessages || []), approveMsg]
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
+
+    triggerToast(`✅ Request approved and status posted to live chat!`);
     performRefresh(true);
   };
 
-  const handleRejectRequest = (reqId: string) => {
-    setState(prev => ({
-      ...prev,
-      approvalRequests: (prev.approvalRequests || []).map(r => r.id === reqId ? {
-        ...r,
-        status: 'REJECTED',
-        approvedBy: prev.currentUser.id,
-        approvedByName: prev.currentUser.name,
-        approvedAt: new Date().toISOString()
-      } : r)
-    }));
+  const handleRejectRequest = (reqId: string, rejectionNote?: string) => {
+    const req = (state.approvalRequests || []).find(r => r.id === reqId);
+    if (!req) return;
 
-    triggerToast(`❌ Approval request rejected.`);
+    const effectiveReason = rejectionNote || req.reason || 'Denied by co-admin';
+    const rejectMsg: ChatMessage = {
+      id: `msg-appr-rej-${Date.now()}`,
+      channelId: 'financial-approvals',
+      senderId: state.currentUser.id,
+      senderName: state.currentUser.name,
+      senderRole: state.currentUser.role,
+      text: `❌ **Approval Request Rejected**\n• **Item:** ${req.targetTitle}\n• **Action:** ${req.actionType.replace(/_/g, ' ')}\n• **Reason for Rejection:** ${effectiveReason}\n• **Rejected By:** ${state.currentUser.name}`,
+      timestamp: new Date().toISOString(),
+      reference: {
+        type: 'APPROVAL',
+        id: req.id,
+        title: `Rejected: ${req.targetTitle}`,
+        subtitle: `Action: ${req.actionType.replace(/_/g, ' ')}`,
+        reason: effectiveReason,
+        status: 'REJECTED'
+      }
+    };
+
+    setState(prev => {
+      const updatedState = {
+        ...prev,
+        approvalRequests: (prev.approvalRequests || []).map(r => r.id === reqId ? {
+          ...r,
+          status: 'REJECTED' as const,
+          approvedBy: prev.currentUser.id,
+          approvedByName: prev.currentUser.name,
+          approvedAt: new Date().toISOString()
+        } : r),
+        chatMessages: [...(prev.chatMessages || []), rejectMsg]
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
+
+    triggerToast(`❌ Approval request rejected and status posted to live chat.`);
     performRefresh(true);
   };
 
@@ -1566,6 +1703,7 @@ export default function App() {
             onRepayLoan={handleRepayLoan}
             onCreateReceivable={handleCreateReceivable}
             onCollectReceivable={handleCollectReceivable}
+            onDeleteReceivable={handleDeleteReceivable}
             onRequestApproval={handleCreateApprovalRequest}
             onApproveRequest={handleApproveRequest}
             onRejectRequest={handleRejectRequest}
@@ -1579,6 +1717,8 @@ export default function App() {
             onAddReaction={handleAddChatReaction}
             onCreateChannel={handleCreateChatChannel}
             onNavigateTab={(tab) => handleNavigateTab(tab)}
+            onApproveRequest={handleApproveRequest}
+            onRejectRequest={handleRejectRequest}
           />
         )}
 
@@ -1593,15 +1733,6 @@ export default function App() {
           />
         )}
       </main>
-
-      {/* Floating Team Quick Chat Widget (active on all tabs except full chat) */}
-      {activeTab !== 'chat' && (
-        <FloatingChatWidget
-          state={state}
-          onSendMessage={handleSendMessage}
-          onNavigateToFullChat={() => handleNavigateTab('chat')}
-        />
-      )}
 
       {/* Bottom Navigation Bar */}
       <BottomNav

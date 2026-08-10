@@ -183,7 +183,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
               type="text"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g., Telebirr cashout to CBE bank"
+              placeholder="Transfer note or reason"
               className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl py-2.5 px-3 text-xs text-slate-900 dark:text-white outline-none focus:border-blue-500"
             />
           </div>

@@ -169,7 +169,7 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
           type="text"
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
-          placeholder="Search recurring bills by title or category..."
+          placeholder="Search recurring bills..."
           className="w-full bg-[#131926] border border-[#1E2D40] focus:border-[#A78BFA] rounded-xl pl-9 pr-3 py-2 text-xs text-white outline-none"
         />
       </div>
@@ -304,7 +304,7 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
                   type="text"
                   value={title}
                   onChange={e => setTitle(e.target.value)}
-                  placeholder="e.g. Office Rent, Ethio Telecom Fiber"
+                  placeholder="Bill title"
                   className="w-full bg-[#1C2333] border border-[#1E2D40] focus:border-[#A78BFA] rounded-xl px-3 py-2 text-white outline-none"
                 />
               </div>
@@ -315,7 +315,7 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
                   type="number"
                   value={amount}
                   onChange={e => setAmount(e.target.value)}
-                  placeholder="e.g. 15000"
+                  placeholder="0.00"
                   className="w-full bg-[#1C2333] border border-[#1E2D40] focus:border-[#A78BFA] rounded-xl px-3 py-2 text-white outline-none font-mono"
                 />
               </div>

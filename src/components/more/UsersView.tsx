@@ -495,7 +495,7 @@ export const UsersView: React.FC<UsersViewProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search registered users by name, email, or branch..."
+            placeholder="Search users..."
             className="w-full bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-xl pl-9 pr-4 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-[#8899BB] outline-none focus:border-orange-500 dark:focus:border-[#FB923C]"
           />
         </div>
@@ -723,7 +723,7 @@ export const UsersView: React.FC<UsersViewProps> = ({
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. Abebe Bekele"
+                    placeholder="Full name"
                     className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] focus:border-orange-500 dark:focus:border-[#FB923C] rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white outline-none"
                     required
                   />
@@ -737,7 +737,7 @@ export const UsersView: React.FC<UsersViewProps> = ({
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="e.g. abebe@pluszone.et"
+                    placeholder="Email address"
                     className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] focus:border-orange-500 dark:focus:border-[#FB923C] rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white outline-none"
                     required
                   />
@@ -804,7 +804,7 @@ export const UsersView: React.FC<UsersViewProps> = ({
                     type="text"
                     value={branch}
                     onChange={(e) => setBranch(e.target.value)}
-                    placeholder="e.g. Addis Ababa HQ, Bole, Merkato"
+                    placeholder="Branch name"
                     className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] focus:border-orange-500 dark:focus:border-[#FB923C] rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white outline-none"
                   />
                 </div>

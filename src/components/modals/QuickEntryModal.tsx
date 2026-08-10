@@ -418,7 +418,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                           required={isCreditSale}
                           value={customerName}
                           onChange={e => setCustomerName(e.target.value)}
-                          placeholder="e.g. Solomon Retailers or Ato Girma"
+                          placeholder="Customer name"
                           className="w-full bg-white dark:bg-[#0A0E1A] border border-blue-300 dark:border-[#3B82F6]/50 focus:border-blue-500 dark:focus:border-[#3B82F6] rounded-xl py-2 px-3 text-xs text-slate-900 dark:text-white outline-none"
                         />
 
@@ -536,7 +536,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                             inputMode="decimal"
                             value={val}
                             onChange={(e) => handleBatchAmountChange(w.id, e.target.value)}
-                            placeholder="0.00 or e.g. 40,50"
+                            placeholder="0.00"
                             className="w-full bg-white dark:bg-[#0A0E1A] border border-slate-200 dark:border-[#1E2D40] focus:border-purple-500 dark:focus:border-[#A78BFA] rounded-xl py-2 px-3 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
                           />
                         </div>
@@ -612,7 +612,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                   required={incomeType === 'single'}
                   value={amountStr}
                   onChange={(e) => setAmountStr(e.target.value)}
-                  placeholder="0.00 or e.g. 40,50"
+                  placeholder="0.00"
                   className="w-full bg-transparent text-3xl font-mono font-black text-slate-900 dark:text-white outline-none placeholder:text-slate-300 dark:placeholder:text-[#334155] no-scrollbar overflow-hidden resize-none"
                 />
               </div>
@@ -725,7 +725,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="e.g. Daily Closing Store Sales or Telebirr batch confirmation"
+              placeholder="Note or reference"
               className="w-full bg-slate-50 dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] focus:border-emerald-500 dark:focus:border-[#00D4AA] rounded-xl py-2.5 px-3 text-xs text-slate-900 dark:text-[#F0F4FF] outline-none"
             />
           </div>

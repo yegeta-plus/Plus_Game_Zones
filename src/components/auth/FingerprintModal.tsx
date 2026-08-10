@@ -15,7 +15,7 @@ interface FingerprintModalProps {
 export const FingerprintModal: React.FC<FingerprintModalProps> = ({
   isOpen,
   onClose,
-  userEmail = 'yegeta.huawei@gmail.com',
+  userEmail = 'ygyegeta@gmail.com',
   userName = 'Yegeta Huawei',
   onSuccess,
   mode = 'LOGIN'
