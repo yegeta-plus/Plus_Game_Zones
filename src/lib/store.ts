@@ -11,32 +11,69 @@ import {
   Receivable,
   AuditLogEntry,
   Category,
-  UserRole
+  UserRole,
+  ERPState,
+  AutoImportSettings,
+  PendingReviewTransaction,
+  ChatChannel,
+  ChatMessage
 } from '../types';
 import { triggerHaptic } from './haptics';
 import { DEFAULT_ROLE_PERMISSIONS, getEffectivePermissions } from './auth';
 
+export type { ERPState } from '../types';
+
 const STORAGE_KEY = 'pluszone_fin_erp_state_v12_daily_only';
 
-export interface ERPState {
-  currentUser: UserProfile;
-  users: UserProfile[];
-  wallets: Wallet[];
-  transactions: Transaction[];
-  transfers: Transfer[];
-  equbs: Equb[];
-  loans: Loan[];
-  assets: Asset[];
-  goals: Goal[];
-  recurring: RecurringTemplate[];
-  receivables: Receivable[];
-  categories: Category[];
-  auditLogs: AuditLogEntry[];
-  approvalRequests?: any[];
-  theme: 'dark' | 'light';
-  hideBalances: boolean;
-  calendarType?: 'ETHIOPIAN' | 'GREGORIAN';
-}
+const DEFAULT_CHAT_CHANNELS: ChatChannel[] = [
+  {
+    id: 'general',
+    name: 'General Lounge',
+    type: 'PUBLIC',
+    description: 'Company-wide team chat, general discussions & announcements',
+    createdDate: new Date().toISOString()
+  },
+  {
+    id: 'financial-approvals',
+    name: 'Financial Approvals & Alerts',
+    type: 'PUBLIC',
+    description: 'Discuss pending transactions, expense reversals, and equb payouts',
+    createdDate: new Date().toISOString()
+  },
+  {
+    id: 'cashiers-team',
+    name: 'Cashiers & Operations',
+    type: 'PUBLIC',
+    description: 'Daily cash register shifts, bank deposits & vault updates',
+    createdDate: new Date().toISOString()
+  }
+];
+
+const DEFAULT_CHAT_MESSAGES: ChatMessage[] = [
+  {
+    id: 'msg-welcome-1',
+    channelId: 'general',
+    senderId: 'u-1',
+    senderName: 'Yegeta Huawei',
+    senderRole: 'SuperAdmin',
+    text: 'Welcome to Plus Game Zone Team Live Chat! 💬 Use this space to collaborate with cashiers, managers, and partners in real-time. You can link transactions, wallets, and send files directly!',
+    timestamp: new Date(Date.now() - 3600000).toISOString(),
+    isAnnouncement: true,
+    reactions: [
+      { emoji: '👋', count: 2, users: ['u-1'] },
+      { emoji: '🚀', count: 1, users: ['u-1'] }
+    ]
+  },
+  {
+    id: 'msg-welcome-2',
+    channelId: 'financial-approvals',
+    senderId: 'u-1',
+    senderName: 'Yegeta Huawei',
+    senderRole: 'SuperAdmin',
+    text: 'Please tag or link any pending transaction references here when requesting urgent admin approval.',
+    timestamp: new Date(Date.now() - 1800000).toISOString()
+  }
+];
 
 const DEFAULT_USERS: UserProfile[] = [
   {
@@ -47,6 +84,7 @@ const DEFAULT_USERS: UserProfile[] = [
     role: 'SuperAdmin',
     active: true,
     isApproved: true,
+    isDigitalMoneyManager: true, // SuperAdmin by default, can be delegated to another user
     invitationCode: 'PZ-SUPER-GOOGLE',
     hasSetPassword: true,
     password: 'password123',
@@ -250,6 +288,48 @@ export function loadInitialState(): ERPState {
         parsed.transfers = Array.isArray(parsed.transfers) ? parsed.transfers : [];
         parsed.goals = Array.isArray(parsed.goals) ? parsed.goals : DEFAULT_GOALS;
         parsed.auditLogs = Array.isArray(parsed.auditLogs) ? parsed.auditLogs : DEFAULT_AUDIT_LOGS;
+        // Ensure single Digital Money Manager user is set
+        const managerUser = parsed.users.find((u: UserProfile) => u.isDigitalMoneyManager);
+        if (!managerUser && parsed.users.length > 0) {
+          parsed.users[0].isDigitalMoneyManager = true;
+          parsed.digitalMoneyManagerUserId = parsed.users[0].id;
+        } else if (managerUser) {
+          parsed.digitalMoneyManagerUserId = managerUser.id;
+        }
+
+        parsed.autoImportSettings = parsed.autoImportSettings || {
+          enabled: true,
+          importMethod: 'BOTH',
+          selectedProvider: 'ALL',
+          autoCategorize: true,
+          notifyOnNewPending: true
+        };
+
+        parsed.pendingReviewTransactions = Array.isArray(parsed.pendingReviewTransactions)
+          ? parsed.pendingReviewTransactions
+          : [
+              {
+                id: 'pending-sample-1',
+                date: new Date().toISOString(),
+                refCode: 'FT2608099001',
+                amount: 18500,
+                type: 'INCOME',
+                senderOrCounterparty: 'KIBROM TESFAYE (CBE 100088992211)',
+                standingBalance: 168400,
+                rawText: 'Dear Customer, your account 1000751694559 has been credited with ETB 18,500.00 by KIBROM TESFAYE on 09-AUG-2026. Ref: FT2608099001. Available balance ETB 168,400.00. Commercial Bank of Ethiopia.',
+                source: 'SMS',
+                provider: 'CBE',
+                suggestedCategory: 'Sales Revenue',
+                suggestedWalletId: 'w-cbe',
+                createdAt: new Date().toISOString(),
+                status: 'PENDING',
+                notes: 'Auto-detected via CBE Bank SMS'
+              }
+            ];
+
+        parsed.chatChannels = Array.isArray(parsed.chatChannels) && parsed.chatChannels.length > 0 ? parsed.chatChannels : DEFAULT_CHAT_CHANNELS;
+        parsed.chatMessages = Array.isArray(parsed.chatMessages) && parsed.chatMessages.length > 0 ? parsed.chatMessages : DEFAULT_CHAT_MESSAGES;
+
         // Preserve currently logged-in user session if available
         if (parsed.currentUser && parsed.currentUser.id && Array.isArray(parsed.users)) {
           const matchingUser = parsed.users.find((u: UserProfile) => u.id === parsed.currentUser.id || u.email === parsed.currentUser.email);
@@ -285,6 +365,35 @@ function createInitialState(): ERPState {
     categories: DEFAULT_CATEGORIES,
     auditLogs: DEFAULT_AUDIT_LOGS,
     approvalRequests: [],
+    digitalMoneyManagerUserId: DEFAULT_USERS[0].id,
+    autoImportSettings: {
+      enabled: true,
+      importMethod: 'BOTH',
+      selectedProvider: 'ALL',
+      autoCategorize: true,
+      notifyOnNewPending: true
+    },
+    pendingReviewTransactions: [
+      {
+        id: 'pending-sample-1',
+        date: new Date().toISOString(),
+        refCode: 'FT2608099001',
+        amount: 18500,
+        type: 'INCOME',
+        senderOrCounterparty: 'KIBROM TESFAYE (CBE 100088992211)',
+        standingBalance: 168400,
+        rawText: 'Dear Customer, your account 1000751694559 has been credited with ETB 18,500.00 by KIBROM TESFAYE on 09-AUG-2026. Ref: FT2608099001. Available balance ETB 168,400.00. Commercial Bank of Ethiopia.',
+        source: 'SMS',
+        provider: 'CBE',
+        suggestedCategory: 'Sales Revenue',
+        suggestedWalletId: 'w-cbe',
+        createdAt: new Date().toISOString(),
+        status: 'PENDING',
+        notes: 'Auto-detected via CBE Bank SMS'
+      }
+    ],
+    chatChannels: DEFAULT_CHAT_CHANNELS,
+    chatMessages: DEFAULT_CHAT_MESSAGES,
     theme: 'dark',
     hideBalances: false,
     calendarType: 'ETHIOPIAN'
@@ -505,5 +614,31 @@ export function parseSummedAmount(inputStr: string): SummedAmountResult {
     isValid: roundedTotal > 0,
     formattedExpression: validNumbers.join(' + ')
   };
+}
+
+/**
+ * Safely merges a local list and remote list by unique item ID.
+ * Ensures that newly created local transactions, users, wallets, etc. are never lost during sync.
+ */
+export function mergeListById<T extends { id: string }>(localList: T[] = [], remoteList: T[] = []): T[] {
+  if (!Array.isArray(localList)) localList = [];
+  if (!Array.isArray(remoteList)) remoteList = [];
+  const map = new Map<string, T>();
+
+  remoteList.forEach(item => {
+    if (item && typeof item === 'object' && item.id) {
+      map.set(item.id, item);
+    }
+  });
+
+  localList.forEach(item => {
+    if (item && typeof item === 'object' && item.id) {
+      if (!map.has(item.id)) {
+        map.set(item.id, item);
+      }
+    }
+  });
+
+  return Array.from(map.values());
 }
 

@@ -23,7 +23,7 @@ export interface UserPermissions {
   viewOnly: boolean;
 }
 
-export type NavTab = 'dashboard' | 'transactions' | 'wallets' | 'equb' | 'more';
+export type NavTab = 'dashboard' | 'transactions' | 'wallets' | 'equb' | 'chat' | 'more';
 
 export interface UserProfile {
   id: string;
@@ -34,6 +34,7 @@ export interface UserProfile {
   avatarUrl?: string;
   active: boolean;
   isApproved?: boolean;
+  isDigitalMoneyManager?: boolean; // Only one user across the company holds this designation
   invitationCode?: string;
   hasSetPassword?: boolean;
   password?: string;
@@ -272,6 +273,79 @@ export interface AdminApprovalRequest {
   approvedAt?: string;
 }
 
+export interface AutoImportSettings {
+  enabled: boolean;
+  importMethod: 'SMS' | 'NOTIFICATION' | 'BOTH';
+  selectedProvider: 'CBE' | 'TELEBIRR' | 'EBIRR' | 'AWASH' | 'DASHEN' | 'BOA' | 'ALL';
+  autoCategorize: boolean;
+  notifyOnNewPending: boolean;
+  targetWalletId?: string;
+  excludePersonalTelebirr?: boolean;
+  personalTelebirrAccountIdentifier?: string;
+}
+
+export interface PendingReviewTransaction {
+  id: string;
+  date: string;
+  refCode: string;
+  amount: number;
+  type: TransactionType;
+  senderOrCounterparty: string;
+  standingBalance?: number;
+  rawText: string;
+  source: 'SMS' | 'NOTIFICATION';
+  provider: 'CBE' | 'TELEBIRR' | 'EBIRR' | 'AWASH' | 'DASHEN' | 'BOA' | 'OTHER';
+  suggestedCategory: string;
+  suggestedWalletId: string;
+  createdAt: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'DUPLICATE';
+  duplicateRefId?: string;
+  notes?: string;
+}
+
+export interface ChatMessageReaction {
+  emoji: string;
+  count: number;
+  users: string[]; // user IDs or emails who reacted
+}
+
+export interface ChatMessageReference {
+  type: 'TRANSACTION' | 'WALLET' | 'EQUB' | 'LOAN' | 'RECEIVABLE';
+  id: string;
+  title: string;
+  subtitle?: string;
+  amount?: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  channelId: string; // 'general', 'financial-approvals', 'cashiers-team', or DM 'dm:user1Id_user2Id'
+  senderId: string;
+  senderName: string;
+  senderRole: UserRole;
+  senderAvatar?: string;
+  text: string;
+  timestamp: string; // ISO string
+  fileUrl?: string;
+  fileName?: string;
+  fileType?: 'IMAGE' | 'DOCUMENT' | 'AUDIO';
+  replyToId?: string;
+  replyToText?: string;
+  replyToSenderName?: string;
+  reactions?: ChatMessageReaction[];
+  reference?: ChatMessageReference;
+  isAnnouncement?: boolean;
+}
+
+export interface ChatChannel {
+  id: string;
+  name: string;
+  type: 'PUBLIC' | 'BRANCH' | 'ROLE' | 'DIRECT';
+  description?: string;
+  participantIds?: string[]; // For direct messages or private channels
+  createdDate?: string;
+}
+
 export interface ERPState {
   currentUser: UserProfile;
   users: UserProfile[];
@@ -287,6 +361,11 @@ export interface ERPState {
   categories: Category[];
   auditLogs: AuditLogEntry[];
   approvalRequests?: AdminApprovalRequest[];
+  digitalMoneyManagerUserId?: string;
+  autoImportSettings?: AutoImportSettings;
+  pendingReviewTransactions?: PendingReviewTransaction[];
+  chatMessages?: ChatMessage[];
+  chatChannels?: ChatChannel[];
   theme: 'dark' | 'light';
   hideBalances: boolean;
   calendarType?: 'ETHIOPIAN' | 'GREGORIAN';

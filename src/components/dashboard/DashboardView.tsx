@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Eye,
   EyeOff,
@@ -40,7 +40,10 @@ import {
   ArrowDown,
   Briefcase,
   HelpCircle,
-  Gift
+  Gift,
+  X,
+  CheckCheck,
+  BarChart3
 } from 'lucide-react';
 import {
   AreaChart,
@@ -75,6 +78,7 @@ import {
   calculateNextEthiopianDueDate
 } from '../../lib/ethiopianCalendar';
 import { triggerHaptic } from '../../lib/haptics';
+import { formatRelativeNotifTime } from '../../lib/notifications';
 import { BrandLogo } from '../common/BrandLogo';
 
 interface DashboardViewProps {
@@ -88,6 +92,9 @@ interface DashboardViewProps {
   receivables?: Receivable[];
   hideBalances: boolean;
   calendarType?: 'ETHIOPIAN' | 'GREGORIAN';
+  dismissedNotifIds?: string[];
+  onDismissNotification?: (id: string) => void;
+  onClearAllNotifications?: () => void;
   onToggleHideBalances: () => void;
   onOpenQuickEntry: () => void;
   onOpenTransferModal: () => void;
@@ -106,6 +113,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   receivables = [],
   hideBalances,
   calendarType = 'ETHIOPIAN',
+  dismissedNotifIds = [],
+  onDismissNotification,
+  onClearAllNotifications,
   onToggleHideBalances,
   onOpenQuickEntry,
   onOpenTransferModal,
@@ -115,6 +125,67 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const totalBalance = calculateTotalBusinessBalance(wallets, transactions, transfers);
   const { income, expense, profit } = calculateMonthlyStats(transactions);
   const incomeAverages = calculateIncomeAverages(transactions);
+
+  const [reportTimeframe, setReportTimeframe] = useState<'ALL' | 'DAILY' | 'MONTHLY' | 'YEARLY'>('ALL');
+
+  // Comprehensive Income & Expense Summary Report (Daily, Monthly, Yearly)
+  const financialSummaryReport = useMemo(() => {
+    const now = new Date();
+    const todayYMD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    let dailyInc = 0;
+    let dailyExp = 0;
+    let dailyCount = 0;
+
+    let monthlyInc = 0;
+    let monthlyExp = 0;
+    let monthlyCount = 0;
+
+    let yearlyInc = 0;
+    let yearlyExp = 0;
+    let yearlyCount = 0;
+
+    transactions.forEach((tx) => {
+      if (!tx.date) return;
+      const txDate = new Date(tx.date);
+      if (isNaN(txDate.getTime())) return;
+
+      const txYMD = `${txDate.getFullYear()}-${String(txDate.getMonth() + 1).padStart(2, '0')}-${String(txDate.getDate()).padStart(2, '0')}`;
+      const txYear = txDate.getFullYear();
+      const txMonth = txDate.getMonth();
+
+      const amt = Number(tx.amount) || 0;
+
+      // Daily
+      if (txYMD === todayYMD) {
+        dailyCount++;
+        if (tx.type === 'INCOME') dailyInc += amt;
+        else if (tx.type === 'EXPENSE') dailyExp += amt;
+      }
+
+      // Monthly
+      if (txYear === currentYear && txMonth === currentMonth) {
+        monthlyCount++;
+        if (tx.type === 'INCOME') monthlyInc += amt;
+        else if (tx.type === 'EXPENSE') monthlyExp += amt;
+      }
+
+      // Yearly
+      if (txYear === currentYear) {
+        yearlyCount++;
+        if (tx.type === 'INCOME') yearlyInc += amt;
+        else if (tx.type === 'EXPENSE') yearlyExp += amt;
+      }
+    });
+
+    return {
+      daily: { income: dailyInc, expense: dailyExp, net: dailyInc - dailyExp, count: dailyCount },
+      monthly: { income: monthlyInc, expense: monthlyExp, net: monthlyInc - monthlyExp, count: monthlyCount },
+      yearly: { income: yearlyInc, expense: yearlyExp, net: yearlyInc - yearlyExp, count: yearlyCount }
+    };
+  }, [transactions]);
 
   const today = new Date();
   const ethDate = toEthiopianDate(today);
@@ -306,6 +377,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       message: string;
       type: 'HIGH' | 'MEDIUM' | 'INFO';
       time: string;
+      timestamp: number;
       icon: React.ReactNode;
       actionTab?: any;
       actionSubView?: any;
@@ -313,12 +385,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
     // Equb notifications
     activeEqubs.forEach(eq => {
+      const eqTime = new Date(eq.startDate).getTime() || Date.now();
       list.push({
-        id: `notif-eq-${eq.id}`,
+        id: `notif-eq-${eq.id}-r${eq.currentRound}`,
         title: `Equb Round #${eq.currentRound} Active`,
         message: `${eq.name} contribution of ${formatETB(eq.contributionPerRound)} is ready for deposit.`,
         type: 'MEDIUM',
         time: 'Today',
+        timestamp: eqTime + 100,
         icon: <Building2 className="w-4 h-4 text-purple-400" />,
         actionTab: 'equb'
       });
@@ -326,12 +400,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
     // Active Loan Notifications
     activeLoans.forEach(l => {
+      const loanTime = new Date(l.dueDate).getTime() || Date.now();
       list.push({
         id: `notif-loan-${l.id}`,
         title: `Loan Repayment Due`,
         message: `${l.lender} payment of ${formatETB(l.monthlyPayment || l.outstandingBalance)} scheduled.`,
         type: 'HIGH',
         time: 'Upcoming',
+        timestamp: loanTime + 200,
         icon: <CreditCard className="w-4 h-4 text-red-400" />,
         actionTab: 'more',
         actionSubView: 'LOANS'
@@ -346,6 +422,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         message: `${formatETB(uncollectedReceivablesTotal)} waiting for customer collection.`,
         type: 'MEDIUM',
         time: 'Pending',
+        timestamp: Date.now() - 3600000,
         icon: <Receipt className="w-4 h-4 text-emerald-400" />,
         actionTab: 'more',
         actionSubView: 'RECEIVABLES'
@@ -362,29 +439,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           message: `Wallet balance is ${formatETB(bal)}. Top-up recommended.`,
           type: 'HIGH',
           time: 'Urgent',
+          timestamp: Date.now(),
           icon: <AlertTriangle className="w-4 h-4 text-amber-400" />,
           actionTab: 'wallets'
         });
       }
     });
 
-    // Latest Transaction
+    // Recent Transactions (top 3)
     const sortedTxs = [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     if (sortedTxs.length > 0) {
-      const latestTx = sortedTxs[0];
-      list.push({
-        id: `notif-tx-${latestTx.id}`,
-        title: `New Entry Posted`,
-        message: `${latestTx.description} (${latestTx.type === 'INCOME' ? '+' : '-'}${formatETB(latestTx.amount)}) by ${latestTx.creatorName}`,
-        type: 'INFO',
-        time: 'Recent',
-        icon: <FileText className="w-4 h-4 text-[#00D4AA]" />,
-        actionTab: 'transactions'
+      sortedTxs.slice(0, 3).forEach(tx => {
+        const txTime = new Date(tx.date).getTime();
+        list.push({
+          id: `notif-tx-${tx.id}`,
+          title: `New Entry Posted`,
+          message: `${tx.description} (${tx.type === 'INCOME' ? '+' : '-'}${formatETB(tx.amount)}) by ${tx.creatorName}`,
+          type: 'INFO',
+          time: formatRelativeNotifTime(txTime),
+          timestamp: txTime,
+          icon: <FileText className="w-4 h-4 text-[#00D4AA]" />,
+          actionTab: 'transactions'
+        });
       });
     }
 
-    return list;
-  }, [activeEqubs, activeLoans, uncollectedReceivablesTotal, wallets, transactions, transfers]);
+    // Filter out dismissed notifications & sort latest first
+    const activeList = list.filter(n => !dismissedNotifIds.includes(n.id));
+    return activeList.sort((a, b) => b.timestamp - a.timestamp);
+  }, [activeEqubs, activeLoans, uncollectedReceivablesTotal, wallets, transactions, transfers, dismissedNotifIds]);
 
   const recentTxList = [...transactions]
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -599,6 +682,207 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
+      </div>
+
+      {/* Financial Summary Report Widget (Daily, Monthly, Yearly Income & Expenses) */}
+      <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
+        {/* Report Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-[#1E2D40]">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-slate-950 font-black flex items-center justify-center shadow-sm">
+              <BarChart3 className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                Income & Expense Summary Report
+                <span className="text-[10px] font-mono font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-[#00D4AA] border border-emerald-200 dark:border-emerald-800/80">
+                  Real-Time
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-[#8899BB] font-medium">
+                Live performance breakdown for Daily, Monthly, and Yearly cash flows
+              </p>
+            </div>
+          </div>
+
+          {/* Timeframe selector pills */}
+          <div className="flex items-center bg-slate-100 dark:bg-[#1C2333] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40] text-xs self-start sm:self-auto">
+            {(['ALL', 'DAILY', 'MONTHLY', 'YEARLY'] as const).map((tf) => (
+              <button
+                key={tf}
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setReportTimeframe(tf);
+                }}
+                className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                  reportTimeframe === tf
+                    ? 'bg-white dark:bg-[#00D4AA] text-slate-900 dark:text-slate-950 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                {tf === 'ALL' ? 'Overview' : tf === 'DAILY' ? 'Daily' : tf === 'MONTHLY' ? 'Monthly' : 'Yearly'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 3 Columns Grid: Daily, Monthly, Yearly */}
+        <div className={`grid gap-3.5 ${
+          reportTimeframe === 'ALL'
+            ? 'grid-cols-1 md:grid-cols-3'
+            : 'grid-cols-1'
+        }`}>
+          {/* 1. DAILY REPORT CARD */}
+          {(reportTimeframe === 'ALL' || reportTimeframe === 'DAILY') && (
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#161D2B] border border-slate-200/80 dark:border-[#1E2D40] space-y-3 relative overflow-hidden group hover:border-emerald-500/40 transition-all">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-emerald-600 dark:text-[#00D4AA]" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
+                    Daily Report (Today)
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 font-medium bg-slate-200/60 dark:bg-[#1E2D40] px-2 py-0.5 rounded-md">
+                  {financialSummaryReport.daily.count} txs
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                {/* Income */}
+                <div className="p-2.5 rounded-lg bg-white dark:bg-[#1C2333] border border-slate-100 dark:border-[#223044]">
+                  <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    <ArrowDownLeft className="w-3 h-3" /> Income
+                  </span>
+                  <p className="text-sm font-bold font-mono text-emerald-700 dark:text-emerald-400 mt-1 truncate">
+                    {hideBalances ? '••••••' : formatETB(financialSummaryReport.daily.income, true)}
+                  </p>
+                </div>
+                {/* Expense */}
+                <div className="p-2.5 rounded-lg bg-white dark:bg-[#1C2333] border border-slate-100 dark:border-[#223044]">
+                  <span className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                    <ArrowUpRight className="w-3 h-3" /> Expense
+                  </span>
+                  <p className="text-sm font-bold font-mono text-rose-700 dark:text-rose-400 mt-1 truncate">
+                    {hideBalances ? '••••••' : formatETB(financialSummaryReport.daily.expense, true)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Net Balance */}
+              <div className={`p-2.5 rounded-lg border flex items-center justify-between text-xs font-semibold ${
+                financialSummaryReport.daily.net >= 0
+                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-800 dark:text-emerald-300'
+                  : 'bg-rose-500/10 border-rose-500/20 text-rose-800 dark:text-rose-300'
+              }`}>
+                <span>Daily Net Result:</span>
+                <span className="font-mono font-bold text-sm">
+                  {hideBalances ? '••••••' : formatETB(financialSummaryReport.daily.net, true)}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* 2. MONTHLY REPORT CARD */}
+          {(reportTimeframe === 'ALL' || reportTimeframe === 'MONTHLY') && (
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#161D2B] border border-slate-200/80 dark:border-[#1E2D40] space-y-3 relative overflow-hidden group hover:border-blue-500/40 transition-all">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <PieChart className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
+                    Monthly Report (This Month)
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 font-medium bg-slate-200/60 dark:bg-[#1E2D40] px-2 py-0.5 rounded-md">
+                  {financialSummaryReport.monthly.count} txs
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                {/* Income */}
+                <div className="p-2.5 rounded-lg bg-white dark:bg-[#1C2333] border border-slate-100 dark:border-[#223044]">
+                  <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    <ArrowDownLeft className="w-3 h-3" /> Income
+                  </span>
+                  <p className="text-sm font-bold font-mono text-emerald-700 dark:text-emerald-400 mt-1 truncate">
+                    {hideBalances ? '••••••' : formatETB(financialSummaryReport.monthly.income, true)}
+                  </p>
+                </div>
+                {/* Expense */}
+                <div className="p-2.5 rounded-lg bg-white dark:bg-[#1C2333] border border-slate-100 dark:border-[#223044]">
+                  <span className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                    <ArrowUpRight className="w-3 h-3" /> Expense
+                  </span>
+                  <p className="text-sm font-bold font-mono text-rose-700 dark:text-rose-400 mt-1 truncate">
+                    {hideBalances ? '••••••' : formatETB(financialSummaryReport.monthly.expense, true)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Net Balance */}
+              <div className={`p-2.5 rounded-lg border flex items-center justify-between text-xs font-semibold ${
+                financialSummaryReport.monthly.net >= 0
+                  ? 'bg-blue-500/10 border-blue-500/20 text-blue-800 dark:text-blue-300'
+                  : 'bg-rose-500/10 border-rose-500/20 text-rose-800 dark:text-rose-300'
+              }`}>
+                <span>Monthly Net Profit:</span>
+                <span className="font-mono font-bold text-sm">
+                  {hideBalances ? '••••••' : formatETB(financialSummaryReport.monthly.net, true)}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* 3. YEARLY REPORT CARD */}
+          {(reportTimeframe === 'ALL' || reportTimeframe === 'YEARLY') && (
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#161D2B] border border-slate-200/80 dark:border-[#1E2D40] space-y-3 relative overflow-hidden group hover:border-purple-500/40 transition-all">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <TrendingUp className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
+                    Yearly Report ({new Date().getFullYear()})
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 font-medium bg-slate-200/60 dark:bg-[#1E2D40] px-2 py-0.5 rounded-md">
+                  {financialSummaryReport.yearly.count} txs
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                {/* Income */}
+                <div className="p-2.5 rounded-lg bg-white dark:bg-[#1C2333] border border-slate-100 dark:border-[#223044]">
+                  <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    <ArrowDownLeft className="w-3 h-3" /> Income
+                  </span>
+                  <p className="text-sm font-bold font-mono text-emerald-700 dark:text-emerald-400 mt-1 truncate">
+                    {hideBalances ? '••••••' : formatETB(financialSummaryReport.yearly.income, true)}
+                  </p>
+                </div>
+                {/* Expense */}
+                <div className="p-2.5 rounded-lg bg-white dark:bg-[#1C2333] border border-slate-100 dark:border-[#223044]">
+                  <span className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                    <ArrowUpRight className="w-3 h-3" /> Expense
+                  </span>
+                  <p className="text-sm font-bold font-mono text-rose-700 dark:text-rose-400 mt-1 truncate">
+                    {hideBalances ? '••••••' : formatETB(financialSummaryReport.yearly.expense, true)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Net Balance */}
+              <div className={`p-2.5 rounded-lg border flex items-center justify-between text-xs font-semibold ${
+                financialSummaryReport.yearly.net >= 0
+                  ? 'bg-purple-500/10 border-purple-500/20 text-purple-800 dark:text-purple-300'
+                  : 'bg-rose-500/10 border-rose-500/20 text-rose-800 dark:text-rose-300'
+              }`}>
+                <span>Yearly Net Profit:</span>
+                <span className="font-mono font-bold text-sm">
+                  {hideBalances ? '••••••' : formatETB(financialSummaryReport.yearly.net, true)}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 3. Quick Action Launchpad Strip */}
@@ -970,30 +1254,70 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   Operational System Alerts
                 </h4>
               </div>
-              <span className="text-[10px] font-mono font-medium bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-full">
-                {notifications.length} Priority
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono font-medium bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-full">
+                  {notifications.length} Priority
+                </span>
+                {notifications.length > 0 && onClearAllNotifications && (
+                  <button
+                    onClick={() => {
+                      triggerHaptic('medium');
+                      onClearAllNotifications();
+                    }}
+                    className="text-[10px] font-bold text-slate-500 hover:text-rose-500 dark:text-slate-400 dark:hover:text-rose-400 transition-colors flex items-center gap-1 cursor-pointer"
+                    title="Clear all seen alerts"
+                  >
+                    <CheckCheck className="w-3.5 h-3.5" />
+                    <span>Clear All</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
               {notifications.map((n) => (
                 <div
                   key={n.id}
-                  onClick={() => n.actionTab && onNavigateTab(n.actionTab, n.actionSubView)}
-                  className="p-3 rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] hover:border-amber-400 transition-all cursor-pointer space-y-1 group"
+                  onClick={() => {
+                    if (onDismissNotification) onDismissNotification(n.id);
+                    if (n.actionTab) onNavigateTab(n.actionTab, n.actionSubView);
+                  }}
+                  className="p-3 rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] hover:border-amber-400 transition-all cursor-pointer space-y-1 group relative"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-white">
+                  <div className="flex items-center justify-between gap-1.5">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-white overflow-hidden">
                       {n.icon}
-                      <span>{n.title}</span>
+                      <span className="truncate">{n.title}</span>
                     </div>
-                    <span className="text-[9px] font-mono font-medium text-slate-400">{n.time}</span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="text-[9px] font-mono font-medium text-slate-400">{n.time}</span>
+                      {onDismissNotification && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            triggerHaptic('light');
+                            onDismissNotification(n.id);
+                          }}
+                          className="p-1 rounded-md hover:bg-black/10 dark:hover:bg-white/10 text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors cursor-pointer"
+                          title="Mark as seen / Dismiss"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <p className="text-[11px] text-slate-600 dark:text-[#8899BB] leading-snug">
                     {n.message}
                   </p>
                 </div>
               ))}
+
+              {notifications.length === 0 && (
+                <div className="text-center py-6 text-slate-400 dark:text-slate-500 space-y-1">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-500 dark:text-[#00D4AA] mx-auto opacity-90" />
+                  <p className="text-xs font-semibold">No active operational alerts.</p>
+                </div>
+              )}
             </div>
           </div>
 

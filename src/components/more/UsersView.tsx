@@ -21,7 +21,8 @@ import {
   RefreshCw,
   Eye,
   Sliders,
-  AlertCircle
+  AlertCircle,
+  Zap
 } from 'lucide-react';
 import { UserProfile, UserRole, UserPermissions, ERPState } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
@@ -344,6 +345,57 @@ export const UsersView: React.FC<UsersViewProps> = ({
     }));
   };
 
+  const handleAssignDigitalMoneyManager = (targetUser: UserProfile) => {
+    if (!isAdminOrSuperAdmin) {
+      alert('Security Protocol: Only Admins or SuperAdmins can delegate the Digital Money Manager role.');
+      return;
+    }
+    if (targetUser.isDigitalMoneyManager) {
+      alert(`${targetUser.name} is already designated as the Digital Money Manager.`);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Reassign Digital Money Manager?\n\nAre you sure you want to shift the Digital Money Manager role to "${targetUser.name}"?\n\nNote: Only ONE user can hold this role. All incoming bank SMS auto-parsers, notification listeners, and review queues will be assigned to ${targetUser.name}.`
+    );
+
+    if (!confirmed) return;
+
+    triggerHaptic('success');
+    onUpdateState((prev) => {
+      const updatedUsers = prev.users.map((u) => ({
+        ...u,
+        isDigitalMoneyManager: u.id === targetUser.id
+      }));
+
+      const updatedCurrentUser =
+        prev.currentUser.id === targetUser.id
+          ? { ...prev.currentUser, isDigitalMoneyManager: true }
+          : { ...prev.currentUser, isDigitalMoneyManager: false };
+
+      return {
+        ...prev,
+        users: updatedUsers,
+        currentUser: updatedCurrentUser,
+        digitalMoneyManagerUserId: targetUser.id,
+        auditLogs: [
+          {
+            id: `aud-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            actorId: prev.currentUser.id,
+            actorName: prev.currentUser.name,
+            action: 'DELEGATE_DIGITAL_MONEY_MANAGER',
+            entity: 'UserProfile',
+            entityId: targetUser.id,
+            diffAfter: { name: targetUser.name, isDigitalMoneyManager: true },
+            branch: prev.currentUser.branch
+          },
+          ...prev.auditLogs
+        ]
+      };
+    });
+  };
+
   return (
     <div className="space-y-4">
       {/* Created / Reset Password Notice Banner */}
@@ -511,6 +563,13 @@ export const UsersView: React.FC<UsersViewProps> = ({
                         {u.role}
                       </span>
 
+                      {u.isDigitalMoneyManager && (
+                        <span className="text-[9px] font-black bg-emerald-500/15 text-emerald-600 dark:text-[#00D4AA] px-2 py-0.5 rounded-full border border-emerald-500/30 flex items-center gap-1">
+                          <Zap className="w-2.5 h-2.5 fill-current" />
+                          <span>Digital Money Manager</span>
+                        </span>
+                      )}
+
                       {isCurrent && (
                         <span className="text-[9px] font-bold bg-orange-500/15 text-orange-600 dark:text-[#FB923C] px-2 py-0.5 rounded-full border border-orange-500/30">
                           Active You
@@ -538,6 +597,17 @@ export const UsersView: React.FC<UsersViewProps> = ({
 
                 {/* Right actions */}
                 <div className="flex items-center gap-1.5 self-end sm:self-center">
+                  {isAdminOrSuperAdmin && u.active && !u.isDigitalMoneyManager && (
+                    <button
+                      onClick={() => handleAssignDigitalMoneyManager(u)}
+                      className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-[#00D4AA] border border-emerald-500/30 flex items-center gap-1 cursor-pointer transition-all"
+                      title="Shift Digital Money Manager role to this user"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-emerald-600 dark:text-[#00D4AA]" />
+                      <span>Set as Manager</span>
+                    </button>
+                  )}
+
                   {isSuperAdmin && !isCurrent && (
                     <>
                       <button

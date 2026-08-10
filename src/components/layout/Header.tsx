@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut, Gamepad2, Send, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut, Gamepad2, Send, Sparkles, X, CheckCheck, MessageSquare } from 'lucide-react';
 import { UserProfile, UserRole, NavTab } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 import { requestNotificationPermission, sendExternalNotification } from '../../lib/notifications';
+import { AppLogo } from '../common/AppLogo';
 
 export interface HeaderNotificationItem {
   id: string;
@@ -10,6 +11,7 @@ export interface HeaderNotificationItem {
   message: string;
   type: 'HIGH' | 'MEDIUM' | 'INFO';
   time: string;
+  timestamp?: number;
   actionTab?: NavTab;
 }
 
@@ -25,6 +27,8 @@ interface HeaderProps {
   onToggleHideBalances: () => void;
   onNavigateTab?: (tab: NavTab) => void;
   notifications?: HeaderNotificationItem[];
+  onDismissNotification?: (id: string) => void;
+  onClearAllNotifications?: () => void;
   lastRefreshedAt?: Date;
   isRefreshing?: boolean;
   autoRefreshEnabled?: boolean;
@@ -32,6 +36,7 @@ interface HeaderProps {
   onToggleCalendarType?: (type: 'ETHIOPIAN' | 'GREGORIAN') => void;
   onToggleAutoRefresh?: () => void;
   onManualRefresh?: () => void;
+  unreadChatCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -46,13 +51,16 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleHideBalances,
   onNavigateTab,
   notifications = [],
+  onDismissNotification,
+  onClearAllNotifications,
   lastRefreshedAt,
   isRefreshing = false,
   autoRefreshEnabled = true,
   calendarType = 'ETHIOPIAN',
   onToggleCalendarType,
   onToggleAutoRefresh,
-  onManualRefresh
+  onManualRefresh,
+  unreadChatCount = 0
 }) => {
   const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [showNotifMenu, setShowNotifMenu] = useState(false);
@@ -92,17 +100,17 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="sticky top-0 z-30 bg-white/90 dark:bg-[#0A0E1A]/90 backdrop-blur-md border-b border-slate-200/80 dark:border-[#1E2D40] px-4 py-3 transition-colors">
       <div className="max-w-6xl mx-auto flex items-center justify-between w-full">
         {/* Left: Brand logo & role selector */}
-        <div className="flex items-center gap-3">
-          <div className="relative w-10 h-10 rounded-xl overflow-hidden border border-emerald-500/30 shadow-md shadow-emerald-500/10 shrink-0 bg-[#0A0E1A]">
-            <img
-              src="/app-logo.jpg"
-              alt="Plus Game Zone Logo"
-              referrerPolicy="no-referrer"
-              className="w-full h-full object-cover"
-            />
-          </div>
+        <div
+          onClick={() => {
+            triggerHaptic('light');
+            if (onNavigateTab) onNavigateTab('dashboard');
+          }}
+          className="flex items-center gap-3 cursor-pointer group select-none"
+          title="Return to Dashboard"
+        >
+          <AppLogo size="md" className="group-hover:scale-105 transition-transform" />
           <div>
-            <h1 className="text-sm font-bold text-slate-900 dark:text-[#F0F4FF] leading-tight">
+            <h1 className="text-sm font-bold text-slate-900 dark:text-[#F0F4FF] leading-tight group-hover:text-emerald-500 dark:group-hover:text-[#00D4AA] transition-colors">
               Plus Game Zone
             </h1>
             
@@ -165,6 +173,25 @@ export const Header: React.FC<HeaderProps> = ({
           {hideBalances ? <EyeOff className="w-4 h-4 text-amber-500" /> : <Eye className="w-4 h-4 text-emerald-600 dark:text-[#00D4AA]" />}
         </button>
 
+        {/* Chat Nav Button */}
+        {onNavigateTab && (
+          <button
+            onClick={() => {
+              triggerHaptic('light');
+              onNavigateTab('chat');
+            }}
+            title="Team Live Chat"
+            className="p-2 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-[#F0F4FF] transition-colors cursor-pointer relative"
+          >
+            <MessageSquare className="w-4 h-4 text-emerald-600 dark:text-[#00D4AA]" />
+            {unreadChatCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 font-black text-[9px] rounded-full bg-rose-500 text-white flex items-center justify-center border border-white dark:border-[#0A0E1A] animate-pulse">
+                {unreadChatCount > 9 ? '9+' : unreadChatCount}
+              </span>
+            )}
+          </button>
+        )}
+
         {/* Notification Bell Icon */}
         <div className="relative">
           {(() => {
@@ -195,7 +222,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Notifications Dropdown Panel */}
           {showNotifMenu && (
-            <div className="absolute top-11 right-0 bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#2A3B53] rounded-2xl shadow-2xl p-3.5 w-72 sm:w-84 z-50 animate-fadeIn space-y-2.5 text-slate-900 dark:text-white">
+            <div className="absolute top-11 right-0 bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#2A3B53] rounded-2xl shadow-2xl p-3.5 w-72 sm:w-88 z-50 animate-fadeIn space-y-2.5 text-slate-900 dark:text-white">
               {(() => {
                 const hasHigh = notifications.some(n => n.type === 'HIGH');
                 const hasMedium = notifications.some(n => n.type === 'MEDIUM');
@@ -212,9 +239,24 @@ export const Header: React.FC<HeaderProps> = ({
                       <Bell className={`w-4 h-4 ${headerColor}`} />
                       <h4 className="text-xs font-bold text-slate-900 dark:text-white tracking-wide">Operational Alerts</h4>
                     </div>
-                    <span className={`text-[9px] font-mono border px-2 py-0.5 rounded-full ${headerBadge}`}>
-                      {notifications.length} Active
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[9px] font-mono border px-2 py-0.5 rounded-full ${headerBadge}`}>
+                        {notifications.length} Active
+                      </span>
+                      {notifications.length > 0 && onClearAllNotifications && (
+                        <button
+                          onClick={() => {
+                            triggerHaptic('medium');
+                            onClearAllNotifications();
+                          }}
+                          className="text-[10px] font-bold text-slate-500 hover:text-rose-500 dark:text-slate-400 dark:hover:text-rose-400 transition-colors flex items-center gap-1 cursor-pointer"
+                          title="Clear all seen notifications"
+                        >
+                          <CheckCheck className="w-3.5 h-3.5" />
+                          <span>Clear All</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })()}
@@ -243,26 +285,47 @@ export const Header: React.FC<HeaderProps> = ({
                       key={n.id}
                       onClick={() => {
                         triggerHaptic('light');
+                        if (onDismissNotification) {
+                          onDismissNotification(n.id);
+                        }
                         if (n.actionTab && onNavigateTab) {
                           onNavigateTab(n.actionTab);
                           setShowNotifMenu(false);
                         }
                       }}
-                      className={`p-3 rounded-xl border text-left cursor-pointer transition-all shadow-sm ${cardBg}`}
+                      className={`p-3 rounded-xl border text-left cursor-pointer transition-all shadow-sm relative group ${cardBg}`}
                     >
-                      <div className="flex items-center justify-between gap-1.5">
-                        <h5 className="text-[11px] font-bold text-slate-900 dark:text-white leading-tight truncate">{n.title}</h5>
-                        <span className={`text-[8px] font-mono font-extrabold px-1.5 py-0.2 rounded-full border shrink-0 ${tagStyle}`}>
-                          {tagText}
-                        </span>
+                      <div className="flex items-start justify-between gap-1.5">
+                        <div className="flex items-center gap-1.5 overflow-hidden">
+                          <h5 className="text-[11px] font-bold text-slate-900 dark:text-white leading-tight truncate">{n.title}</h5>
+                          <span className={`text-[8px] font-mono font-extrabold px-1.5 py-0.2 rounded-full border shrink-0 ${tagStyle}`}>
+                            {tagText}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[9px] font-mono font-medium text-slate-500 dark:text-slate-400">{n.time}</span>
+                          {onDismissNotification && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                triggerHaptic('light');
+                                onDismissNotification(n.id);
+                              }}
+                              className="p-1 rounded-md hover:bg-black/10 dark:hover:bg-white/10 text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors cursor-pointer"
+                              title="Mark as seen / Dismiss"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <p className="text-[11px] font-medium text-slate-700 dark:text-slate-100 mt-1 leading-snug">{n.message}</p>
+                      <p className="text-[11px] font-medium text-slate-700 dark:text-slate-200 mt-1 leading-snug">{n.message}</p>
                     </div>
                   );
                 })}
 
                 {notifications.length === 0 && (
-                  <div className="text-center py-4 text-slate-500 dark:text-slate-300 space-y-1">
+                  <div className="text-center py-6 text-slate-500 dark:text-slate-300 space-y-1">
                     <CheckCircle2 className="w-6 h-6 text-emerald-500 dark:text-[#00D4AA] mx-auto opacity-90" />
                     <p className="text-xs font-semibold">No pending notifications.</p>
                   </div>

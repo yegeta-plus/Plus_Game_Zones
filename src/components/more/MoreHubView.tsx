@@ -15,7 +15,8 @@ import {
   ArrowLeft,
   Settings,
   Sliders,
-  LogOut
+  LogOut,
+  MessageSquare
 } from 'lucide-react';
 import { ERPState } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
@@ -56,6 +57,7 @@ interface MoreHubViewProps {
   onOpenAiAssistant: () => void;
   onLogout?: () => void;
   initialSubView?: SubViewType;
+  onNavigateTab?: (tab: any) => void;
 }
 
 export const MoreHubView: React.FC<MoreHubViewProps> = ({
@@ -63,7 +65,8 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
   onUpdateState,
   onOpenAiAssistant,
   onLogout,
-  initialSubView
+  initialSubView,
+  onNavigateTab
 }) => {
   const [subView, setSubView] = useState<SubViewType>(initialSubView || 'HUB');
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabType | null>(null);
@@ -118,6 +121,19 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
   ];
 
   const operationalTiles = [
+    {
+      id: 'CHAT' as any,
+      title: 'Team Live Chat',
+      subtitle: 'Real-time messages, channels & financial tags',
+      icon: MessageSquare,
+      color: '#00D4AA',
+      onClick: () => {
+        triggerHaptic('light');
+        if (onNavigateTab) {
+          onNavigateTab('chat');
+        }
+      }
+    },
     {
       id: 'REPORTS' as SubViewType,
       title: 'Reports & P&L',

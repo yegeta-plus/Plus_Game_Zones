@@ -14,6 +14,28 @@ export const SecurityBiometricsView: React.FC<{ state: ERPState }> = ({ state })
   const [isFingerprintModalOpen, setIsFingerprintModalOpen] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
 
+  // Banking Session Timeout state in minutes (default 5 min)
+  const [sessionTimeoutMins, setSessionTimeoutMins] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('pluszone_session_timeout_mins');
+      return saved ? parseInt(saved, 10) : 5;
+    } catch {
+      return 5;
+    }
+  });
+
+  const handleUpdateSessionTimeout = (mins: number) => {
+    triggerHaptic('medium');
+    setSessionTimeoutMins(mins);
+    try {
+      localStorage.setItem('pluszone_session_timeout_mins', mins.toString());
+      // Dispatch custom event so App.tsx picks it up instantly
+      window.dispatchEvent(new Event('sessionTimeoutChanged'));
+    } catch (err) {
+      console.warn('Failed to save session timeout preference', err);
+    }
+  };
+
   useEffect(() => {
     const cred = getEnrolledBiometric(state.currentUser.email);
     setEnrolledCred(cred);
@@ -178,6 +200,66 @@ export const SecurityBiometricsView: React.FC<{ state: ERPState }> = ({ state })
             <Sparkles className="w-4 h-4 text-indigo-500" />
             <span>Test Fingerprint Scan</span>
           </button>
+        </div>
+      </div>
+
+      {/* SECTION 2: BANKING INACTIVITY SESSION TIMEOUT */}
+      <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-5 space-y-4 shadow-sm">
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#1E2D40] pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-2xl bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+              <Clock className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                Banking Inactivity Auto-Lock & Session End
+              </h3>
+              <p className="text-[11px] text-slate-500 dark:text-[#8899BB]">
+                Automatically locks financial session after idle period to safeguard account funds
+              </p>
+            </div>
+          </div>
+
+          <span className="text-xs font-mono font-bold px-3 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+            {sessionTimeoutMins > 0 ? `${sessionTimeoutMins} MIN TIMEOUT` : 'AUTO-LOCK DISABLED'}
+          </span>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+            In compliance with strict financial & banking app security standards, the system monitors mouse, keyboard, and touch interactions. When no activity occurs for the specified duration, your session will automatically lock.
+          </p>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+            {[
+              { label: '1 Minute', mins: 1, tag: 'Strict Security' },
+              { label: '3 Minutes', mins: 3, tag: 'High Protection' },
+              { label: '5 Minutes', mins: 5, tag: 'Banking Standard' },
+              { label: '10 Minutes', mins: 10, tag: 'Extended' },
+              { label: '15 Minutes', mins: 15, tag: 'Lounge Shift' },
+              { label: '30 Minutes', mins: 30, tag: 'Long Operations' },
+              { label: 'Disabled', mins: 0, tag: 'Always Unlocked' }
+            ].map(opt => (
+              <button
+                key={opt.mins}
+                type="button"
+                onClick={() => handleUpdateSessionTimeout(opt.mins)}
+                className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                  sessionTimeoutMins === opt.mins
+                    ? 'bg-amber-500/15 border-amber-500 dark:border-amber-400 text-amber-900 dark:text-amber-200 ring-2 ring-amber-500/20 font-bold'
+                    : 'bg-slate-50 dark:bg-[#1C2333] border-slate-200 dark:border-[#1E2D40] text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <span className="text-xs font-black">{opt.label}</span>
+                  {sessionTimeoutMins === opt.mins && (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  )}
+                </div>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-medium">{opt.tag}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

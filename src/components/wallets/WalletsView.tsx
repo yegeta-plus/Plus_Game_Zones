@@ -25,7 +25,9 @@ import { calculateWalletBalance, formatETB } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 import { TelebirrIntegrationModal } from './TelebirrIntegrationModal';
 import { ShegerPayVerificationModal } from './ShegerPayVerificationModal';
+import { AutoImportHubModal } from './AutoImportHubModal';
 import { BrandLogo } from '../common/BrandLogo';
+import { AutoImportSettings, PendingReviewTransaction, ERPState } from '../../types';
 
 interface WalletsViewProps {
   wallets: Wallet[];
@@ -34,6 +36,9 @@ interface WalletsViewProps {
   users?: UserProfile[];
   currentUser: UserProfile;
   hideBalances: boolean;
+  autoImportSettings?: AutoImportSettings;
+  pendingReviewTransactions?: PendingReviewTransaction[];
+  onUpdateState?: (fn: (prev: ERPState) => ERPState) => void;
   onOpenTransferModal: () => void;
   onOpenQuickEntry?: (walletId?: string) => void;
   onAddWallet: (wallet: Omit<Wallet, 'id' | 'totalIn' | 'totalOut'>) => void;
@@ -86,6 +91,9 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
   users = [],
   currentUser,
   hideBalances,
+  autoImportSettings,
+  pendingReviewTransactions = [],
+  onUpdateState,
   onOpenTransferModal,
   onOpenQuickEntry,
   onAddWallet,
@@ -100,6 +108,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
   // Integration Modal state
   const [showIntegrationModal, setShowIntegrationModal] = useState(false);
   const [showShegerModal, setShowShegerModal] = useState(false);
+  const [showAutoImportHub, setShowAutoImportHub] = useState(false);
   
   // Create Wallet Modal state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -299,6 +308,22 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
               >
                 <Zap className="w-3.5 h-3.5 fill-current shrink-0" />
                 <span className="truncate">Bank Sync</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  triggerHaptic('medium');
+                  setShowAutoImportHub(true);
+                }}
+                className="px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-400 via-teal-400 to-emerald-500 text-slate-950 text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:brightness-110 transition-all border border-emerald-300/50 relative"
+              >
+                <Zap className="w-3.5 h-3.5 fill-current shrink-0 text-slate-950" />
+                <span className="truncate">Auto-Import Hub</span>
+                {pendingReviewTransactions.filter((p) => p.status === 'PENDING').length > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-rose-500 text-white animate-pulse">
+                    {pendingReviewTransactions.filter((p) => p.status === 'PENDING').length}
+                  </span>
+                )}
               </button>
             </>
           )}
@@ -1272,6 +1297,20 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
         isOpen={showShegerModal}
         onClose={() => setShowShegerModal(false)}
         wallets={wallets}
+        onAddTransaction={onAddTransaction}
+      />
+
+      {/* Auto-Import & Bank SMS Queue Hub Modal */}
+      <AutoImportHubModal
+        isOpen={showAutoImportHub}
+        onClose={() => setShowAutoImportHub(false)}
+        wallets={wallets}
+        transactions={transactions}
+        users={users}
+        currentUser={currentUser}
+        autoImportSettings={autoImportSettings}
+        pendingReviewTransactions={pendingReviewTransactions}
+        onUpdateState={onUpdateState || (() => {})}
         onAddTransaction={onAddTransaction}
       />
 

@@ -16,6 +16,7 @@ import { UserProfile } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 import { FingerprintModal } from './FingerprintModal';
 import { getEnrolledBiometric } from '../../lib/biometrics';
+import { AppLogo } from '../common/AppLogo';
 
 interface LoginPageProps {
   allUsers: UserProfile[];
@@ -346,14 +347,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       {/* Top Header */}
       <header className="w-full max-w-5xl mx-auto px-6 py-6 flex items-center justify-between z-10">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl overflow-hidden border border-emerald-500/30 shadow-lg shadow-[#00D4AA]/20 bg-[#070A12] shrink-0">
-            <img
-              src="/app-logo.jpg"
-              alt="Plus Game Zone Logo"
-              referrerPolicy="no-referrer"
-              className="w-full h-full object-cover"
-            />
-          </div>
+          <AppLogo size="lg" />
           <div>
             <h1 className="text-base font-black tracking-tight text-white flex items-center gap-2">
               Plus Game Zone

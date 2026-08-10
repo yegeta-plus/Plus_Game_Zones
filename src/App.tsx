@@ -9,6 +9,8 @@ import { TransactionsView } from './components/transactions/TransactionsView';
 import { WalletsView } from './components/wallets/WalletsView';
 import { EqubView } from './components/equb/EqubView';
 import { MoreHubView, SubViewType } from './components/more/MoreHubView';
+import { ChatView } from './components/chat/ChatView';
+import { FloatingChatWidget } from './components/chat/FloatingChatWidget';
 import { AiAssistantWidget } from './components/ai/AiAssistantWidget';
 import { LoginPage } from './components/auth/LoginPage';
 
@@ -18,7 +20,8 @@ import {
   saveStateToStorage,
   calculateWalletBalance,
   isTransactionEditable,
-  formatETB
+  formatETB,
+  mergeListById
 } from './lib/store';
 import { calculateNextEthiopianDueDate } from './lib/ethiopianCalendar';
 import {
@@ -27,11 +30,11 @@ import {
   syncStateToFirebaseNow,
   fetchLatestFirebaseState
 } from './lib/firebase';
-import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest } from './types';
+import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest, ChatMessage, ChatChannel } from './types';
 import { CheckCircle2, Sparkles } from 'lucide-react';
 import { triggerHaptic } from './lib/haptics';
 import { FingerprintModal } from './components/auth/FingerprintModal';
-import { sendExternalNotification } from './lib/notifications';
+import { sendExternalNotification, formatRelativeNotifTime } from './lib/notifications';
 
 export default function App() {
   const [state, setState] = useState<ERPState>(() => loadInitialState());
@@ -60,6 +63,81 @@ export default function App() {
 
   // Specific Confirmation Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Dismissed Notifications Tracking (Persisted in localStorage so seen notifications stay removed)
+  const [dismissedNotifIds, setDismissedNotifIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('pluszone_dismissed_notif_ids');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Banking Inactivity Auto-Lock Timeout logic
+  const [sessionTimeoutMins, setSessionTimeoutMins] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('pluszone_session_timeout_mins');
+      return saved ? parseInt(saved, 10) : 5;
+    } catch {
+      return 5;
+    }
+  });
+
+  const lastActivityRef = React.useRef<number>(Date.now());
+
+  // Listen for session timeout settings changes
+  useEffect(() => {
+    const handleTimeoutChange = () => {
+      try {
+        const saved = localStorage.getItem('pluszone_session_timeout_mins');
+        if (saved !== null) setSessionTimeoutMins(parseInt(saved, 10));
+      } catch (err) {
+        console.warn('Error reading session timeout config', err);
+      }
+    };
+    window.addEventListener('sessionTimeoutChanged', handleTimeoutChange);
+    return () => window.removeEventListener('sessionTimeoutChanged', handleTimeoutChange);
+  }, []);
+
+  // Monitor user activity and auto-lock after timeout
+  useEffect(() => {
+    if (!isLoggedIn || isSessionLocked || sessionTimeoutMins <= 0) return;
+
+    const resetActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    events.forEach(evt => window.addEventListener(evt, resetActivity, { passive: true }));
+
+    const checkInterval = setInterval(() => {
+      const elapsedMins = (Date.now() - lastActivityRef.current) / 60000;
+      if (elapsedMins >= sessionTimeoutMins) {
+        setIsSessionLocked(true);
+        triggerHaptic('warning');
+        setToastMessage(`Banking Session Locked: ${sessionTimeoutMins} min inactivity timeout.`);
+        setTimeout(() => setToastMessage(null), 5000);
+      }
+    }, 5000);
+
+    return () => {
+      events.forEach(evt => window.removeEventListener(evt, resetActivity));
+      clearInterval(checkInterval);
+    };
+  }, [isLoggedIn, isSessionLocked, sessionTimeoutMins]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('pluszone_dismissed_notif_ids', JSON.stringify(dismissedNotifIds));
+    } catch (err) {
+      console.warn('Failed to save dismissed notifications to storage', err);
+    }
+  }, [dismissedNotifIds]);
+
+  const handleDismissNotification = React.useCallback((id: string) => {
+    setDismissedNotifIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }, []);
 
   // Real-time Firebase Firestore Subscription
   useEffect(() => {
@@ -116,9 +194,19 @@ export default function App() {
     const remoteState = await fetchLatestFirebaseState();
     if (remoteState && typeof remoteState === 'object') {
       setState(prev => {
-        const mergedUsers = Array.isArray(remoteState.users) && remoteState.users.length > 0
-          ? remoteState.users
-          : prev.users;
+        const mergedUsers = mergeListById(prev.users, remoteState.users);
+        const mergedWallets = mergeListById(prev.wallets, remoteState.wallets);
+        const mergedTransactions = mergeListById(prev.transactions, remoteState.transactions);
+        const mergedTransfers = mergeListById(prev.transfers, remoteState.transfers);
+        const mergedEqubs = mergeListById(prev.equbs, remoteState.equbs);
+        const mergedLoans = mergeListById(prev.loans, remoteState.loans);
+        const mergedAssets = mergeListById(prev.assets, remoteState.assets);
+        const mergedGoals = mergeListById(prev.goals, remoteState.goals);
+        const mergedRecurring = mergeListById(prev.recurring, remoteState.recurring);
+        const mergedReceivables = mergeListById(prev.receivables, remoteState.receivables);
+        const mergedCategories = mergeListById(prev.categories, remoteState.categories);
+        const mergedAuditLogs = mergeListById(prev.auditLogs, remoteState.auditLogs);
+        const mergedPending = mergeListById(prev.pendingReviewTransactions, remoteState.pendingReviewTransactions);
 
         const activeUser = mergedUsers.find(u => u.id === prev.currentUser?.id || u.email === prev.currentUser?.email) || prev.currentUser;
         const calType = prev.calendarType || remoteState.calendarType || 'ETHIOPIAN';
@@ -126,8 +214,20 @@ export default function App() {
         const updated = {
           ...prev,
           ...remoteState,
-          calendarType: calType,
           users: mergedUsers,
+          wallets: mergedWallets,
+          transactions: mergedTransactions,
+          transfers: mergedTransfers,
+          equbs: mergedEqubs,
+          loans: mergedLoans,
+          assets: mergedAssets,
+          goals: mergedGoals,
+          recurring: mergedRecurring,
+          receivables: mergedReceivables,
+          categories: mergedCategories,
+          auditLogs: mergedAuditLogs,
+          pendingReviewTransactions: mergedPending,
+          calendarType: calType,
           currentUser: activeUser
         };
         saveStateToStorage(updated);
@@ -1095,40 +1195,67 @@ export default function App() {
       message: string;
       type: 'HIGH' | 'MEDIUM' | 'INFO';
       time: string;
+      timestamp: number;
       actionTab?: NavTab;
     }> = [];
 
     // Pending Approval Requests for Admins & SuperAdmins
     const pendingReqs = (state.approvalRequests || []).filter(r => r.status === 'PENDING');
     if (pendingReqs.length > 0 && (state.currentUser.role === 'SuperAdmin' || state.currentUser.role === 'Admin')) {
-      list.unshift({
-        id: `notif-approval-summary`,
+      const latestReq = pendingReqs[0];
+      const reqTime = latestReq.createdAt ? new Date(latestReq.createdAt).getTime() : Date.now();
+      list.push({
+        id: `notif-approval-summary-${latestReq.id}`,
         title: `⚠️ ${pendingReqs.length} Action(s) Pending Admin Approval`,
-        message: `Major changes requested by ${pendingReqs[0].requestedByName} (${pendingReqs[0].actionType.replace(/_/g, ' ')}) need sign-off.`,
+        message: `Major changes requested by ${latestReq.requestedByName} (${latestReq.actionType.replace(/_/g, ' ')}) need sign-off.`,
         type: 'HIGH',
-        time: 'Urgent',
+        time: formatRelativeNotifTime(reqTime),
+        timestamp: reqTime,
         actionTab: 'equb'
       });
     }
+
+    // Recent Transactions (include top 5 latest transactions)
+    const sortedTxs = [...state.transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    if (sortedTxs.length > 0) {
+      sortedTxs.slice(0, 5).forEach(tx => {
+        const txTime = new Date(tx.date).getTime();
+        list.push({
+          id: `notif-tx-${tx.id}`,
+          title: `Ledger Entry: ${tx.category}`,
+          message: `${tx.description} (${tx.type === 'INCOME' ? '+' : '-'}${formatETB(tx.amount)}) by ${tx.creatorName}`,
+          type: 'INFO',
+          time: formatRelativeNotifTime(txTime),
+          timestamp: txTime,
+          actionTab: 'transactions'
+        });
+      });
+    }
+
+    // Active Equb Round Dues
     state.equbs.filter(e => e.status === 'ACTIVE').forEach(eq => {
+      const eqTime = new Date(eq.startDate).getTime() || Date.now();
       list.push({
-        id: `notif-eq-${eq.id}`,
+        id: `notif-eq-${eq.id}-r${eq.currentRound}`,
         title: `Equb Round #${eq.currentRound} Due`,
         message: `${eq.name} contribution of ${formatETB(eq.contributionPerRound)} is due.`,
         type: 'MEDIUM',
         time: 'Today',
+        timestamp: eqTime + 100,
         actionTab: 'equb'
       });
     });
 
     // Active Loan Notifications
     state.loans.filter(l => l.status === 'ACTIVE').forEach(l => {
+      const loanTime = new Date(l.dueDate).getTime() || Date.now();
       list.push({
         id: `notif-loan-${l.id}`,
         title: `Loan Repayment Scheduled`,
-        message: `${l.lender} payment of ${formatETB(l.monthlyPayment)}. Rem: ${formatETB(l.remainingBalance)}.`,
+        message: `${l.counterparty || l.title} payment of ${formatETB(l.monthlyInstallment || l.outstandingBalance)}. Rem: ${formatETB(l.outstandingBalance)}.`,
         type: 'HIGH',
         time: 'Upcoming',
+        timestamp: loanTime + 200,
         actionTab: 'more'
       });
     });
@@ -1143,26 +1270,130 @@ export default function App() {
           message: `Wallet balance is ${formatETB(bal)}. Top-up recommended.`,
           type: 'HIGH',
           time: 'Urgent',
+          timestamp: Date.now(),
           actionTab: 'wallets'
         });
       }
     });
 
-    // Recent Transaction
-    if (state.transactions.length > 0) {
-      const latest = state.transactions[0];
+    // Uncollected Receivables Alert
+    const uncollectedReceivablesTotal = (state.receivables || [])
+      .filter(r => r.status === 'OUTSTANDING')
+      .reduce((sum, r) => sum + (r.amountOwed - r.amountCollected), 0);
+    if (uncollectedReceivablesTotal > 0) {
       list.push({
-        id: `notif-tx-${latest.id}`,
-        title: `Recent Ledger Entry`,
-        message: `${latest.description} (${latest.type === 'INCOME' ? '+' : '-'}${formatETB(latest.amount)})`,
-        type: 'INFO',
-        time: 'Recent',
-        actionTab: 'transactions'
+        id: 'notif-rcv-total',
+        title: 'Outstanding Debtors & Invoices',
+        message: `${formatETB(uncollectedReceivablesTotal)} waiting for customer collection.`,
+        type: 'MEDIUM',
+        time: 'Pending',
+        timestamp: Date.now() - 3600000,
+        actionTab: 'more'
       });
     }
 
-    return list;
-  }, [state.equbs, state.loans, state.wallets, state.transactions, state.transfers, state.approvalRequests, state.currentUser]);
+    // Filter out dismissed notifications so seen ones stay removed!
+    const unreadList = list.filter(n => !dismissedNotifIds.includes(n.id));
+
+    // Sort descending by timestamp (LATEST FIRST)
+    return unreadList.sort((a, b) => b.timestamp - a.timestamp);
+  }, [state.equbs, state.loans, state.wallets, state.transactions, state.transfers, state.approvalRequests, state.receivables, state.currentUser, dismissedNotifIds]);
+
+  const handleClearAllNotifications = React.useCallback(() => {
+    const allIds = headerNotifications.map(n => n.id);
+    setDismissedNotifIds(prev => Array.from(new Set([...prev, ...allIds])));
+  }, [headerNotifications]);
+
+  // Chat handlers
+  const unreadChatCount = (state.chatMessages || []).filter(
+    m => m.senderId !== state.currentUser.id && new Date(m.timestamp).getTime() > Date.now() - 7200000
+  ).length;
+
+  const handleSendMessage = (msgData: Omit<ChatMessage, 'id' | 'timestamp'>) => {
+    const newMsg: ChatMessage = {
+      ...msgData,
+      id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toISOString()
+    };
+
+    setState(prev => {
+      const updatedMsgs = [...(prev.chatMessages || []), newMsg];
+      const updatedState = {
+        ...prev,
+        chatMessages: updatedMsgs
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
+  };
+
+  const handleAddChatReaction = (messageId: string, emoji: string) => {
+    setState(prev => {
+      const updatedMsgs = (prev.chatMessages || []).map(msg => {
+        if (msg.id !== messageId) return msg;
+
+        const currentReactions = msg.reactions ? [...msg.reactions] : [];
+        const existingIdx = currentReactions.findIndex(r => r.emoji === emoji);
+
+        if (existingIdx >= 0) {
+          const react = currentReactions[existingIdx];
+          const hasReacted = react.users.includes(prev.currentUser.id);
+
+          if (hasReacted) {
+            const newUsers = react.users.filter(u => u !== prev.currentUser.id);
+            if (newUsers.length === 0) {
+              currentReactions.splice(existingIdx, 1);
+            } else {
+              currentReactions[existingIdx] = {
+                ...react,
+                count: newUsers.length,
+                users: newUsers
+              };
+            }
+          } else {
+            currentReactions[existingIdx] = {
+              ...react,
+              count: react.count + 1,
+              users: [...react.users, prev.currentUser.id]
+            };
+          }
+        } else {
+          currentReactions.push({
+            emoji,
+            count: 1,
+            users: [prev.currentUser.id]
+          });
+        }
+
+        return { ...msg, reactions: currentReactions };
+      });
+
+      const updatedState = { ...prev, chatMessages: updatedMsgs };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
+  };
+
+  const handleCreateChatChannel = (channelData: Omit<ChatChannel, 'id' | 'createdDate'>) => {
+    const newChan: ChatChannel = {
+      ...channelData,
+      id: channelData.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+      createdDate: new Date().toISOString()
+    };
+
+    setState(prev => {
+      const existing = (prev.chatChannels || []).find(c => c.id === newChan.id);
+      if (existing) return prev;
+
+      const updatedChans = [...(prev.chatChannels || []), newChan];
+      const updatedState = { ...prev, chatChannels: updatedChans };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
+  };
 
   if (!isLoggedIn) {
     return (
@@ -1235,6 +1466,8 @@ export default function App() {
         onToggleHideBalances={() => setState(prev => ({ ...prev, hideBalances: !prev.hideBalances }))}
         onNavigateTab={(tab, subView) => handleNavigateTab(tab, subView)}
         notifications={headerNotifications}
+        onDismissNotification={handleDismissNotification}
+        onClearAllNotifications={handleClearAllNotifications}
         lastRefreshedAt={lastRefreshedAt}
         isRefreshing={isRefreshing}
         autoRefreshEnabled={autoRefreshEnabled}
@@ -1242,6 +1475,7 @@ export default function App() {
         onToggleCalendarType={(type) => setState(prev => ({ ...prev, calendarType: type }))}
         onToggleAutoRefresh={() => setAutoRefreshEnabled(prev => !prev)}
         onManualRefresh={() => performRefresh(true)}
+        unreadChatCount={unreadChatCount}
       />
 
       {/* Main Screen Container */}
@@ -1258,6 +1492,9 @@ export default function App() {
             receivables={state.receivables}
             hideBalances={state.hideBalances}
             calendarType={state.calendarType || 'ETHIOPIAN'}
+            dismissedNotifIds={dismissedNotifIds}
+            onDismissNotification={handleDismissNotification}
+            onClearAllNotifications={handleClearAllNotifications}
             onToggleHideBalances={() => setState(prev => ({ ...prev, hideBalances: !prev.hideBalances }))}
             onOpenQuickEntry={() => setShowQuickEntry(true)}
             onOpenTransferModal={() => setShowTransferModal(true)}
@@ -1290,6 +1527,9 @@ export default function App() {
             users={state.users}
             currentUser={state.currentUser}
             hideBalances={state.hideBalances}
+            autoImportSettings={state.autoImportSettings}
+            pendingReviewTransactions={state.pendingReviewTransactions}
+            onUpdateState={setState}
             onOpenTransferModal={() => setShowTransferModal(true)}
             onOpenQuickEntry={(wId) => {
               setQuickEntryWalletId(wId);
@@ -1332,6 +1572,16 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'chat' && (
+          <ChatView
+            state={state}
+            onSendMessage={handleSendMessage}
+            onAddReaction={handleAddChatReaction}
+            onCreateChannel={handleCreateChatChannel}
+            onNavigateTab={(tab) => handleNavigateTab(tab)}
+          />
+        )}
+
         {activeTab === 'more' && (
           <MoreHubView
             state={state}
@@ -1339,9 +1589,19 @@ export default function App() {
             onOpenAiAssistant={() => setShowAiAssistant(true)}
             onLogout={() => setIsLoggedIn(false)}
             initialSubView={moreSubView}
+            onNavigateTab={(tab) => handleNavigateTab(tab)}
           />
         )}
       </main>
+
+      {/* Floating Team Quick Chat Widget (active on all tabs except full chat) */}
+      {activeTab !== 'chat' && (
+        <FloatingChatWidget
+          state={state}
+          onSendMessage={handleSendMessage}
+          onNavigateToFullChat={() => handleNavigateTab('chat')}
+        />
+      )}
 
       {/* Bottom Navigation Bar */}
       <BottomNav
@@ -1351,6 +1611,7 @@ export default function App() {
           setQuickEntryWalletId(undefined);
           setShowQuickEntry(true);
         }}
+        unreadChatCount={unreadChatCount}
       />
 
       {/* Quick Entry Sheet Modal */}
