@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut, Gamepad2, Send, Sparkles, X, CheckCheck, MessageSquare } from 'lucide-react';
+import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut, Gamepad2, Send, Sparkles, X, CheckCheck } from 'lucide-react';
 import { UserProfile, UserRole, NavTab } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 import { requestNotificationPermission, sendExternalNotification } from '../../lib/notifications';
@@ -172,25 +172,6 @@ export const Header: React.FC<HeaderProps> = ({
         >
           {hideBalances ? <EyeOff className="w-4 h-4 text-amber-500" /> : <Eye className="w-4 h-4 text-emerald-600 dark:text-[#00D4AA]" />}
         </button>
-
-        {/* Chat Nav Button */}
-        {onNavigateTab && (
-          <button
-            onClick={() => {
-              triggerHaptic('light');
-              onNavigateTab('chat');
-            }}
-            title="Team Live Chat"
-            className="p-2 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-[#F0F4FF] transition-colors cursor-pointer relative"
-          >
-            <MessageSquare className="w-4 h-4 text-emerald-600 dark:text-[#00D4AA]" />
-            {unreadChatCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 font-black text-[9px] rounded-full bg-rose-500 text-white flex items-center justify-center border border-white dark:border-[#0A0E1A] animate-pulse">
-                {unreadChatCount > 9 ? '9+' : unreadChatCount}
-              </span>
-            )}
-          </button>
-        )}
 
         {/* Notification Bell Icon */}
         <div className="relative">
