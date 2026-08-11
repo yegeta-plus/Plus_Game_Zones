@@ -24,11 +24,16 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Unread messages count (messages from other users in last 2 hours)
-  const unreadCount = chatMessages.filter(m => m.senderId !== currentUser.id && new Date(m.timestamp).getTime() > Date.now() - 7200000).length;
+  const [lastSeenTime, setLastSeenTime] = useState<number>(() => Date.now());
+
+  // Unread messages count (messages from other users since last seen)
+  const unreadCount = isOpen
+    ? 0
+    : chatMessages.filter(m => m.senderId !== currentUser.id && new Date(m.timestamp).getTime() > lastSeenTime).length;
 
   useEffect(() => {
     if (isOpen) {
+      setLastSeenTime(Date.now());
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [isOpen, activeChannelId, chatMessages.length]);

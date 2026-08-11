@@ -42,13 +42,23 @@ export default function App() {
   const [moreSubView, setMoreSubView] = useState<SubViewType>('HUB');
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true);
   const [isSessionLocked, setIsSessionLocked] = useState<boolean>(false);
+  const [lastSeenChatTime, setLastSeenChatTime] = useState<number>(() => Date.now());
 
   const handleNavigateTab = (tab: TabType, subView?: SubViewType) => {
     setActiveTab(tab);
+    if (tab === 'chat') {
+      setLastSeenChatTime(Date.now());
+    }
     if (tab === 'more') {
       setMoreSubView(subView || 'HUB');
     }
   };
+
+  useEffect(() => {
+    if (activeTab === 'chat') {
+      setLastSeenChatTime(Date.now());
+    }
+  }, [activeTab, state.chatMessages?.length]);
 
   // Modals
   const [showQuickEntry, setShowQuickEntry] = useState(false);
@@ -1442,9 +1452,11 @@ export default function App() {
   }, [headerNotifications]);
 
   // Chat handlers
-  const unreadChatCount = (state.chatMessages || []).filter(
-    m => m.senderId !== state.currentUser.id && new Date(m.timestamp).getTime() > Date.now() - 7200000
-  ).length;
+  const unreadChatCount = activeTab === 'chat'
+    ? 0
+    : (state.chatMessages || []).filter(
+        m => m.senderId !== state.currentUser.id && new Date(m.timestamp).getTime() > lastSeenChatTime
+      ).length;
 
   const handleSendMessage = (msgData: Omit<ChatMessage, 'id' | 'timestamp'>) => {
     const newMsg: ChatMessage = {
