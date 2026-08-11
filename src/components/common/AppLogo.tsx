@@ -15,7 +15,7 @@ export const AppLogo: React.FC<AppLogoProps> = ({
   subtitle
 }) => {
   const [imgError, setImgError] = useState(false);
-  const [imgSrc, setImgSrc] = useState('/app-logo.jpg');
+  const [imgSrc, setImgSrc] = useState('/apple-touch-icon.png');
 
   const sizeClasses = {
     sm: 'w-8 h-8 rounded-lg text-xs',
@@ -25,7 +25,9 @@ export const AppLogo: React.FC<AppLogoProps> = ({
   }[size];
 
   const handleImageError = () => {
-    if (imgSrc === '/app-logo.jpg') {
+    if (imgSrc === '/apple-touch-icon.png') {
+      setImgSrc('/pwa-192.png');
+    } else if (imgSrc === '/pwa-192.png') {
       setImgSrc('/app-logo-transparent.png');
     } else {
       setImgError(true);

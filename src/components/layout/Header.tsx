@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut, Gamepad2, Send, Sparkles, X, CheckCheck } from 'lucide-react';
 import { UserProfile, UserRole, NavTab } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
@@ -65,6 +65,25 @@ export const Header: React.FC<HeaderProps> = ({
   const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const [pushSentMessage, setPushSentMessage] = useState<string | null>(null);
+
+  const notifRef = useRef<HTMLDivElement>(null);
+  const roleRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setShowNotifMenu(false);
+      }
+      if (roleRef.current && !roleRef.current.contains(e.target as Node)) {
+        setShowRoleMenu(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handleOutsideClick);
+    return () => {
+      document.removeEventListener('pointerdown', handleOutsideClick);
+    };
+  }, []);
 
   const handleTestExternalPushNotification = async () => {
     triggerHaptic('heavy');
@@ -174,7 +193,7 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         {/* Notification Bell Icon */}
-        <div className="relative">
+        <div className="relative" ref={notifRef}>
           {(() => {
             const hasHigh = notifications.some(n => n.type === 'HIGH');
             const hasMedium = notifications.some(n => n.type === 'MEDIUM');
@@ -200,14 +219,6 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             );
           })()}
-
-          {/* Backdrop overlay to dismiss notifications menu on outside tap */}
-          {showNotifMenu && (
-            <div
-              className="fixed inset-0 z-40 bg-slate-950/20 backdrop-blur-[1px]"
-              onClick={() => setShowNotifMenu(false)}
-            />
-          )}
 
           {/* Notifications Dropdown Panel */}
           {showNotifMenu && (
@@ -280,8 +291,8 @@ export const Header: React.FC<HeaderProps> = ({
                         }
                         if (n.actionTab && onNavigateTab) {
                           onNavigateTab(n.actionTab);
-                          setShowNotifMenu(false);
                         }
+                        setShowNotifMenu(false);
                       }}
                       className={`p-3 rounded-xl border text-left cursor-pointer transition-all shadow-sm relative group ${cardBg}`}
                     >
