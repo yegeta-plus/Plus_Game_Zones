@@ -1,5 +1,5 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, doc, onSnapshot, setDoc, getDoc, disableNetwork } from 'firebase/firestore';
+import { getFirestore, doc, onSnapshot, setDoc, getDoc, getDocFromServer, disableNetwork } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import config from '../../firebase-applet-config.json';
 import { ERPState } from './store';
@@ -18,6 +18,64 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 export const db = getFirestore(app, config.firestoreDatabaseId || metaEnv.VITE_FIREBASE_DATABASE_ID || '(default)');
 export const auth = getAuth(app);
+
+// Skill required connection validation
+async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && (error.message.includes('the client is offline') || error.message.includes('unavailable') || error.message.includes('Could not reach Cloud Firestore'))) {
+      console.info('Firestore initial connection offline/unavailable, falling back to local state cache.');
+    }
+  }
+}
+testConnection().catch(() => {});
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.warn('Firestore Operation Info:', JSON.stringify(errInfo));
+}
 
 const getTodayStr = () => new Date().toISOString().split('T')[0];
 
@@ -133,9 +191,10 @@ export function subscribeToFirebaseState(onUpdate: (remoteState: Partial<ERPStat
         }
         setTimeout(safeUnsubscribe, 0);
       } else if (isUnavailable) {
+        handleFirestoreError(error, OperationType.GET, 'erp_state/main');
         console.info('Firestore operates in offline mode: ', error.message);
       } else {
-        console.warn('Firebase Firestore snapshot listener warning:', error);
+        handleFirestoreError(error, OperationType.GET, 'erp_state/main');
       }
     }
   );
@@ -158,7 +217,7 @@ export async function fetchLatestFirebaseState(): Promise<Partial<ERPState> | nu
       }
     }
   } catch (err) {
-    console.warn('Failed to fetch latest Firebase state:', err);
+    handleFirestoreError(err, OperationType.GET, 'erp_state/main');
   }
   return null;
 }
@@ -197,7 +256,7 @@ export async function syncStateToFirebaseNow(state: ERPState): Promise<void> {
       markQuotaExceeded();
       disableNetwork(db).catch(() => {});
     } else {
-      console.error('Failed instant sync to Firebase:', err);
+      handleFirestoreError(err, OperationType.WRITE, 'erp_state/main');
     }
   }
 }
@@ -254,9 +313,10 @@ export async function syncStateToFirebase(state: ERPState): Promise<void> {
           quotaExceededLogged = true;
         }
       } else {
-        console.error('Failed to sync ERP state to Firebase Firestore:', err);
+        handleFirestoreError(err, OperationType.WRITE, 'erp_state/main');
       }
     }
   }, 150);
 }
+
 
