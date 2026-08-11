@@ -7,24 +7,27 @@ interface FloatingChatWidgetProps {
   state: ERPState;
   onSendMessage: (message: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
   onNavigateToFullChat?: () => void;
+  onMarkRead?: () => void;
 }
 
 export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
   state,
   onSendMessage,
-  onNavigateToFullChat
+  onNavigateToFullChat,
+  onMarkRead
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeChannelId, setActiveChannelId] = useState<string>('general');
   const [inputText, setInputText] = useState('');
 
   const currentUser = state.currentUser;
   const chatMessages = state.chatMessages || [];
-  const chatChannels = state.chatChannels || [];
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const [lastSeenTime, setLastSeenTime] = useState<number>(() => Date.now());
+  const [lastSeenTime, setLastSeenTime] = useState<number>(() => {
+    const saved = localStorage.getItem('pgz_last_read_chat_time');
+    return saved ? parseInt(saved, 10) : Date.now();
+  });
 
   // Unread messages count (messages from other users since last seen)
   const unreadCount = isOpen
@@ -33,17 +36,17 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setLastSeenTime(Date.now());
+      const now = Date.now();
+      setLastSeenTime(now);
+      try {
+        localStorage.setItem('pgz_last_read_chat_time', now.toString());
+      } catch (e) {}
+      if (onMarkRead) onMarkRead();
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [isOpen, activeChannelId, chatMessages.length]);
+  }, [isOpen, chatMessages.length, onMarkRead]);
 
-  const activeChannel = chatChannels.find(c => c.id === activeChannelId) || chatChannels[0] || {
-    id: 'general',
-    name: 'General Lounge'
-  };
-
-  const channelMessages = chatMessages.filter(m => m.channelId === activeChannelId);
+  const channelMessages = chatMessages;
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,7 +54,7 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
 
     triggerHaptic('medium');
     onSendMessage({
-      channelId: activeChannelId,
+      channelId: 'general',
       senderId: currentUser.id,
       senderName: currentUser.name,
       senderRole: currentUser.role,
@@ -60,6 +63,12 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
     });
 
     setInputText('');
+    const now = Date.now();
+    setLastSeenTime(now);
+    try {
+      localStorage.setItem('pgz_last_read_chat_time', now.toString());
+    } catch (e) {}
+    if (onMarkRead) onMarkRead();
   };
 
   return (
@@ -96,10 +105,10 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
               </div>
               <div className="min-w-0">
                 <h4 className="text-xs font-extrabold truncate flex items-center gap-1.5">
-                  {activeChannel.name}
+                  Team Chat
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                 </h4>
-                <p className="text-[10px] text-slate-400 truncate">Team Live Chat</p>
+                <p className="text-[10px] text-slate-400 truncate">Real-time collaboration</p>
               </div>
             </div>
 
@@ -126,31 +135,11 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
             </div>
           </div>
 
-          {/* CHANNEL PILLS STRIP */}
-          <div className="px-3 py-1.5 bg-slate-50 dark:bg-[#1C2333] border-b border-slate-200 dark:border-[#1E2D40] flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-            {chatChannels.map(chan => (
-              <button
-                key={chan.id}
-                onClick={() => {
-                  triggerHaptic('light');
-                  setActiveChannelId(chan.id);
-                }}
-                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold shrink-0 transition-all cursor-pointer ${
-                  activeChannelId === chan.id
-                    ? 'bg-emerald-500 text-slate-950 shadow-xs'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                #{chan.name}
-              </button>
-            ))}
-          </div>
-
           {/* MESSAGES FEED */}
           <div className="flex-1 p-3 overflow-y-auto space-y-3 bg-slate-50/50 dark:bg-[#0D121F] text-xs">
             {channelMessages.length === 0 ? (
               <div className="h-full flex items-center justify-center text-slate-400 text-[11px]">
-                No messages yet in #{activeChannel.name}
+                No messages yet in Team Chat
               </div>
             ) : (
               channelMessages.map(msg => {
@@ -188,7 +177,7 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
           <form onSubmit={handleSend} className="p-2.5 bg-white dark:bg-[#131926] border-t border-slate-200 dark:border-[#1E2D40] flex items-center gap-2">
             <input
               type="text"
-              placeholder={`Send message to #${activeChannel.name}...`}
+              placeholder="Send message..."
               value={inputText}
               onChange={e => setInputText(e.target.value)}
               className="flex-1 py-2 px-3 text-xs rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"

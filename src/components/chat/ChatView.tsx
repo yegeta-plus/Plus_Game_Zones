@@ -23,9 +23,7 @@ import {
   Pin,
   Flame,
   UserCheck,
-  Check,
-  ShieldCheck,
-  ShieldAlert
+  Check
 } from 'lucide-react';
 import { ERPState, ChatMessage, ChatChannel, UserProfile, Transaction, Wallet as WalletType, Equb } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
@@ -34,10 +32,11 @@ interface ChatViewProps {
   state: ERPState;
   onSendMessage: (message: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
   onAddReaction: (messageId: string, emoji: string) => void;
-  onCreateChannel: (channel: Omit<ChatChannel, 'id' | 'createdDate'>) => void;
+  onCreateChannel?: (channel: Omit<ChatChannel, 'id' | 'createdDate'>) => void;
   onNavigateTab?: (tab: any) => void;
   onApproveRequest?: (reqId: string, note?: string) => void;
   onRejectRequest?: (reqId: string, note?: string) => void;
+  onMarkRead?: () => void;
 }
 
 const COMMON_EMOJIS = ['👍', '❤️', '🚀', '💡', '💰', '✅', '🔥', '🙏', '👏', '🎯'];
@@ -46,18 +45,14 @@ export const ChatView: React.FC<ChatViewProps> = ({
   state,
   onSendMessage,
   onAddReaction,
-  onCreateChannel,
   onApproveRequest,
-  onRejectRequest
+  onRejectRequest,
+  onMarkRead
 }) => {
   const currentUser = state.currentUser;
   const chatMessages = state.chatMessages || [];
-  const chatChannels = state.chatChannels || [];
-  const users = state.users || [];
 
-  const [activeChannelId, setActiveChannelId] = useState<string>('general');
   const [inputText, setInputText] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
   const [messageSearchQuery, setMessageSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -73,46 +68,19 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [showRefPicker, setShowRefPicker] = useState(false);
   const [selectedRef, setSelectedRef] = useState<ChatMessage['reference'] | undefined>(undefined);
 
-  // Create Channel Modal
-  const [showCreateChannelModal, setShowCreateChannelModal] = useState(false);
-  const [newChannelName, setNewChannelName] = useState('');
-  const [newChannelDesc, setNewChannelDesc] = useState('');
-
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Scroll to bottom when channel or messages change
+  // Mark chat as read on mount and on new message
   useEffect(() => {
+    if (onMarkRead) {
+      onMarkRead();
+    }
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activeChannelId, chatMessages.length]);
+  }, [chatMessages.length, onMarkRead]);
 
-  // Derive active channel or DM recipient
-  const isDirectMessage = activeChannelId.startsWith('dm:');
-  let dmOtherUser: UserProfile | undefined = undefined;
-
-  if (isDirectMessage) {
-    const parts = activeChannelId.replace('dm:', '').split('_');
-    const otherUserId = parts.find(id => id !== currentUser.id) || parts[0];
-    dmOtherUser = users.find(u => u.id === otherUserId);
-  }
-
-  const activeChannel = isDirectMessage
-    ? {
-        id: activeChannelId,
-        name: dmOtherUser ? dmOtherUser.name : 'Direct Message',
-        type: 'DIRECT' as const,
-        description: dmOtherUser ? `${dmOtherUser.role} • ${dmOtherUser.branch}` : '1-on-1 Chat'
-      }
-    : chatChannels.find(c => c.id === activeChannelId) || chatChannels[0] || {
-        id: 'general',
-        name: 'General Lounge',
-        type: 'PUBLIC' as const,
-        description: 'Company-wide chat'
-      };
-
-  // Filter messages for active channel
+  // Filter messages for main chat
   const filteredMessages = chatMessages.filter(m => {
-    if (m.channelId !== activeChannelId) return false;
     if (messageSearchQuery.trim()) {
       return m.text.toLowerCase().includes(messageSearchQuery.toLowerCase()) ||
         m.senderName.toLowerCase().includes(messageSearchQuery.toLowerCase());
@@ -151,7 +119,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     triggerHaptic('medium');
 
     onSendMessage({
-      channelId: activeChannelId,
+      channelId: 'general',
       senderId: currentUser.id,
       senderName: currentUser.name,
       senderRole: currentUser.role,
@@ -173,46 +141,20 @@ export const ChatView: React.FC<ChatViewProps> = ({
     setReplyingTo(null);
     setIsAnnouncement(false);
     setShowEmojiPicker(false);
-  };
-
-  // Start DM
-  const handleStartDM = (targetUser: UserProfile) => {
-    triggerHaptic('light');
-    const sortedIds = [currentUser.id, targetUser.id].sort();
-    const dmId = `dm:${sortedIds.join('_')}`;
-    setActiveChannelId(dmId);
-  };
-
-  // Create Channel Handler
-  const handleCreateChannelSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newChannelName.trim()) return;
-
-    triggerHaptic('medium');
-    const cleanId = newChannelName.toLowerCase().replace(/[^a-z0-9]/g, '-');
-    onCreateChannel({
-      name: newChannelName.trim(),
-      type: 'PUBLIC',
-      description: newChannelDesc.trim() || 'Custom team chat channel'
-    });
-
-    setActiveChannelId(cleanId);
-    setNewChannelName('');
-    setNewChannelDesc('');
-    setShowCreateChannelModal(false);
+    if (onMarkRead) onMarkRead();
   };
 
   return (
-    <div className="space-y-4 pb-24">
+    <div className="space-y-4 pb-24 max-w-5xl mx-auto">
       {/* HEADER TITLE BANNER */}
-      <div className="bg-gradient-to-r from-[#0F172A] via-[#1E293B] to-[#0A0E1A] rounded-2xl p-5 border border-slate-700/50 shadow-lg text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-[#0F172A] via-[#1E293B] to-[#0A0E1A] rounded-2xl p-5 border border-slate-700/50 shadow-lg text-white flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 shadow-md shadow-emerald-500/20 shrink-0">
             <MessageSquare className="w-6 h-6 stroke-[2.5]" />
           </div>
           <div>
             <h2 className="text-lg font-black tracking-tight flex items-center gap-2">
-              Team Live Chat & Communication
+              Team Chat
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                 REAL-TIME
               </span>
@@ -222,198 +164,61 @@ export const ChatView: React.FC<ChatViewProps> = ({
             </p>
           </div>
         </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {(currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
-            <button
-              onClick={() => {
-                triggerHaptic('light');
-                setShowCreateChannelModal(true);
-              }}
-              className="px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-emerald-500/20"
-            >
-              <Plus className="w-4 h-4" />
-              <span>New Channel</span>
-            </button>
-          )}
-        </div>
       </div>
 
-      {/* MAIN CHAT LAYOUT CONTAINER */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start min-h-[600px]">
-        {/* SIDEBAR: CHANNELS & DIRECT MESSAGES */}
-        <div className="lg:col-span-1 bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-4 shadow-sm space-y-4">
-          {/* Search Channels & Users */}
-          <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search chats or team..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
-          </div>
-
-          {/* PUBLIC CHANNELS SECTION */}
-          <div className="space-y-1">
-            <div className="px-2 py-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-[#8899BB] flex items-center justify-between">
-              <span>Public Channels</span>
-              <span className="text-[10px] font-mono">{chatChannels.length}</span>
+      {/* MAIN CHAT CONVERSATION AREA */}
+      <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl flex flex-col h-[640px] shadow-sm overflow-hidden">
+        {/* CHAT HEADER */}
+        <div className="px-5 py-3.5 border-b border-slate-200 dark:border-[#1E2D40] bg-slate-50/50 dark:bg-[#131926] flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/10 dark:bg-[#00D4AA]/20 text-emerald-600 dark:text-[#00D4AA] flex items-center justify-center font-bold">
+              <Users className="w-5 h-5" />
             </div>
-
-            <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
-              {chatChannels
-                .filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                .map(channel => {
-                  const isActive = activeChannelId === channel.id;
-                  const channelMsgCount = chatMessages.filter(m => m.channelId === channel.id).length;
-
-                  return (
-                    <button
-                      key={channel.id}
-                      onClick={() => {
-                        triggerHaptic('light');
-                        setActiveChannelId(channel.id);
-                      }}
-                      className={`w-full text-left px-3 py-2 rounded-xl transition-all flex items-center justify-between group cursor-pointer ${
-                        isActive
-                          ? 'bg-emerald-500/10 dark:bg-[#00D4AA]/15 border border-emerald-500/30 text-emerald-600 dark:text-[#00D4AA] font-bold shadow-xs'
-                          : 'hover:bg-slate-100 dark:hover:bg-[#1C2333] text-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <Hash className={`w-4 h-4 shrink-0 ${isActive ? 'text-emerald-500 dark:text-[#00D4AA]' : 'text-slate-400'}`} />
-                        <span className="text-xs truncate">{channel.name}</span>
-                      </div>
-
-                      {channelMsgCount > 0 && (
-                        <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
-                          isActive
-                            ? 'bg-emerald-500/20 text-emerald-600 dark:text-[#00D4AA]'
-                            : 'bg-slate-200 dark:bg-[#1C2333] text-slate-500 dark:text-slate-400'
-                        }`}>
-                          {channelMsgCount}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
+            <div>
+              <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                Team Chat Room
+              </h3>
+              <p className="text-[11px] text-slate-500 dark:text-[#8899BB] truncate">
+                Main communication channel for all active team members
+              </p>
             </div>
           </div>
 
-          {/* DIRECT MESSAGES (1-ON-1 TEAM MEMBERS) */}
-          <div className="space-y-1 pt-2 border-t border-slate-100 dark:border-[#1E2D40]">
-            <div className="px-2 py-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-[#8899BB] flex items-center justify-between">
-              <span>Direct Messages</span>
-              <span className="text-[10px] font-mono">{users.length - 1}</span>
-            </div>
-
-            <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
-              {users
-                .filter(u => u.id !== currentUser.id)
-                .filter(u => u.name.toLowerCase().includes(searchQuery.toLowerCase()) || u.role.toLowerCase().includes(searchQuery.toLowerCase()))
-                .map(user => {
-                  const sortedIds = [currentUser.id, user.id].sort();
-                  const dmChannelId = `dm:${sortedIds.join('_')}`;
-                  const isActive = activeChannelId === dmChannelId;
-                  const unreadCount = chatMessages.filter(m => m.channelId === dmChannelId && m.senderId !== currentUser.id).length;
-
-                  return (
-                    <button
-                      key={user.id}
-                      onClick={() => handleStartDM(user)}
-                      className={`w-full text-left px-3 py-2 rounded-xl transition-all flex items-center justify-between group cursor-pointer ${
-                        isActive
-                          ? 'bg-emerald-500/10 dark:bg-[#00D4AA]/15 border border-emerald-500/30 text-emerald-600 dark:text-[#00D4AA] font-bold shadow-xs'
-                          : 'hover:bg-slate-100 dark:hover:bg-[#1C2333] text-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        {/* Avatar with online indicator */}
-                        <div className="relative shrink-0">
-                          <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center font-bold text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700">
-                            {user.name.charAt(0)}
-                          </div>
-                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-[#131926] absolute -bottom-0.5 -right-0.5" />
-                        </div>
-
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold truncate leading-tight">{user.name}</p>
-                          <p className="text-[10px] text-slate-400 truncate">{user.role} • {user.branch}</p>
-                        </div>
-                      </div>
-
-                      {unreadCount > 0 && (
-                        <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950">
-                          {unreadCount}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-            </div>
+          {/* Chat search & controls */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsSearchOpen(!isSearchOpen)}
+              className={`p-2 rounded-xl transition-colors cursor-pointer ${
+                isSearchOpen ? 'bg-emerald-500/20 text-emerald-600 dark:text-[#00D4AA]' : 'hover:bg-slate-100 dark:hover:bg-[#1C2333] text-slate-500'
+              }`}
+              title="Search messages"
+            >
+              <Search className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
-        {/* MAIN CHAT CONVERSATION AREA */}
-        <div className="lg:col-span-3 bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl flex flex-col h-[620px] shadow-sm overflow-hidden">
-          {/* CHAT HEADER */}
-          <div className="px-5 py-3.5 border-b border-slate-200 dark:border-[#1E2D40] bg-slate-50/50 dark:bg-[#131926] flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-emerald-500/10 dark:bg-[#00D4AA]/20 text-emerald-600 dark:text-[#00D4AA] flex items-center justify-center font-bold">
-                {isDirectMessage ? <Users className="w-5 h-5" /> : <Hash className="w-5 h-5" />}
-              </div>
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-                  {activeChannel.name}
-                  {isDirectMessage && dmOtherUser && (
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                      {dmOtherUser.role}
-                    </span>
-                  )}
-                </h3>
-                <p className="text-[11px] text-slate-500 dark:text-[#8899BB] truncate max-w-md">
-                  {activeChannel.description}
-                </p>
-              </div>
-            </div>
-
-            {/* Chat search & controls */}
-            <div className="flex items-center gap-2">
+        {/* IN-CHANNEL MESSAGE SEARCH BAR (IF TOGGLED) */}
+        {isSearchOpen && (
+          <div className="px-4 py-2 bg-slate-100 dark:bg-[#1C2333] border-b border-slate-200 dark:border-[#1E2D40] flex items-center gap-2">
+            <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <input
+              type="text"
+              placeholder="Filter messages..."
+              value={messageSearchQuery}
+              onChange={e => setMessageSearchQuery(e.target.value)}
+              className="w-full text-xs bg-transparent text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none"
+            />
+            {messageSearchQuery && (
               <button
-                onClick={() => setIsSearchOpen(!isSearchOpen)}
-                className={`p-2 rounded-xl transition-colors cursor-pointer ${
-                  isSearchOpen ? 'bg-emerald-500/20 text-emerald-600 dark:text-[#00D4AA]' : 'hover:bg-slate-100 dark:hover:bg-[#1C2333] text-slate-500'
-                }`}
-                title="Search messages in channel"
+                onClick={() => setMessageSearchQuery('')}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white"
               >
-                <Search className="w-4 h-4" />
+                <X className="w-3.5 h-3.5" />
               </button>
-            </div>
+            )}
           </div>
-
-          {/* IN-CHANNEL MESSAGE SEARCH BAR (IF TOGGLED) */}
-          {isSearchOpen && (
-            <div className="px-4 py-2 bg-slate-100 dark:bg-[#1C2333] border-b border-slate-200 dark:border-[#1E2D40] flex items-center gap-2">
-              <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <input
-                type="text"
-                placeholder="Filter messages in this channel..."
-                value={messageSearchQuery}
-                onChange={e => setMessageSearchQuery(e.target.value)}
-                className="w-full text-xs bg-transparent text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none"
-              />
-              {messageSearchQuery && (
-                <button
-                  onClick={() => setMessageSearchQuery('')}
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-white"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          )}
+        )}
 
           {/* MESSAGES LIST CONTAINER */}
           <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-slate-50/30 dark:bg-[#0D121F]">
@@ -422,7 +227,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 <MessageSquare className="w-12 h-12 stroke-[1.5] text-slate-300 dark:text-slate-700 mb-2 animate-bounce" />
                 <p className="text-sm font-extrabold text-slate-700 dark:text-slate-300">No messages yet</p>
                 <p className="text-xs max-w-xs mt-1 text-slate-500">
-                  Be the first to start the conversation in <span className="font-bold">{activeChannel.name}</span>!
+                  Be the first to start the conversation in <span className="font-bold">Team Chat</span>!
                 </p>
               </div>
             ) : (
@@ -722,7 +527,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
             {/* Text Input */}
             <input
               type="text"
-              placeholder={`Message ${activeChannel.name}...`}
+              placeholder="Type a message..."
               value={inputText}
               onChange={e => setInputText(e.target.value)}
               className="flex-1 py-2.5 px-3.5 text-xs rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -774,7 +579,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
             )}
           </form>
         </div>
-      </div>
 
       {/* FINANCIAL REFERENCE PICKER MODAL */}
       {showRefPicker && (
@@ -880,68 +684,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
               )}
             </div>
           </div>
-        </div>
-      )}
-
-      {/* CREATE NEW CHANNEL MODAL */}
-      {showCreateChannelModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <form onSubmit={handleCreateChannelSubmit} className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#1E2D40] pb-3">
-              <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                <Hash className="w-5 h-5 text-emerald-500" />
-                Create New Chat Channel
-              </h3>
-              <button type="button" onClick={() => setShowCreateChannelModal(false)} className="text-slate-400 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Channel Name
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Mekelle Branch Team"
-                  value={newChannelName}
-                  onChange={e => setNewChannelName(e.target.value)}
-                  required
-                  className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Description
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Dedicated coordination for northern branch cashiers"
-                  value={newChannelDesc}
-                  onChange={e => setNewChannelDesc(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowCreateChannelModal(false)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs hover:bg-emerald-400 shadow-md shadow-emerald-500/20"
-              >
-                Create Channel
-              </button>
-            </div>
-          </form>
         </div>
       )}
     </div>

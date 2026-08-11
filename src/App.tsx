@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PwaInstallBanner } from './components/pwa/PwaInstallBanner';
 import { Header } from './components/layout/Header';
 import { BottomNav, TabType } from './components/layout/BottomNav';
@@ -42,12 +42,23 @@ export default function App() {
   const [moreSubView, setMoreSubView] = useState<SubViewType>('HUB');
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true);
   const [isSessionLocked, setIsSessionLocked] = useState<boolean>(false);
-  const [lastSeenChatTime, setLastSeenChatTime] = useState<number>(() => Date.now());
+  const [lastSeenChatTime, setLastSeenChatTime] = useState<number>(() => {
+    const saved = localStorage.getItem('pgz_last_read_chat_time');
+    return saved ? parseInt(saved, 10) : Date.now();
+  });
+
+  const markChatAsRead = useCallback(() => {
+    const now = Date.now();
+    setLastSeenChatTime(now);
+    try {
+      localStorage.setItem('pgz_last_read_chat_time', now.toString());
+    } catch (e) {}
+  }, []);
 
   const handleNavigateTab = (tab: TabType, subView?: SubViewType) => {
     setActiveTab(tab);
     if (tab === 'chat') {
-      setLastSeenChatTime(Date.now());
+      markChatAsRead();
     }
     if (tab === 'more') {
       setMoreSubView(subView || 'HUB');
@@ -56,9 +67,9 @@ export default function App() {
 
   useEffect(() => {
     if (activeTab === 'chat') {
-      setLastSeenChatTime(Date.now());
+      markChatAsRead();
     }
-  }, [activeTab, state.chatMessages?.length]);
+  }, [activeTab, state.chatMessages?.length, markChatAsRead]);
 
   // Modals
   const [showQuickEntry, setShowQuickEntry] = useState(false);
@@ -1207,6 +1218,11 @@ export default function App() {
     performRefresh(true);
   };
 
+  const handleResetAllData = () => {
+    localStorage.clear();
+    window.location.reload();
+  };
+
   const handleApproveRequest = (reqId: string, approvalNote?: string) => {
     const req = (state.approvalRequests || []).find(r => r.id === reqId);
     if (!req) return;
@@ -1658,6 +1674,7 @@ export default function App() {
             wallets={state.wallets}
             categories={state.categories}
             currentUser={state.currentUser}
+            users={state.users}
             hideBalances={state.hideBalances}
             calendarType={state.calendarType || 'ETHIOPIAN'}
             onReverseTransaction={handleReverseTransaction}
@@ -1727,10 +1744,10 @@ export default function App() {
             state={state}
             onSendMessage={handleSendMessage}
             onAddReaction={handleAddChatReaction}
-            onCreateChannel={handleCreateChatChannel}
             onNavigateTab={(tab) => handleNavigateTab(tab)}
             onApproveRequest={handleApproveRequest}
             onRejectRequest={handleRejectRequest}
+            onMarkRead={markChatAsRead}
           />
         )}
 

@@ -43,6 +43,7 @@ interface TransactionsViewProps {
     walletId: string;
   }) => void;
   onDeleteTransaction?: (txId: string) => void;
+  users?: UserProfile[];
   onRequestApproval?: (req: Omit<import('../../types').AdminApprovalRequest, 'id' | 'createdAt' | 'requestedBy' | 'requestedByName' | 'status'>) => void;
 }
 
@@ -51,6 +52,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   wallets,
   categories,
   currentUser,
+  users = [],
   hideBalances,
   calendarType = 'ETHIOPIAN',
   onReverseTransaction,

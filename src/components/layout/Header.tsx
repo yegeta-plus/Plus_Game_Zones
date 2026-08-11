@@ -201,6 +201,14 @@ export const Header: React.FC<HeaderProps> = ({
             );
           })()}
 
+          {/* Backdrop overlay to dismiss notifications menu on outside tap */}
+          {showNotifMenu && (
+            <div
+              className="fixed inset-0 z-40 bg-slate-950/20 backdrop-blur-[1px]"
+              onClick={() => setShowNotifMenu(false)}
+            />
+          )}
+
           {/* Notifications Dropdown Panel */}
           {showNotifMenu && (
             <div className="absolute top-11 right-0 bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#2A3B53] rounded-2xl shadow-2xl p-3.5 w-72 sm:w-88 z-50 animate-fadeIn space-y-2.5 text-slate-900 dark:text-white">
@@ -229,6 +237,7 @@ export const Header: React.FC<HeaderProps> = ({
                           onClick={() => {
                             triggerHaptic('medium');
                             onClearAllNotifications();
+                            setShowNotifMenu(false);
                           }}
                           className="text-[10px] font-bold text-slate-500 hover:text-rose-500 dark:text-slate-400 dark:hover:text-rose-400 transition-colors flex items-center gap-1 cursor-pointer"
                           title="Clear all seen notifications"
