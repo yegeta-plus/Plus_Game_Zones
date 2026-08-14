@@ -1,26 +1,64 @@
 {
-  "id": "/",
-  "short_name": "Plus Game Zone",
-  "name": "Plus Game Zone",
+  "id": "com.pluszone.finance.app",
+  "short_name": "PlusZone ERP",
+  "name": "Plus Game Zone — Finance & ERP System",
   "description": "Mobile-first PlayStation House & Game Zone management system — cash, Telebirr, CBE, gaming station tracking, Equb, and finance.",
   "icons": [
     {
       "src": "/pwa-192.png",
       "type": "image/png",
       "sizes": "192x192",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
     },
     {
       "src": "/pwa-512.png",
       "type": "image/png",
       "sizes": "512x512",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
     }
   ],
   "start_url": "/",
+  "scope": "/",
   "background_color": "#0A0E1A",
   "theme_color": "#00D4AA",
   "display": "standalone",
   "orientation": "portrait",
-  "categories": ["finance", "business", "productivity"]
+  "categories": ["finance", "business", "productivity"],
+  "shortcuts": [
+    {
+      "name": "New Transaction",
+      "short_name": "New Tx",
+      "description": "Log cash or digital payment quickly",
+      "url": "/?shortcut=transaction",
+      "icons": [{ "src": "/pwa-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Gaming Stations",
+      "short_name": "Stations",
+      "description": "View active PS5 timers & stations",
+      "url": "/?shortcut=gaming",
+      "icons": [{ "src": "/pwa-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Wallets & CBE",
+      "short_name": "Wallets",
+      "description": "Check CBE, Telebirr & eBirr balances",
+      "url": "/?shortcut=wallets",
+      "icons": [{ "src": "/pwa-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
 }

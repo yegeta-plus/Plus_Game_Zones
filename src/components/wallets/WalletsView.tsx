@@ -21,7 +21,7 @@ import {
   X
 } from 'lucide-react';
 import { Wallet, Transaction, Transfer, UserProfile, TransactionType } from '../../types';
-import { calculateWalletBalance, formatETB } from '../../lib/store';
+import { calculateWalletBalance, formatETB, isOverdraftAllowed, isWalletActive } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 import { TelebirrIntegrationModal } from './TelebirrIntegrationModal';
 import { ShegerPayVerificationModal } from './ShegerPayVerificationModal';
@@ -81,7 +81,9 @@ const DEFAULT_TYPE_COLORS: Record<Wallet['type'], string> = {
   TELEBIRR: '#0EA5E9',  // Light Blue background
   EBIRR: '#10B981',     // Green background
   SAVINGS: '#3B82F6',
-  OTHER: '#06B6D4'
+  OTHER: '#06B6D4',
+  CREDIT_LINE: '#8B5CF6',
+  LOAN: '#EC4899'
 };
 
 export const WalletsView: React.FC<WalletsViewProps> = ({
@@ -103,7 +105,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
   onBatchPostTransactions
 }) => {
   const [selectedWalletId, setSelectedWalletId] = useState<string | null>(wallets[0]?.id || null);
-  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'DIGITAL' | 'CASH'>('ALL');
+  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'ACTIVE' | 'DIGITAL' | 'CASH' | 'CREDIT' | 'ARCHIVED'>('ALL');
   
   // Integration Modal state
   const [showIntegrationModal, setShowIntegrationModal] = useState(false);
@@ -118,6 +120,9 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
   const [newWalletBal, setNewWalletBal] = useState('');
   const [newWalletColor, setNewWalletColor] = useState('#00D4AA');
   const [newCustomLogoUrl, setNewCustomLogoUrl] = useState('');
+  const [newWalletStatus, setNewWalletStatus] = useState<'ACTIVE' | 'ARCHIVED' | 'DISABLED'>('ACTIVE');
+  const [newWalletAllowOverdraft, setNewWalletAllowOverdraft] = useState(false);
+  const [newWalletIsCredit, setNewWalletIsCredit] = useState(false);
 
   // Edit Wallet Modal state
   const [editingWallet, setEditingWallet] = useState<Wallet | null>(null);
@@ -126,6 +131,9 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
   const [editColor, setEditColor] = useState('#00D4AA');
   const [editAccNum, setEditAccNum] = useState('');
   const [editCustomLogoUrl, setEditCustomLogoUrl] = useState('');
+  const [editStatus, setEditStatus] = useState<'ACTIVE' | 'ARCHIVED' | 'DISABLED'>('ACTIVE');
+  const [editAllowOverdraft, setEditAllowOverdraft] = useState(false);
+  const [editIsCredit, setEditIsCredit] = useState(false);
 
   // Delete Wallet Confirmation Modal state
   const [deletingWallet, setDeletingWallet] = useState<Wallet | null>(null);
@@ -144,6 +152,9 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
     setEditAccNum(w.accountNumber || '');
     setEditColor(w.color);
     setEditCustomLogoUrl(w.customLogoUrl || '');
+    setEditStatus(w.status || (w.isArchived ? 'ARCHIVED' : 'ACTIVE'));
+    setEditAllowOverdraft(!!(w.allowOverdraft || w.isCreditAccount || w.type === 'CREDIT_LINE' || w.type === 'LOAN'));
+    setEditIsCredit(!!(w.isCreditAccount || w.type === 'CREDIT_LINE' || w.type === 'LOAN'));
   };
 
   const openDeleteModal = (w: Wallet) => {
@@ -180,8 +191,11 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
 
   // Filter wallets for grid display
   const filteredWallets = wallets.filter(w => {
+    if (categoryFilter === 'ACTIVE') return isWalletActive(w);
     if (categoryFilter === 'DIGITAL') return w.type !== 'CASH';
     if (categoryFilter === 'CASH') return w.type === 'CASH';
+    if (categoryFilter === 'CREDIT') return isOverdraftAllowed(w);
+    if (categoryFilter === 'ARCHIVED') return !isWalletActive(w);
     return true;
   });
 
@@ -216,6 +230,10 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
   const handleTypeChange = (type: Wallet['type']) => {
     setNewWalletType(type);
     setNewWalletColor(DEFAULT_TYPE_COLORS[type] || '#00D4AA');
+    if (type === 'CREDIT_LINE' || type === 'LOAN') {
+      setNewWalletIsCredit(true);
+      setNewWalletAllowOverdraft(true);
+    }
   };
 
   const handleAddSubmit = (e: React.FormEvent) => {
@@ -236,7 +254,11 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
       openingBalance: parseFloat(newWalletBal) || 0,
       color: newWalletColor,
       iconName: defaultIcon,
-      customLogoUrl: newCustomLogoUrl.trim() || undefined
+      customLogoUrl: newCustomLogoUrl.trim() || undefined,
+      status: newWalletStatus,
+      isCreditAccount: newWalletIsCredit,
+      allowOverdraft: newWalletAllowOverdraft || newWalletIsCredit,
+      isArchived: newWalletStatus === 'ARCHIVED'
     });
 
     setShowAddModal(false);
@@ -245,6 +267,9 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
     setNewWalletBal('');
     setNewWalletColor('#00D4AA');
     setNewCustomLogoUrl('');
+    setNewWalletStatus('ACTIVE');
+    setNewWalletAllowOverdraft(false);
+    setNewWalletIsCredit(false);
   };
 
   const handleSaveEditWallet = (e: React.FormEvent) => {
@@ -265,7 +290,11 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
       color: editColor,
       accountNumber: editAccNum.trim() || undefined,
       iconName: defaultIcon,
-      customLogoUrl: editCustomLogoUrl.trim() || undefined
+      customLogoUrl: editCustomLogoUrl.trim() || undefined,
+      status: editStatus,
+      isCreditAccount: editIsCredit,
+      allowOverdraft: editAllowOverdraft || editIsCredit,
+      isArchived: editStatus === 'ARCHIVED'
     });
 
     setEditingWallet(null);
@@ -448,8 +477,51 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
 
       </div>
 
+      {/* Balance & Wallet Rules Guidance Banner */}
+      <div className="bg-slate-900/90 dark:bg-[#0A0E1A] border border-slate-700/60 dark:border-[#1E2D40] rounded-2xl p-3.5 text-xs text-slate-200 shadow-md">
+        <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-700/50">
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded-md bg-[#00D4AA]/20 text-[#00D4AA] flex items-center justify-center font-bold text-[10px]">
+              ⚖️
+            </div>
+            <h4 className="font-bold text-slate-100 dark:text-[#F0F4FF] text-xs">
+              ERP Balance & Wallet Governance Rules
+            </h4>
+          </div>
+          <span className="text-[10px] font-mono font-bold bg-[#00D4AA]/20 text-[#00D4AA] px-2 py-0.5 rounded-full border border-[#00D4AA]/30">
+            STRICT ENFORCEMENT
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2.5 text-[11px] text-slate-300">
+          <div className="flex items-start gap-2 bg-slate-800/40 p-2 rounded-xl border border-slate-700/40">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 mt-1 shrink-0" />
+            <div>
+              <strong className="text-white block font-semibold">1. Overdraft Guard</strong>
+              <span>Zero-balance floors strictly enforced unless flagged as Credit / Loan account.</span>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2 bg-slate-800/40 p-2 rounded-xl border border-slate-700/40">
+            <span className="w-2 h-2 rounded-full bg-blue-400 mt-1 shrink-0" />
+            <div>
+              <strong className="text-white block font-semibold">2. Active Accounts Only</strong>
+              <span>Archived or disabled accounts cannot accept new postings or initiate transfers.</span>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2 bg-slate-800/40 p-2 rounded-xl border border-slate-700/40">
+            <span className="w-2 h-2 rounded-full bg-purple-400 mt-1 shrink-0" />
+            <div>
+              <strong className="text-white block font-semibold">3. Balanced 2-Sided Transfers</strong>
+              <span>Inter-wallet transfers maintain exact equal debit and credit double-entry legs.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Filter Tabs */}
-      <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-[#131926] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40] w-fit">
+      <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-[#131926] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40] w-fit flex-wrap">
         <button
           onClick={() => {
             triggerHaptic('light');
@@ -461,7 +533,22 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
               : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
           }`}
         >
-          All Accounts ({wallets.length})
+          All ({wallets.length})
+        </button>
+
+        <button
+          onClick={() => {
+            triggerHaptic('light');
+            setCategoryFilter('ACTIVE');
+          }}
+          className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+            categoryFilter === 'ACTIVE'
+              ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/40 shadow-sm'
+              : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+          }`}
+        >
+          <Check className="w-3 h-3" />
+          <span>Active ({wallets.filter(w => isWalletActive(w)).length})</span>
         </button>
 
         <button
@@ -476,7 +563,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
           }`}
         >
           <Smartphone className="w-3 h-3" />
-          <span>Digital Money ({digitalWallets.length})</span>
+          <span>Digital ({digitalWallets.length})</span>
         </button>
 
         <button
@@ -493,6 +580,36 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
           <Banknote className="w-3 h-3" />
           <span>Cash ({cashWallets.length})</span>
         </button>
+
+        <button
+          onClick={() => {
+            triggerHaptic('light');
+            setCategoryFilter('CREDIT');
+          }}
+          className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+            categoryFilter === 'CREDIT'
+              ? 'bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/40 shadow-sm'
+              : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+          }`}
+        >
+          <CreditCard className="w-3 h-3" />
+          <span>Credit / Loan ({wallets.filter(w => isOverdraftAllowed(w)).length})</span>
+        </button>
+
+        <button
+          onClick={() => {
+            triggerHaptic('light');
+            setCategoryFilter('ARCHIVED');
+          }}
+          className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+            categoryFilter === 'ARCHIVED'
+              ? 'bg-rose-500/20 text-rose-700 dark:text-rose-400 border border-rose-500/40 shadow-sm'
+              : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+          }`}
+        >
+          <Lock className="w-3 h-3" />
+          <span>Archived ({wallets.filter(w => !isWalletActive(w)).length})</span>
+        </button>
       </div>
 
       {/* Wallet Cards Grid with Custom Color Styling */}
@@ -501,6 +618,8 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
           const bal = calculateWalletBalance(w, transactions, transfers);
           const isSelected = w.id === selectedWalletId;
           const isDigital = w.type !== 'CASH';
+          const active = isWalletActive(w);
+          const creditAllowed = isOverdraftAllowed(w);
 
           return (
             <div
@@ -515,7 +634,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
               }}
               className={`p-4 rounded-2xl border transition-all cursor-pointer relative overflow-hidden group hover:scale-[1.01] bg-white dark:bg-[#131926] ${
                 isSelected ? 'ring-1' : ''
-              }`}
+              } ${!active ? 'opacity-70 bg-slate-50 dark:bg-[#10141f]' : ''}`}
             >
               {/* Radial gradient glow tailored to wallet color */}
               <div
@@ -542,7 +661,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                   </div>
 
                   <div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <h3 className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF]">{w.name}</h3>
                       <span
                         className="text-[8px] font-mono font-bold px-1.5 py-0.2 rounded-full border"
@@ -554,6 +673,18 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                       >
                         {isDigital ? 'DIGITAL' : 'CASH'}
                       </span>
+
+                      {!active && (
+                        <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-300 dark:border-rose-800">
+                          {w.status || 'ARCHIVED'}
+                        </span>
+                      )}
+
+                      {creditAllowed && (
+                        <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300 border border-purple-300 dark:border-purple-800" title="Overdraft permitted for this account">
+                          Credit Allowed
+                        </span>
+                      )}
                     </div>
                     <p className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono mt-0.5">
                       {w.accountNumber || w.type}
@@ -664,7 +795,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                     <p className="text-[10px] text-slate-500 dark:text-[#8899BB] mt-0.5">{tx.category} • {new Date(tx.date).toLocaleDateString()}</p>
                   </div>
                   <span className={`font-mono font-bold ${tx.type === 'INCOME' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-red-400'}`}>
-                    {tx.type === 'INCOME' ? '+' : '-'}{formatETB(tx.amount)}
+                    {tx.type === 'INCOME' ? '+' : '-'}{formatETB(Math.abs(tx.amount))}
                   </span>
                 </div>
               ))
@@ -872,6 +1003,63 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                 </div>
               </div>
 
+              {/* Account Status & Overdraft Controls */}
+              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-[#1E2D40]">
+                <label className="text-xs font-bold text-slate-900 dark:text-white block">
+                  Account Governance & Status
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['ACTIVE', 'ARCHIVED', 'DISABLED'] as const).map(st => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setNewWalletStatus(st);
+                      }}
+                      className={`py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                        newWalletStatus === st
+                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-transparent shadow-xs'
+                          : 'bg-slate-50 dark:bg-[#1C2333] text-slate-600 dark:text-[#8899BB] border-slate-200 dark:border-[#1E2D40]'
+                      }`}
+                    >
+                      {st}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newWalletIsCredit}
+                      onChange={e => {
+                        setNewWalletIsCredit(e.target.checked);
+                        if (e.target.checked) setNewWalletAllowOverdraft(true);
+                      }}
+                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div className="text-[11px]">
+                      <span className="font-bold text-slate-800 dark:text-slate-200 block">Credit / Loan Facility</span>
+                      <span className="text-slate-500 dark:text-[#8899BB]">Designates this wallet as a line of credit or loan account.</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newWalletAllowOverdraft}
+                      onChange={e => setNewWalletAllowOverdraft(e.target.checked)}
+                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div className="text-[11px]">
+                      <span className="font-bold text-slate-800 dark:text-slate-200 block">Permit Negative Balance (Overdraft)</span>
+                      <span className="text-slate-500 dark:text-[#8899BB]">Bypasses strict zero-balance overdraft blocks during expenses and transfers.</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
               <div>
                 <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Opening Balance (ETB)</label>
                 <input
@@ -1058,6 +1246,63 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                     placeholder="https://... / logo.png"
                     className="flex-1 bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-1.5 text-xs text-slate-900 dark:text-white outline-none"
                   />
+                </div>
+              </div>
+
+              {/* Account Status & Overdraft Controls */}
+              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-[#1E2D40]">
+                <label className="text-xs font-bold text-slate-900 dark:text-white block">
+                  Account Governance & Status
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['ACTIVE', 'ARCHIVED', 'DISABLED'] as const).map(st => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setEditStatus(st);
+                      }}
+                      className={`py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                        editStatus === st
+                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-transparent shadow-xs'
+                          : 'bg-slate-50 dark:bg-[#1C2333] text-slate-600 dark:text-[#8899BB] border-slate-200 dark:border-[#1E2D40]'
+                      }`}
+                    >
+                      {st}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editIsCredit}
+                      onChange={e => {
+                        setEditIsCredit(e.target.checked);
+                        if (e.target.checked) setEditAllowOverdraft(true);
+                      }}
+                      className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500"
+                    />
+                    <div className="text-[11px]">
+                      <span className="font-bold text-slate-800 dark:text-slate-200 block">Credit / Loan Facility</span>
+                      <span className="text-slate-500 dark:text-[#8899BB]">Designates this wallet as a line of credit or loan account.</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editAllowOverdraft}
+                      onChange={e => setEditAllowOverdraft(e.target.checked)}
+                      className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500"
+                    />
+                    <div className="text-[11px]">
+                      <span className="font-bold text-slate-800 dark:text-slate-200 block">Permit Negative Balance (Overdraft)</span>
+                      <span className="text-slate-500 dark:text-[#8899BB]">Bypasses strict zero-balance overdraft blocks during expenses and transfers.</span>
+                    </div>
+                  </label>
                 </div>
               </div>
 

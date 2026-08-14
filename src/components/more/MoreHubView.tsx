@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Target,
   Repeat,
@@ -32,9 +32,12 @@ import { UsersView } from './UsersView';
 import { CalendarView } from './CalendarView';
 import { BackupView } from './BackupView';
 import { CategoriesView } from './CategoriesView';
+import { SecuritySystemView } from './SecuritySystemView';
+import { AdvancedFinancialSystem } from './AdvancedFinancialSystem';
+import { PlayStoreStandardsView } from './PlayStoreStandardsView';
 import { SettingsView, SettingsTabType } from './SettingsView';
 import { ProfileView } from './ProfileView';
-import { User, Camera, Mail } from 'lucide-react';
+import { User, Camera, Mail, ShieldCheck, Building2, Smartphone } from 'lucide-react';
 
 export type SubViewType =
   | 'HUB'
@@ -49,7 +52,10 @@ export type SubViewType =
   | 'USERS'
   | 'CATEGORIES'
   | 'CALENDAR'
-  | 'BACKUP';
+  | 'BACKUP'
+  | 'SECURITY'
+  | 'FINANCIAL_SYSTEM'
+  | 'PLAY_STORE_STANDARDS';
 
 interface MoreHubViewProps {
   state: ERPState;
@@ -121,6 +127,39 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
   ];
 
   const operationalTiles = [
+    {
+      id: 'FINANCIAL_SYSTEM' as SubViewType,
+      title: 'Financial System & Intelligence Hub',
+      subtitle: 'Liquidity Matrix, Cash Runway Buffer, Category Budgets & 3-Month Fixed Tax Schedule',
+      icon: Building2,
+      color: '#00D4AA',
+      onClick: () => {
+        triggerHaptic('light');
+        setSubView('FINANCIAL_SYSTEM');
+      }
+    },
+    {
+      id: 'SECURITY' as SubViewType,
+      title: 'Security System & SOC Center',
+      subtitle: '2FA, Master PIN, WebAuthn Passkeys, Active Devices & Threat Radar',
+      icon: ShieldCheck,
+      color: '#3B82F6',
+      onClick: () => {
+        triggerHaptic('light');
+        setSubView('SECURITY');
+      }
+    },
+    {
+      id: 'PLAY_STORE_STANDARDS' as SubViewType,
+      title: 'Google Play Store Standards & Compliance',
+      subtitle: 'Data Safety Policy, AssetLinks, Privacy Policy & Account Deletion Portal',
+      icon: Smartphone,
+      color: '#10B981',
+      onClick: () => {
+        triggerHaptic('light');
+        setSubView('PLAY_STORE_STANDARDS');
+      }
+    },
     {
       id: 'CHAT' as any,
       title: 'Team Live Chat',
@@ -346,6 +385,15 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
         )}
         {subView === 'BACKUP' && (
           <BackupView state={state} onRestore={newState => onUpdateState(() => newState)} />
+        )}
+        {subView === 'SECURITY' && (
+          <SecuritySystemView state={state} />
+        )}
+        {subView === 'FINANCIAL_SYSTEM' && (
+          <AdvancedFinancialSystem state={state} />
+        )}
+        {subView === 'PLAY_STORE_STANDARDS' && (
+          <PlayStoreStandardsView state={state} />
         )}
       </div>
     );

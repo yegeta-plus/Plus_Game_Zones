@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { PwaInstallBanner } from './components/pwa/PwaInstallBanner';
 import { Header } from './components/layout/Header';
 import { BottomNav, TabType } from './components/layout/BottomNav';
@@ -714,7 +714,8 @@ export default function App() {
         creatorName: state.currentUser.name,
         branch: state.currentUser.branch,
         refType: 'EQUB',
-        refId: equbId
+        refId: equbId,
+        splits: splits.length > 1 ? splits : undefined
       };
     });
 
@@ -1233,6 +1234,8 @@ export default function App() {
       return;
     }
 
+    triggerHaptic('success');
+
     if (req.actionType === 'EDIT_EQUB' && req.payload) {
       handleUpdateEqub(req.targetId, req.payload);
     } else if (req.actionType === 'DELETE_EQUB') {
@@ -1671,6 +1674,7 @@ export default function App() {
         {activeTab === 'transactions' && (
           <TransactionsView
             transactions={state.transactions}
+            transfers={state.transfers}
             wallets={state.wallets}
             categories={state.categories}
             currentUser={state.currentUser}
@@ -1782,6 +1786,8 @@ export default function App() {
         categories={state.categories}
         currentUser={state.currentUser}
         defaultWalletId={quickEntryWalletId}
+        transactions={state.transactions}
+        transfers={state.transfers}
         onSubmitTransaction={handlePostTransaction}
         onBatchSubmitTransactions={handleBatchPostTransactions}
       />

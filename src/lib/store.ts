@@ -116,7 +116,10 @@ const DEFAULT_WALLETS: Wallet[] = [
     totalOut: 0,
     color: '#F97316', // Orange background
     iconName: 'Banknote',
-    isDefault: true
+    isDefault: true,
+    status: 'ACTIVE',
+    isCreditAccount: false,
+    allowOverdraft: false
   },
   {
     id: 'w-cbe',
@@ -128,7 +131,10 @@ const DEFAULT_WALLETS: Wallet[] = [
     totalOut: 0,
     color: '#8B5CF6', // Purple background
     iconName: 'Building2',
-    isDefault: false
+    isDefault: false,
+    status: 'ACTIVE',
+    isCreditAccount: false,
+    allowOverdraft: false
   },
   {
     id: 'w-telebirr',
@@ -140,7 +146,10 @@ const DEFAULT_WALLETS: Wallet[] = [
     totalOut: 0,
     color: '#0EA5E9', // Light Blue background
     iconName: 'Smartphone',
-    isDefault: false
+    isDefault: false,
+    status: 'ACTIVE',
+    isCreditAccount: false,
+    allowOverdraft: false
   },
   {
     id: 'w-ebirr',
@@ -152,7 +161,10 @@ const DEFAULT_WALLETS: Wallet[] = [
     totalOut: 0,
     color: '#10B981', // Green background
     iconName: 'CreditCard',
-    isDefault: false
+    isDefault: false,
+    status: 'ACTIVE',
+    isCreditAccount: false,
+    allowOverdraft: false
   }
 ];
 
@@ -311,27 +323,52 @@ export function loadInitialState(): ERPState {
         const defaultMap = new Map(DEFAULT_WALLETS.map(w => [w.type, w]));
         
         currentWallets = currentWallets.map(w => {
+          const status = w.status || (w.isArchived ? 'ARCHIVED' : w.isDisabled ? 'DISABLED' : 'ACTIVE');
+          const isCredit = w.isCreditAccount === true || w.type === 'CREDIT_LINE' || w.type === 'LOAN';
           if (w.type === 'CBE_BANK') {
             return {
               ...w,
               accountNumber: w.accountNumber && w.accountNumber !== '1000123456789' ? w.accountNumber : '1000751694559',
-              color: '#8B5CF6' // Purple
+              color: '#8B5CF6', // Purple
+              status,
+              isCreditAccount: isCredit,
+              allowOverdraft: w.allowOverdraft ?? isCredit
             };
           }
           if (w.type === 'CASH') {
-            return { ...w, color: '#F97316' }; // Orange
+            return {
+              ...w,
+              color: '#F97316',
+              status,
+              isCreditAccount: isCredit,
+              allowOverdraft: w.allowOverdraft ?? isCredit
+            };
           }
           if (w.type === 'TELEBIRR') {
             return {
               ...w,
               accountNumber: w.accountNumber && w.accountNumber !== '0911002233' ? w.accountNumber : '0989367877',
-              color: '#0EA5E9'
+              color: '#0EA5E9',
+              status,
+              isCreditAccount: isCredit,
+              allowOverdraft: w.allowOverdraft ?? isCredit
             };
           }
           if (w.type === 'EBIRR') {
-            return { ...w, color: '#10B981' }; // Green
+            return {
+              ...w,
+              color: '#10B981',
+              status,
+              isCreditAccount: isCredit,
+              allowOverdraft: w.allowOverdraft ?? isCredit
+            };
           }
-          return w;
+          return {
+            ...w,
+            status,
+            isCreditAccount: isCredit,
+            allowOverdraft: w.allowOverdraft ?? isCredit
+          };
         });
 
         // Add missing default types if not present
@@ -474,25 +511,34 @@ export function saveStateToStorage(state: ERPState) {
  * Wallet Balance = openingBalance + total Income Posted - total Expense Posted + Transfers In - Transfers Out
  */
 export function calculateWalletBalance(wallet: Wallet, transactions: Transaction[], transfers: Transfer[]): number {
-  let balance = wallet.openingBalance;
+  let balance = wallet.openingBalance || 0;
 
   for (const tx of transactions) {
     if (tx.reversed) continue;
-    if (tx.walletId === wallet.id) {
+    if (tx.splits && tx.splits.length > 0) {
+      const split = tx.splits.find(s => s.walletId === wallet.id);
+      if (split) {
+        if (tx.type === 'INCOME') {
+          balance += Math.abs(split.amount);
+        } else {
+          balance -= Math.abs(split.amount);
+        }
+      }
+    } else if (tx.walletId === wallet.id) {
       if (tx.type === 'INCOME') {
-        balance += tx.amount;
+        balance += Math.abs(tx.amount);
       } else if (tx.type === 'EXPENSE') {
-        balance -= tx.amount;
+        balance -= Math.abs(tx.amount);
       }
     }
   }
 
   for (const tr of transfers) {
     if (tr.toWalletId === wallet.id) {
-      balance += tr.amount;
+      balance += Math.abs(tr.amount);
     }
     if (tr.fromWalletId === wallet.id) {
-      balance -= tr.amount;
+      balance -= Math.abs(tr.amount);
     }
   }
 
@@ -501,6 +547,295 @@ export function calculateWalletBalance(wallet: Wallet, transactions: Transaction
 
 export function calculateTotalBusinessBalance(wallets: Wallet[], transactions: Transaction[], transfers: Transfer[]): number {
   return wallets.reduce((acc, w) => acc + calculateWalletBalance(w, transactions, transfers), 0);
+}
+
+/**
+ * Balance & Wallet Rules:
+ * 1. Checks if a wallet allows overdraft (credit/loan account or explicitly flagged).
+ */
+export function isOverdraftAllowed(wallet?: Wallet): boolean {
+  if (!wallet) return false;
+  return (
+    wallet.isCreditAccount === true ||
+    wallet.allowOverdraft === true ||
+    wallet.type === 'CREDIT_LINE' ||
+    wallet.type === 'LOAN' ||
+    (typeof wallet.name === 'string' && (
+      wallet.name.toLowerCase().includes('credit') ||
+      wallet.name.toLowerCase().includes('loan') ||
+      wallet.name.toLowerCase().includes('borrow')
+    ))
+  );
+}
+
+/**
+ * Balance & Wallet Rules:
+ * 2. Checks if a wallet exists and is active (not archived or disabled).
+ */
+export function isWalletActive(wallet?: Wallet): boolean {
+  if (!wallet) return false;
+  if (wallet.status === 'ARCHIVED' || wallet.status === 'DISABLED') return false;
+  if (wallet.isArchived === true || wallet.isDisabled === true) return false;
+  return true;
+}
+
+export interface WalletValidationResult {
+  valid: boolean;
+  error?: string;
+}
+
+/**
+ * Validates transaction posting against Balance & Wallet Rules:
+ * - Wallet must exist and be active.
+ * - Expense cannot take wallet balance below zero unless overdraft is allowed.
+ */
+export function validateTransactionPosting(
+  wallet: Wallet | undefined,
+  type: 'INCOME' | 'EXPENSE',
+  amount: number,
+  transactions: Transaction[],
+  transfers: Transfer[]
+): WalletValidationResult {
+  if (!wallet) {
+    return { valid: false, error: 'Target wallet does not exist.' };
+  }
+
+  if (!isWalletActive(wallet)) {
+    const statusText = wallet.status === 'ARCHIVED' || wallet.isArchived ? 'archived' : 'disabled';
+    return {
+      valid: false,
+      error: `Cannot post to ${statusText} wallet "${wallet.name}". Wallet must be active.`
+    };
+  }
+
+  const absAmount = Math.abs(amount);
+  if (isNaN(absAmount) || absAmount <= 0) {
+    return { valid: false, error: 'Transaction amount must be greater than ETB 0.' };
+  }
+
+  if (type === 'EXPENSE') {
+    const currentBalance = calculateWalletBalance(wallet, transactions, transfers);
+    if (!isOverdraftAllowed(wallet) && currentBalance - absAmount < 0) {
+      return {
+        valid: false,
+        error: `Overdraft blocked: Wallet "${wallet.name}" balance (${formatETB(currentBalance)}) is insufficient for expense of ${formatETB(absAmount)}. Overdraft is not permitted on this account.`
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validates inter-wallet transfer against Balance & Wallet Rules:
+ * 1. Both wallets exist and are active.
+ * 2. Source and destination wallets are distinct.
+ * 3. Source wallet balance cannot drop below zero unless overdraft is allowed.
+ * 4. Transfer amount must be positive.
+ * 5. Debit and credit legs strictly balance (exact equal amounts on both sides).
+ */
+export function validateTransfer(
+  fromWallet: Wallet | undefined,
+  toWallet: Wallet | undefined,
+  amount: number,
+  transactions: Transaction[],
+  transfers: Transfer[]
+): WalletValidationResult {
+  if (!fromWallet) {
+    return { valid: false, error: 'Source wallet does not exist.' };
+  }
+  if (!toWallet) {
+    return { valid: false, error: 'Destination wallet does not exist.' };
+  }
+  if (fromWallet.id === toWallet.id) {
+    return { valid: false, error: 'Source and destination wallets must be different accounts.' };
+  }
+
+  if (!isWalletActive(fromWallet)) {
+    const fromStatus = fromWallet.status === 'ARCHIVED' || fromWallet.isArchived ? 'archived' : 'disabled';
+    return {
+      valid: false,
+      error: `Cannot transfer from ${fromStatus} wallet "${fromWallet.name}". Only active wallets can originate transfers.`
+    };
+  }
+  if (!isWalletActive(toWallet)) {
+    const toStatus = toWallet.status === 'ARCHIVED' || toWallet.isArchived ? 'archived' : 'disabled';
+    return {
+      valid: false,
+      error: `Cannot transfer to ${toStatus} wallet "${toWallet.name}". Only active wallets can receive transfers.`
+    };
+  }
+
+  const absAmount = Math.abs(amount);
+  if (isNaN(absAmount) || absAmount <= 0) {
+    return { valid: false, error: 'Transfer amount must be greater than ETB 0.' };
+  }
+
+  const currentFromBalance = calculateWalletBalance(fromWallet, transactions, transfers);
+  if (!isOverdraftAllowed(fromWallet) && currentFromBalance - absAmount < 0) {
+    return {
+      valid: false,
+      error: `Overdraft blocked: Source wallet "${fromWallet.name}" balance (${formatETB(currentFromBalance)}) cannot cover transfer of ${formatETB(absAmount)}. Overdraft is not permitted on this account.`
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Computes chronological running balances for each wallet at every transaction point in time.
+ * Returns a mapping: tx.id -> { [walletId]: runningBalance }
+ */
+export function computeAllWalletRunningBalances(
+  wallets: Wallet[],
+  transactions: Transaction[],
+  transfers: Transfer[] = []
+): Record<string, Record<string, number>> {
+  const walletBalances: Record<string, number> = {};
+  wallets.forEach(w => {
+    walletBalances[w.id] = w.openingBalance || 0;
+  });
+
+  type LedgerEvent =
+    | { kind: 'tx'; date: number; id: string; tx: Transaction }
+    | { kind: 'transfer'; date: number; id: string; transfer: Transfer };
+
+  const events: LedgerEvent[] = [];
+
+  transactions.forEach(tx => {
+    const timeVal = new Date(tx.date).getTime();
+    events.push({
+      kind: 'tx',
+      date: isNaN(timeVal) ? 0 : timeVal,
+      id: tx.id,
+      tx
+    });
+  });
+
+  transfers.forEach(tr => {
+    const timeVal = new Date(tr.date).getTime();
+    events.push({
+      kind: 'transfer',
+      date: isNaN(timeVal) ? 0 : timeVal,
+      id: tr.id,
+      transfer: tr
+    });
+  });
+
+  events.sort((a, b) => {
+    if (a.date !== b.date) return a.date - b.date;
+    return (a.id || '').localeCompare(b.id || '');
+  });
+
+  const txToWalletBalances: Record<string, Record<string, number>> = {};
+
+  for (const ev of events) {
+    if (ev.kind === 'tx') {
+      const tx = ev.tx;
+      if (!tx.reversed) {
+        if (tx.splits && tx.splits.length > 0) {
+          for (const s of tx.splits) {
+            if (walletBalances[s.walletId] !== undefined) {
+              if (tx.type === 'INCOME') {
+                walletBalances[s.walletId] += Math.abs(s.amount);
+              } else {
+                walletBalances[s.walletId] -= Math.abs(s.amount);
+              }
+            }
+          }
+        } else if (tx.walletId && walletBalances[tx.walletId] !== undefined) {
+          if (tx.type === 'INCOME') {
+            walletBalances[tx.walletId] += Math.abs(tx.amount);
+          } else {
+            walletBalances[tx.walletId] -= Math.abs(tx.amount);
+          }
+        }
+      }
+      txToWalletBalances[tx.id] = { ...walletBalances };
+    } else if (ev.kind === 'transfer') {
+      const tr = ev.transfer;
+      if (walletBalances[tr.fromWalletId] !== undefined) {
+        walletBalances[tr.fromWalletId] -= Math.abs(tr.amount);
+      }
+      if (walletBalances[tr.toWalletId] !== undefined) {
+        walletBalances[tr.toWalletId] += Math.abs(tr.amount);
+      }
+      txToWalletBalances[tr.id] = { ...walletBalances };
+    }
+  }
+
+  return txToWalletBalances;
+}
+
+export function getWalletNickname(name?: string): string {
+  if (!name) return 'Wallet';
+  const lower = name.toLowerCase();
+  if (lower.includes('telebirr') || lower.includes('tele')) return 'Tele';
+  if (lower.includes('cbe birr') || lower.includes('cbebirr') || lower.includes('ebirr') || lower.includes('e-birr')) return 'Ebirr';
+  if (lower.includes('cbe') || lower.includes('commercial bank') || lower.includes('bank of ethiopia')) return 'CBE';
+  if (lower.includes('cash') || lower.includes('vault') || lower.includes('drawer')) return 'Cash';
+  return name.length > 14 ? name.slice(0, 12) + '...' : name;
+}
+
+export interface RelativeWalletInfo {
+  walletId: string;
+  walletName: string;
+  amount?: number;
+  balance: number;
+}
+
+export interface RelativeTransferWalletInfo {
+  fromWalletId: string;
+  fromWalletName: string;
+  fromBalance: number;
+  toWalletId: string;
+  toWalletName: string;
+  toBalance: number;
+}
+
+export function getRelativeWalletBalancesForTx(
+  tx: Transaction,
+  wallets: Wallet[],
+  runningBalancesAtTx?: Record<string, number>
+): RelativeWalletInfo[] {
+  if (tx.splits && tx.splits.length > 0) {
+    return tx.splits.map(s => {
+      const w = wallets.find(item => item.id === s.walletId);
+      return {
+        walletId: s.walletId,
+        walletName: w ? getWalletNickname(w.name) : 'Wallet',
+        amount: s.amount,
+        balance: runningBalancesAtTx ? (runningBalancesAtTx[s.walletId] ?? 0) : 0
+      };
+    });
+  }
+
+  const mainW = wallets.find(w => w.id === tx.walletId);
+  return [
+    {
+      walletId: tx.walletId,
+      walletName: mainW ? getWalletNickname(mainW.name) : 'Wallet',
+      amount: tx.amount,
+      balance: runningBalancesAtTx ? (runningBalancesAtTx[tx.walletId] ?? 0) : 0
+    }
+  ];
+}
+
+export function getRelativeWalletBalancesForTransfer(
+  tr: Transfer,
+  wallets: Wallet[],
+  runningBalancesAtTransfer?: Record<string, number>
+): RelativeTransferWalletInfo {
+  const fromW = wallets.find(w => w.id === tr.fromWalletId);
+  const toW = wallets.find(w => w.id === tr.toWalletId);
+  return {
+    fromWalletId: tr.fromWalletId,
+    fromWalletName: fromW ? getWalletNickname(fromW.name) : 'Source Wallet',
+    fromBalance: runningBalancesAtTransfer ? (runningBalancesAtTransfer[tr.fromWalletId] ?? 0) : 0,
+    toWalletId: tr.toWalletId,
+    toWalletName: toW ? getWalletNickname(toW.name) : 'Destination Wallet',
+    toBalance: runningBalancesAtTransfer ? (runningBalancesAtTransfer[tr.toWalletId] ?? 0) : 0
+  };
 }
 
 export function calculateMonthlyStats(transactions: Transaction[]) {
@@ -591,15 +926,20 @@ export function isTransactionEditable(txDateString: string): boolean {
 }
 
 export function formatETB(amount: number, compact = false): string {
+  const absVal = Math.abs(amount || 0);
+  let valStr = '';
   if (compact) {
-    if (Math.abs(amount) >= 1_000_000) {
-      return `ETB ${(amount / 1_000_000).toFixed(2)}M`;
+    if (absVal >= 1_000_000) {
+      valStr = `ETB ${(absVal / 1_000_000).toFixed(2)}M`;
+    } else if (absVal >= 1_000) {
+      valStr = `ETB ${(absVal / 1_000).toFixed(1)}K`;
+    } else {
+      valStr = `ETB ${Math.round(absVal).toLocaleString('en-US')}`;
     }
-    if (Math.abs(amount) >= 1_000) {
-      return `ETB ${(amount / 1_000).toFixed(1)}K`;
-    }
+  } else {
+    valStr = `ETB ${Math.round(absVal).toLocaleString('en-US')}`;
   }
-  return `ETB ${Math.round(amount).toLocaleString('en-US')}`;
+  return amount < 0 ? `-${valStr}` : valStr;
 }
 
 export interface SummedAmountResult {
@@ -611,8 +951,8 @@ export interface SummedAmountResult {
 }
 
 /**
- * Parses user input amounts that can be single numbers or expressions/comma-separated values
- * Example: "40,50" -> 90, "40, 50, 100" -> 190, "40+50+10" -> 100, "40 50" -> 90
+ * Parses user input amounts that can be single numbers or expressions/comma-separated values.
+ * Enforces positive absolute amounts for professional ERP ledger entries.
  */
 export function parseSummedAmount(inputStr: string): SummedAmountResult {
   if (!inputStr || !inputStr.trim()) {
@@ -620,9 +960,9 @@ export function parseSummedAmount(inputStr: string): SummedAmountResult {
   }
   const trimmed = inputStr.trim();
 
-  // If standard number without separators (e.g. "90" or "90.5")
-  if (/^\d+(\.\d+)?$/.test(trimmed)) {
-    const val = parseFloat(trimmed);
+  // If standard number without separators (e.g. "90" or "90.5" or "-90")
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+    const val = Math.abs(parseFloat(trimmed));
     const valid = !isNaN(val) && val > 0;
     return {
       total: valid ? val : 0,
@@ -633,9 +973,9 @@ export function parseSummedAmount(inputStr: string): SummedAmountResult {
     };
   }
 
-  // Standard thousand separator number (e.g. "1,000" or "10,500.50")
-  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(trimmed)) {
-    const val = parseFloat(trimmed.replace(/,/g, ''));
+  // Standard thousand separator number (e.g. "1,000" or "10,500.50" or "-1,000")
+  if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(trimmed)) {
+    const val = Math.abs(parseFloat(trimmed.replace(/,/g, '')));
     const valid = !isNaN(val) && val > 0;
     return {
       total: valid ? val : 0,
@@ -653,7 +993,7 @@ export function parseSummedAmount(inputStr: string): SummedAmountResult {
   for (const token of rawTokens) {
     if (!token) continue;
     const cleanToken = token.replace(/,/g, '');
-    const num = parseFloat(cleanToken);
+    const num = Math.abs(parseFloat(cleanToken));
     if (!isNaN(num) && num > 0) {
       validNumbers.push(num);
     }

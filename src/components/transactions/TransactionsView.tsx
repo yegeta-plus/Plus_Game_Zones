@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Search,
   Filter,
@@ -18,16 +18,18 @@ import {
   Calculator,
   FileText,
   FileSpreadsheet,
-  Sparkles
+  Sparkles,
+  ArrowRightLeft
 } from 'lucide-react';
-import { Transaction, Wallet, Category, UserProfile, TransactionType, ERPState } from '../../types';
-import { formatETB, isTransactionEditable, parseSummedAmount } from '../../lib/store';
+import { Transaction, Transfer, Wallet, Category, UserProfile, TransactionType, ERPState } from '../../types';
+import { formatETB, isTransactionEditable, parseSummedAmount, computeAllWalletRunningBalances, getRelativeWalletBalancesForTx, getRelativeWalletBalancesForTransfer, getWalletNickname } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 import { generatePDFReport, generateExcelReport } from '../../lib/exports';
 import { formatDateByCalendar } from '../../lib/ethiopianCalendar';
 
 interface TransactionsViewProps {
   transactions: Transaction[];
+  transfers?: Transfer[];
   wallets: Wallet[];
   categories: Category[];
   currentUser: UserProfile;
@@ -49,6 +51,7 @@ interface TransactionsViewProps {
 
 export const TransactionsView: React.FC<TransactionsViewProps> = ({
   transactions,
+  transfers = [],
   wallets,
   categories,
   currentUser,
@@ -107,6 +110,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     e.preventDefault();
     if (!editingTx || !onUpdateTransaction) return;
 
+    triggerHaptic('success');
     const parsedRes = parseSummedAmount(editForm.amount);
     const numAmount = parsedRes.total;
     if (isNaN(numAmount) || numAmount <= 0) return;
@@ -185,9 +189,42 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   }
 };
 
-  // Filter transactions (sorted latest first)
-  const filtered = transactions
-    .filter((tx) => {
+  type LedgerItem =
+    | { kind: 'TX'; id: string; date: string; time: number; tx: Transaction }
+    | { kind: 'TRANSFER'; id: string; date: string; time: number; transfer: Transfer };
+
+  const allLedgerItems: LedgerItem[] = React.useMemo(() => {
+    const list: LedgerItem[] = [];
+    transactions.forEach(tx => {
+      const timeVal = new Date(tx.date).getTime();
+      list.push({
+        kind: 'TX',
+        id: tx.id,
+        date: tx.date,
+        time: isNaN(timeVal) ? 0 : timeVal,
+        tx
+      });
+    });
+    (transfers || []).forEach(tr => {
+      const timeVal = new Date(tr.date).getTime();
+      list.push({
+        kind: 'TRANSFER',
+        id: tr.id,
+        date: tr.date,
+        time: isNaN(timeVal) ? 0 : timeVal,
+        transfer: tr
+      });
+    });
+    return list.sort((a, b) => {
+      if (b.time !== a.time) return b.time - a.time;
+      return (b.id || '').localeCompare(a.id || '');
+    });
+  }, [transactions, transfers]);
+
+  // Filter ledger items (strictly sorted latest first)
+  const filtered = allLedgerItems.filter((item) => {
+    if (item.kind === 'TX') {
+      const tx = item.tx;
       if (searchTerm) {
         const q = searchTerm.toLowerCase();
         const matchDesc = (tx.description || '').toLowerCase().includes(q);
@@ -195,72 +232,47 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
         const matchCreator = (tx.creatorName || '').toLowerCase().includes(q);
         if (!matchDesc && !matchCat && !matchCreator) return false;
       }
-      if (selectedWalletId !== 'ALL' && tx.walletId !== selectedWalletId) return false;
+      if (selectedWalletId !== 'ALL' && tx.walletId !== selectedWalletId) {
+        if (!tx.splits || !tx.splits.some(s => s.walletId === selectedWalletId)) {
+          return false;
+        }
+      }
       if (selectedCategory !== 'ALL' && tx.category !== selectedCategory) return false;
       if (selectedType !== 'ALL' && tx.type !== selectedType) return false;
       return true;
-    })
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    } else {
+      const tr = item.transfer;
+      if (selectedType !== 'ALL') return false;
+      if (selectedCategory !== 'ALL') return false;
+      if (selectedWalletId !== 'ALL' && tr.fromWalletId !== selectedWalletId && tr.toWalletId !== selectedWalletId) return false;
+      if (searchTerm) {
+        const q = searchTerm.toLowerCase();
+        const fromW = wallets.find(w => w.id === tr.fromWalletId);
+        const toW = wallets.find(w => w.id === tr.toWalletId);
+        const matchReason = (tr.reason || '').toLowerCase().includes(q);
+        const matchFrom = (fromW?.name || '').toLowerCase().includes(q);
+        const matchTo = (toW?.name || '').toLowerCase().includes(q);
+        if (!matchReason && !matchFrom && !matchTo) return false;
+      }
+      return true;
+    }
+  }).sort((a, b) => {
+    if (b.time !== a.time) return b.time - a.time;
+    return (b.id || '').localeCompare(a.id || '');
+  });
 
-  // Group by date
-  const grouped: Record<string, Transaction[]> = filtered.reduce((acc: Record<string, Transaction[]>, tx) => {
-    const dateStr = formatDateByCalendar(tx.date, calendarType, true);
+  // Group by date label
+  const grouped: Record<string, LedgerItem[]> = filtered.reduce((acc: Record<string, LedgerItem[]>, item) => {
+    const dateStr = formatDateByCalendar(item.date, calendarType, true);
     if (!acc[dateStr]) acc[dateStr] = [];
-    acc[dateStr].push(tx);
+    acc[dateStr].push(item);
     return acc;
   }, {});
 
-  // Compute running balance map for transactions chronologically (oldest to newest)
-  const runningBalancesMap = React.useMemo(() => {
-    // Total initial opening balance across wallets
-    const totalOpening = wallets.reduce((sum, w) => sum + w.openingBalance, 0);
-    const sortedAsc = [...transactions].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-    );
-
-    const map: Record<string, number> = {};
-    let currentTotal = totalOpening;
-
-    for (const tx of sortedAsc) {
-      if (!tx.reversed) {
-        if (tx.type === 'INCOME') {
-          currentTotal += tx.amount;
-        } else if (tx.type === 'EXPENSE') {
-          currentTotal -= tx.amount;
-        }
-      }
-      map[tx.id] = currentTotal;
-    }
-
-    return map;
-  }, [transactions, wallets]);
-
-  // Wallet-specific running balance map if a single wallet filter is active
-  const walletRunningBalancesMap = React.useMemo(() => {
-    if (selectedWalletId === 'ALL') return null;
-    const selectedWallet = wallets.find(w => w.id === selectedWalletId);
-    const openingBal = selectedWallet ? selectedWallet.openingBalance : 0;
-
-    const sortedAsc = [...transactions]
-      .filter(tx => tx.walletId === selectedWalletId)
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    const map: Record<string, number> = {};
-    let currentWalletBal = openingBal;
-
-    for (const tx of sortedAsc) {
-      if (!tx.reversed) {
-        if (tx.type === 'INCOME') {
-          currentWalletBal += tx.amount;
-        } else if (tx.type === 'EXPENSE') {
-          currentWalletBal -= tx.amount;
-        }
-      }
-      map[tx.id] = currentWalletBal;
-    }
-
-    return map;
-  }, [transactions, wallets, selectedWalletId]);
+  // Compute all relative wallet running balances chronologically
+  const allWalletRunningBalancesMap = React.useMemo(() => {
+    return computeAllWalletRunningBalances(wallets, transactions, transfers);
+  }, [transactions, transfers, wallets]);
 
   const handleConfirmReversal = (txId: string) => {
     triggerHaptic('warning');
@@ -314,9 +326,10 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                 auditLogs: [],
                 savedReports: []
               };
+              const filteredTxs = filtered.filter(item => item.kind === 'TX').map(item => (item as any).tx);
               generatePDFReport({
                 state: dummyState,
-                transactions: filtered,
+                transactions: filteredTxs,
                 dateRangeLabel: 'Filtered Ledger View',
                 reportTitle: 'Financial Ledger & Transaction Creator Report'
               });
@@ -347,9 +360,10 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                 auditLogs: [],
                 savedReports: []
               };
+              const filteredTxs = filtered.filter(item => item.kind === 'TX').map(item => (item as any).tx);
               generateExcelReport({
                 state: dummyState,
-                transactions: filtered,
+                transactions: filteredTxs,
                 dateRangeLabel: 'Filtered Ledger View',
                 reportTitle: 'Banking & Financial Reporting Package'
               });
@@ -439,119 +453,204 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
           <p className="text-[11px]">Try clearing search or filters to see all transactions.</p>
         </div>
       ) : (
-        Object.entries(grouped).map(([dateLabel, txList]) => {
-          // Calculate daily total income and expense
-          const dayIncome = txList
-            .filter(t => !t.reversed && t.type === 'INCOME')
-            .reduce((sum, t) => sum + t.amount, 0);
+        Object.entries(grouped)
+          .sort(([dateA, listA], [dateB, listB]) => {
+            const timeA = listA[0] ? listA[0].time : 0;
+            const timeB = listB[0] ? listB[0].time : 0;
+            return timeB - timeA;
+          })
+          .map(([dateLabel, itemList]) => {
+            const sortedItemList = [...itemList].sort((a, b) => b.time - a.time);
 
-          const dayExpense = txList
-            .filter(t => !t.reversed && t.type === 'EXPENSE')
-            .reduce((sum, t) => sum + t.amount, 0);
+            // Calculate daily total income and expense
+            const dayIncome = sortedItemList
+              .filter(i => i.kind === 'TX' && !i.tx.reversed && i.tx.type === 'INCOME')
+              .reduce((sum, i) => sum + (i.kind === 'TX' ? i.tx.amount : 0), 0);
 
-          return (
-            <div key={dateLabel} className="space-y-1.5">
-              {/* Date Group Header with Daily Total Income & Expense */}
-              <div className="flex items-center justify-between px-1 py-1">
-                <h3 className="text-[11px] font-bold text-slate-500 dark:text-[#8899BB] uppercase tracking-wider flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-emerald-600 dark:text-[#00D4AA]" />
-                  <span>{dateLabel}</span>
-                </h3>
+            const dayExpense = sortedItemList
+              .filter(i => i.kind === 'TX' && !i.tx.reversed && i.tx.type === 'EXPENSE')
+              .reduce((sum, i) => sum + (i.kind === 'TX' ? i.tx.amount : 0), 0);
 
-                <div className="flex items-center gap-2 text-[10px] font-mono font-bold">
-                  {dayIncome > 0 && (
-                    <span className="text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-500/20">
-                      +{hideBalances ? '••••' : formatETB(dayIncome, true)}
-                    </span>
-                  )}
-                  {dayExpense > 0 && (
-                    <span className="text-rose-700 dark:text-red-400 bg-rose-50 dark:bg-red-500/10 px-2 py-0.5 rounded-lg border border-rose-200 dark:border-red-500/20">
-                      -{hideBalances ? '••••' : formatETB(dayExpense, true)}
-                    </span>
-                  )}
+            return (
+              <div key={dateLabel} className="space-y-1.5">
+                {/* Date Group Header with Daily Total Income & Expense */}
+                <div className="flex items-center justify-between px-1 py-1">
+                  <h3 className="text-[11px] font-bold text-slate-500 dark:text-[#8899BB] uppercase tracking-wider flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-emerald-600 dark:text-[#00D4AA]" />
+                    <span>{dateLabel}</span>
+                  </h3>
+
+                  <div className="flex items-center gap-2 text-[10px] font-mono font-bold">
+                    {dayIncome > 0 && (
+                      <span className="text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-500/20">
+                        +{hideBalances ? '••••' : formatETB(dayIncome, true)}
+                      </span>
+                    )}
+                    {dayExpense > 0 && (
+                      <span className="text-rose-700 dark:text-red-400 bg-rose-50 dark:bg-red-500/10 px-2 py-0.5 rounded-lg border border-rose-200 dark:border-red-500/20">
+                        -{hideBalances ? '••••' : formatETB(dayExpense, true)}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div className="bg-white dark:bg-[#131926] border border-slate-200/80 dark:border-[#1E2D40] rounded-2xl divide-y divide-slate-100 dark:divide-[#1E2D40] overflow-hidden shadow-sm">
-                {txList.map((tx) => {
-                  const wallet = wallets.find(w => w.id === tx.walletId);
-                  const isIncome = tx.type === 'INCOME';
+                <div className="bg-white dark:bg-[#131926] border border-slate-200/80 dark:border-[#1E2D40] rounded-2xl divide-y divide-slate-100 dark:divide-[#1E2D40] overflow-hidden shadow-sm">
+                  {sortedItemList.map((item) => {
+                    if (item.kind === 'TRANSFER') {
+                      const tr = item.transfer;
+                      const relTransfer = getRelativeWalletBalancesForTransfer(
+                        tr,
+                        wallets,
+                        allWalletRunningBalancesMap[tr.id]
+                      );
 
-                  // Running balance after this transaction
-                  const postTxBalance = (walletRunningBalancesMap && walletRunningBalancesMap[tx.id] !== undefined)
-                    ? walletRunningBalancesMap[tx.id]
-                    : (runningBalancesMap[tx.id] ?? 0);
+                      return (
+                        <div
+                          key={tr.id}
+                          className="p-3.5 flex items-center justify-between bg-blue-50/30 dark:bg-blue-950/10 hover:bg-blue-50/70 dark:hover:bg-blue-950/20 transition-colors"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400 flex items-center justify-center shrink-0">
+                              <ArrowRightLeft className="w-4 h-4" />
+                            </div>
 
-                  return (
-                    <div
-                      key={tx.id}
-                      onClick={() => {
-                        triggerHaptic('light');
-                        setActiveTxDetail(tx);
-                      }}
-                      className={`p-3.5 flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-[#1C2333]/70 transition-colors ${
-                        tx.reversed ? 'opacity-50 line-through' : ''
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                          isIncome
-                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400'
-                            : 'bg-rose-100 text-rose-700 dark:bg-red-500/15 dark:text-red-400'
-                        }`}>
-                          {isIncome ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF] line-clamp-1">
+                                  {tr.reason || 'Inter-Wallet Transfer'}
+                                </p>
+                                <span className="text-[9px] bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300 font-bold px-1.5 py-0.2 rounded border border-blue-200 dark:border-blue-500/30 shrink-0">
+                                  Transfer
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-500 dark:text-[#8899BB] flex items-center gap-1 mt-0.5 flex-wrap font-mono">
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">{relTransfer.fromWalletName}</span>
+                                <span>→</span>
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">{relTransfer.toWalletName}</span>
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="text-right shrink-0 ml-2">
+                            <p className="text-xs font-bold font-mono text-blue-600 dark:text-blue-400">
+                              {hideBalances ? '••••••' : formatETB(tr.amount)}
+                            </p>
+
+                            {/* Source & Destination wallet balances after transfer */}
+                            <div className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono mt-0.5 flex flex-wrap items-center justify-end gap-1">
+                              <span className="flex items-center gap-0.5">
+                                <span className="text-[9px] text-slate-400 dark:text-[#8899BB]/70">{relTransfer.fromWalletName}:</span>
+                                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                  {hideBalances ? '••••••' : formatETB(relTransfer.fromBalance)}
+                                </span>
+                              </span>
+                              <span className="text-slate-400 dark:text-slate-600 font-sans mx-0.5">|</span>
+                              <span className="flex items-center gap-0.5">
+                                <span className="text-[9px] text-slate-400 dark:text-[#8899BB]/70">{relTransfer.toWalletName}:</span>
+                                <span className="font-semibold text-emerald-600 dark:text-[#00D4AA]">
+                                  {hideBalances ? '••••••' : formatETB(relTransfer.toBalance)}
+                                </span>
+                              </span>
+                            </div>
+
+                            <p className="text-[9px] text-slate-400 dark:text-[#8899BB]/70 mt-0.5">
+                              {new Date(tr.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
                         </div>
+                      );
+                    }
 
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <p className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF] line-clamp-1">{tx.description}</p>
-                            {!isTransactionEditable(tx.date) && !tx.reversed && (
-                              currentUser.role === 'SuperAdmin' ? (
-                                <span title="SuperAdmin can edit/delete backdated transactions" className="text-[9px] bg-purple-100 text-purple-800 dark:bg-purple-500/15 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0 font-bold">
-                                  ⚡ SuperAdmin
+                    const tx = item.tx;
+                    const wallet = wallets.find(w => w.id === tx.walletId);
+                    const isIncome = tx.type === 'INCOME';
+                    const relWalletInfos = getRelativeWalletBalancesForTx(
+                      tx,
+                      wallets,
+                      allWalletRunningBalancesMap[tx.id]
+                    );
+
+                    return (
+                      <div
+                        key={tx.id}
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setActiveTxDetail(tx);
+                        }}
+                        className={`p-3.5 flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-[#1C2333]/70 transition-colors ${
+                          tx.reversed ? 'opacity-50 line-through' : ''
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                            isIncome
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400'
+                              : 'bg-rose-100 text-rose-700 dark:bg-red-500/15 dark:text-red-400'
+                          }`}>
+                            {isIncome ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                          </div>
+
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF] line-clamp-1">{tx.description}</p>
+                              {!isTransactionEditable(tx.date) && !tx.reversed && (
+                                currentUser.role === 'SuperAdmin' ? (
+                                  <span title="SuperAdmin can edit/delete backdated transactions" className="text-[9px] bg-purple-100 text-purple-800 dark:bg-purple-500/15 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0 font-bold">
+                                    ⚡ SuperAdmin
+                                  </span>
+                                ) : (
+                                  <span title="Can't be edited: older than 1 week" className="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0 font-medium">
+                                    <Lock className="w-2.5 h-2.5" />
+                                    <span className="hidden xs:inline">Locked</span>
+                                  </span>
+                                )
+                              )}
+                            </div>
+                            <p className="text-[10px] text-slate-500 dark:text-[#8899BB] flex items-center gap-1 mt-0.5 flex-wrap">
+                              <span>{tx.category}</span>
+                              <span>•</span>
+                              {tx.splits && tx.splits.length > 1 ? (
+                                <span className="text-purple-600 dark:text-purple-400 font-bold bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.2 rounded border border-purple-200 dark:border-purple-800/40 text-[9px]">
+                                  Split ({tx.splits.length} Wallets)
                                 </span>
                               ) : (
-                                <span title="Can't be edited: older than 1 week" className="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0 font-medium">
-                                  <Lock className="w-2.5 h-2.5" />
-                                  <span className="hidden xs:inline">Locked</span>
-                                </span>
-                              )
-                            )}
+                                <span className="text-emerald-700 dark:text-[#00D4AA] font-mono font-medium">{getWalletNickname(wallet?.name)}</span>
+                              )}
+                            </p>
                           </div>
-                          <p className="text-[10px] text-slate-500 dark:text-[#8899BB] flex items-center gap-1 mt-0.5">
-                            <span>{tx.category}</span>
-                            <span>•</span>
-                            <span className="text-emerald-700 dark:text-[#00D4AA] font-mono font-medium">{wallet?.name || 'Wallet'}</span>
+                        </div>
+
+                        <div className="text-right shrink-0 ml-2">
+                          <p className={`text-xs font-bold font-mono ${
+                            isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-red-400'
+                          }`}>
+                            {isIncome ? '+' : '-'}{hideBalances ? '••••••' : formatETB(Math.abs(tx.amount))}
+                          </p>
+
+                          {/* Relative wallet balance(s) after transaction */}
+                          <div className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono mt-0.5 flex flex-wrap items-center justify-end gap-1">
+                            {relWalletInfos.map((relInfo, idx) => (
+                              <span key={relInfo.walletId} className="flex items-center gap-0.5">
+                                {idx > 0 && <span className="text-slate-400 dark:text-slate-600 font-sans mx-0.5">|</span>}
+                                <span className="text-[9px] text-slate-400 dark:text-[#8899BB]/70">{relInfo.walletName}:</span>
+                                <span className="font-semibold text-emerald-600 dark:text-[#00D4AA]">
+                                  {hideBalances ? '••••••' : formatETB(relInfo.balance)}
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+
+                          <p className="text-[9px] text-slate-400 dark:text-[#8899BB]/70 mt-0.5">
+                            {new Date(tx.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </p>
                         </div>
                       </div>
-
-                      <div className="text-right">
-                        <p className={`text-xs font-bold font-mono ${
-                          isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-red-400'
-                        }`}>
-                          {isIncome ? '+' : '-'}{hideBalances ? '••••••' : formatETB(tx.amount)}
-                        </p>
-
-                        {/* Total amount / running balance after transaction */}
-                        <p className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono mt-0.5 flex items-center justify-end gap-1">
-                          <span className="text-[9px] text-slate-400 dark:text-[#8899BB]/70">Bal:</span>
-                          <span className="font-semibold text-emerald-600 dark:text-[#00D4AA]">
-                            {hideBalances ? '••••••' : formatETB(postTxBalance)}
-                          </span>
-                        </p>
-
-                        <p className="text-[9px] text-slate-400 dark:text-[#8899BB]/70 mt-0.5">
-                          {new Date(tx.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          );
-        })
+            );
+          })
       )}
 
       {/* Transaction Detail Sheet Modal */}
@@ -592,7 +691,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                   <p className={`text-2xl font-black font-mono ${
                     activeTxDetail.type === 'INCOME' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-red-400'
                   }`}>
-                    {formatETB(activeTxDetail.amount)}
+                    {activeTxDetail.type === 'INCOME' ? '+' : '-'}{formatETB(Math.abs(activeTxDetail.amount))}
                   </p>
                   <p className="text-xs text-slate-800 dark:text-[#F0F4FF] font-medium mt-1">{activeTxDetail.description}</p>
                 </div>
@@ -612,9 +711,11 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="bg-slate-50 dark:bg-[#1C2333] p-2.5 rounded-xl border border-slate-100 dark:border-transparent">
-                    <span className="text-[10px] text-slate-500 dark:text-[#8899BB]">Wallet</span>
+                    <span className="text-[10px] text-slate-500 dark:text-[#8899BB]">Wallet Channel</span>
                     <p className="font-bold text-emerald-700 dark:text-[#00D4AA] mt-0.5">
-                      {wallets.find(w => w.id === activeTxDetail.walletId)?.name}
+                      {activeTxDetail.splits && activeTxDetail.splits.length > 1
+                        ? `Split Payment (${activeTxDetail.splits.length} Wallets)`
+                        : getWalletNickname(wallets.find(w => w.id === activeTxDetail.walletId)?.name)}
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-[#1C2333] p-2.5 rounded-xl border border-slate-100 dark:border-transparent">
@@ -631,21 +732,39 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                   </div>
                 </div>
 
-                {/* Post-Transaction Ledger Balance */}
-                <div className="bg-emerald-50 dark:bg-[#1C2333] p-3 rounded-xl border border-emerald-200 dark:border-[#00D4AA]/30 flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] text-slate-500 dark:text-[#8899BB]">Total Ledger Balance After Transaction</span>
-                    <p className="text-xs font-bold text-emerald-700 dark:text-[#00D4AA] font-mono mt-0.5">
-                      {hideBalances ? '••••••' : formatETB(
-                        (walletRunningBalancesMap && walletRunningBalancesMap[activeTxDetail.id] !== undefined)
-                          ? walletRunningBalancesMap[activeTxDetail.id]
-                          : (runningBalancesMap[activeTxDetail.id] ?? 0)
-                      )}
-                    </p>
+                {/* Post-Transaction Relative Wallet Balances */}
+                <div className="bg-emerald-50 dark:bg-[#1C2333] p-3 rounded-xl border border-emerald-200 dark:border-[#00D4AA]/30 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-600 dark:text-[#8899BB] uppercase tracking-wider">
+                      {activeTxDetail.splits && activeTxDetail.splits.length > 1
+                        ? 'Split Wallet Balances After Transaction'
+                        : `${getWalletNickname(wallets.find(w => w.id === activeTxDetail.walletId)?.name)} Balance After Transaction`}
+                    </span>
+                    <span className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono">
+                      {formatDateByCalendar(activeTxDetail.date, calendarType, true)}
+                    </span>
                   </div>
-                  <span className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono">
-                    {formatDateByCalendar(activeTxDetail.date, calendarType, true)}
-                  </span>
+
+                  <div className="space-y-1.5 pt-0.5">
+                    {getRelativeWalletBalancesForTx(
+                      activeTxDetail,
+                      wallets,
+                      allWalletRunningBalancesMap[activeTxDetail.id]
+                    ).map(rel => (
+                      <div key={rel.walletId} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-[#131926] border border-slate-200/80 dark:border-[#1E2D40] text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <WalletIcon className="w-3.5 h-3.5 text-emerald-600 dark:text-[#00D4AA]" />
+                          <span className="font-bold text-slate-900 dark:text-white">{rel.walletName}</span>
+                          {rel.amount !== undefined && activeTxDetail.splits && activeTxDetail.splits.length > 1 && (
+                            <span className="text-[10px] text-slate-500 font-mono">({formatETB(rel.amount)})</span>
+                          )}
+                        </div>
+                        <span className="font-bold font-mono text-emerald-700 dark:text-[#00D4AA]">
+                          {hideBalances ? '••••••' : formatETB(rel.balance)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Action Buttons: Edit & Delete */}

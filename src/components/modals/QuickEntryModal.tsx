@@ -15,8 +15,8 @@ import {
   Sparkles,
   Calculator
 } from 'lucide-react';
-import { Wallet, Category, TransactionType, UserProfile } from '../../types';
-import { formatETB, parseSummedAmount } from '../../lib/store';
+import { Wallet, Category, TransactionType, UserProfile, Transaction, Transfer } from '../../types';
+import { formatETB, parseSummedAmount, calculateWalletBalance, getWalletNickname, isOverdraftAllowed, isWalletActive, validateTransactionPosting } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 
 interface QuickEntryModalProps {
@@ -26,6 +26,8 @@ interface QuickEntryModalProps {
   categories: Category[];
   currentUser: UserProfile;
   defaultWalletId?: string;
+  transactions?: Transaction[];
+  transfers?: Transfer[];
   onSubmitTransaction: (data: {
     type: TransactionType;
     amount: number;
@@ -54,11 +56,13 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
   categories,
   currentUser,
   defaultWalletId,
+  transactions = [],
+  transfers = [],
   onSubmitTransaction,
   onBatchSubmitTransactions
 }) => {
   const [entryMode, setEntryMode] = useState<'INCOME' | 'EXPENSE'>('INCOME');
-  const [incomeType, setIncomeType] = useState<'single' | 'batch'>('single');
+  const [batchMode, setBatchMode] = useState<'single' | 'batch'>('single');
   const [isCreditSale, setIsCreditSale] = useState(false);
 
   // Single mode state
@@ -111,6 +115,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
 
   // Multi-wallet batch state
   const [batchAmounts, setBatchAmounts] = useState<Record<string, string>>({});
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -118,19 +123,15 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
 
   const handleModeSwitch = (mode: 'INCOME' | 'EXPENSE') => {
     triggerHaptic('light');
+    setValidationError(null);
     setEntryMode(mode);
-    if (mode === 'EXPENSE') {
-      setIsCreditSale(false);
-      setIncomeType('single');
-      const exp = categories.find(c => c.type === 'EXPENSE');
-      if (exp) setCategory(exp.name);
-    } else {
-      const inc = categories.find(c => c.type === 'INCOME');
-      if (inc) setCategory(inc.name);
-    }
+    setIsCreditSale(false);
+    const targetCat = categories.find(c => c.type === mode && c.active);
+    if (targetCat) setCategory(targetCat.name);
   };
 
   const handleBatchAmountChange = (wId: string, val: string) => {
+    setValidationError(null);
     setBatchAmounts(prev => ({
       ...prev,
       [wId]: val
@@ -152,15 +153,35 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setValidationError(null);
 
     const txDate = new Date(`${postingDate}T12:00:00.000Z`).toISOString();
 
-    // Handling Batch Multi-Wallet Income Submission
-    if (entryMode === 'INCOME' && incomeType === 'batch') {
+    // Handling Batch Multi-Wallet Income / Expense Submission
+    if (batchMode === 'batch') {
       if (batchEntries.length === 0) {
         triggerHaptic('heavy');
-        alert('Please enter an income amount for at least one wallet.');
+        setValidationError(`Please enter ${entryMode === 'INCOME' ? 'an income' : 'an expense'} amount for at least one wallet.`);
         return;
+      }
+
+      // Check each batch entry against balance & wallet rules
+      for (const entry of batchEntries) {
+        const targetW = wallets.find(w => w.id === entry.walletId);
+        if (!targetW || !isWalletActive(targetW)) {
+          triggerHaptic('heavy');
+          setValidationError(`Cannot post to inactive/archived wallet "${targetW?.name || entry.walletId}". Wallet must be active.`);
+          return;
+        }
+
+        if (entryMode === 'EXPENSE') {
+          const valRes = validateTransactionPosting(targetW, 'EXPENSE', entry.amount, transactions, transfers);
+          if (!valRes.valid) {
+            triggerHaptic('heavy');
+            setValidationError(valRes.error || `Insufficient balance in ${targetW.name}`);
+            return;
+          }
+        }
       }
 
       triggerHaptic('success');
@@ -168,11 +189,11 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
       const batchItems = batchEntries.map(entry => {
         const targetW = wallets.find(w => w.id === entry.walletId);
         return {
-          type: 'INCOME' as TransactionType,
+          type: entryMode as TransactionType,
           amount: entry.amount,
           walletId: entry.walletId,
           category,
-          description: description || `Daily Income - ${targetW?.name || 'Wallet'} (${category})`,
+          description: description || `Daily Multi-Wallet ${entryMode === 'INCOME' ? 'Income' : 'Expense'} - ${targetW?.name || 'Wallet'} (${category})`,
           date: txDate
         };
       });
@@ -191,13 +212,28 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
     const parsedAmount = parsedSingle.total;
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
       triggerHaptic('heavy');
-      alert('Please enter a valid amount greater than ETB 0 (e.g. 90 or 40,50).');
+      setValidationError('Please enter a valid amount greater than ETB 0 (e.g. 90 or 40,50).');
+      return;
+    }
+
+    const targetWallet = wallets.find(w => w.id === walletId);
+    const postValidation = validateTransactionPosting(
+      targetWallet,
+      currentType,
+      parsedAmount,
+      transactions,
+      transfers
+    );
+
+    if (!postValidation.valid) {
+      triggerHaptic('heavy');
+      setValidationError(postValidation.error || 'Transaction posting validation failed.');
       return;
     }
 
     if (entryMode === 'INCOME' && isCreditSale && !customerName.trim()) {
       triggerHaptic('heavy');
-      alert('Please enter the customer / buyer name for this credit sale.');
+      setValidationError('Please enter the customer / buyer name for this credit sale.');
       return;
     }
 
@@ -238,8 +274,10 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
         {/* Dynamic Glow Header Accent Line */}
         <div
           className={`absolute top-0 left-1/2 -translate-x-1/2 w-48 h-1 rounded-full opacity-80 transition-all ${
-            entryMode === 'INCOME' && incomeType === 'batch'
-              ? 'bg-gradient-to-r from-transparent via-[#A78BFA] to-transparent'
+            batchMode === 'batch'
+              ? entryMode === 'INCOME'
+                ? 'bg-gradient-to-r from-transparent via-[#A78BFA] to-transparent'
+                : 'bg-gradient-to-r from-transparent via-rose-500 to-transparent'
               : isCreditSale && entryMode === 'INCOME'
               ? 'bg-gradient-to-r from-transparent via-[#3B82F6] to-transparent'
               : entryMode === 'INCOME'
@@ -252,26 +290,28 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
         <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-[#1E2D40]">
           <div className="flex items-center gap-2.5">
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold shadow-lg transition-colors ${
-              entryMode === 'INCOME' && incomeType === 'batch'
-                ? 'bg-purple-500/10 dark:bg-[#A78BFA]/20 text-purple-600 dark:text-[#A78BFA] border border-purple-300 dark:border-[#A78BFA]/40 shadow-purple-500/10'
+              batchMode === 'batch'
+                ? entryMode === 'INCOME'
+                  ? 'bg-purple-500/10 dark:bg-[#A78BFA]/20 text-purple-600 dark:text-[#A78BFA] border border-purple-300 dark:border-[#A78BFA]/40 shadow-purple-500/10'
+                  : 'bg-rose-500/10 dark:bg-red-500/20 text-rose-600 dark:text-red-400 border border-rose-300 dark:border-red-500/40 shadow-rose-500/10'
                 : isCreditSale && entryMode === 'INCOME'
                 ? 'bg-blue-500/10 dark:bg-[#3B82F6]/20 text-blue-600 dark:text-[#3B82F6] border border-blue-300 dark:border-[#3B82F6]/40 shadow-blue-500/10'
                 : entryMode === 'INCOME'
                 ? 'bg-emerald-500/10 dark:bg-[#00D4AA]/20 text-emerald-600 dark:text-[#00D4AA] border border-emerald-300 dark:border-[#00D4AA]/40 shadow-emerald-500/10'
                 : 'bg-rose-500/10 dark:bg-red-500/20 text-rose-600 dark:text-red-400 border border-rose-300 dark:border-red-500/40 shadow-red-500/10'
             }`}>
-              {incomeType === 'batch' ? <Layers className="w-5 h-5" /> : <Zap className="w-5 h-5" />}
+              {batchMode === 'batch' ? <Layers className="w-5 h-5" /> : <Zap className="w-5 h-5" />}
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                <span>{incomeType === 'batch' ? 'Multi-Wallet Daily Register' : 'Quick Transaction'}</span>
-                <span className="text-[10px] bg-slate-100 dark:bg-[#1E2D40] text-slate-600 dark:text-[#8899BB] px-2 py-0.5 rounded-full font-mono font-semibold">
-                  {incomeType === 'batch' ? 'BATCH ENTRY' : 'DIRECT ENTRY'}
+                <span>{batchMode === 'batch' ? `Multi-Wallet Daily ${entryMode === 'INCOME' ? 'Income' : 'Expense'}` : 'Quick Transaction'}</span>
+                <span className="text-[10px] bg-slate-100 dark:bg-[#1E2D40] text-slate-600 dark:text-[#8899BB] px-2 py-0.5 rounded-full font-mono font-semibold uppercase">
+                  {batchMode === 'batch' ? `BATCH ${entryMode}` : 'DIRECT ENTRY'}
                 </span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-[#8899BB]">
-                {incomeType === 'batch'
-                  ? 'Record daily sales across Telebirr, CBE Birr, Cash & Banks'
+                {batchMode === 'batch'
+                  ? `Record daily ${entryMode === 'INCOME' ? 'sales' : 'expenses'} across Telebirr, CBE Birr, Cash & Banks`
                   : 'Log single income, expense, or customer credit sales'}
               </p>
             </div>
@@ -290,6 +330,17 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+
+          {/* Validation Error Alert */}
+          {validationError && (
+            <div className="p-3 bg-rose-50 text-rose-800 dark:bg-rose-950/80 border border-rose-200 dark:border-rose-500/60 dark:text-rose-100 rounded-xl text-xs flex items-start gap-2 animate-shake">
+              <span className="font-bold">⚠️</span>
+              <div>
+                <p className="font-bold text-rose-900 dark:text-rose-100">Transaction Blocked</p>
+                <p className="text-[11px] mt-0.5 text-rose-800 dark:text-rose-200">{validationError}</p>
+              </div>
+            </div>
+          )}
 
           {/* Primary Mode Switcher: Income vs Expense */}
           <div className="grid grid-cols-2 gap-1.5 bg-slate-100 dark:bg-[#131926] p-1.5 rounded-2xl border border-slate-200 dark:border-[#1E2D40]">
@@ -320,44 +371,47 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
             </button>
           </div>
 
-          {/* Income Sub-Type Switcher: Single Entry vs Multi-Wallet Daily Batch */}
-          {entryMode === 'INCOME' && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-[#0A0E1A] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setIncomeType('single');
-                  }}
-                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    incomeType === 'single'
-                      ? 'bg-white dark:bg-[#1C2333] text-slate-900 dark:text-white shadow-sm border border-slate-200 dark:border-[#334155]'
-                      : 'text-slate-500 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Single Account Entry
-                </button>
+          {/* Sub-Type Switcher: Single Entry vs Multi-Wallet Daily Batch */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-[#0A0E1A] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40]">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setBatchMode('single');
+                }}
+                className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  batchMode === 'single'
+                    ? 'bg-white dark:bg-[#1C2333] text-slate-900 dark:text-white shadow-sm border border-slate-200 dark:border-[#334155]'
+                    : 'text-slate-500 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Single Account Entry
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setIncomeType('batch');
-                  }}
-                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                    incomeType === 'batch'
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setBatchMode('batch');
+                }}
+                className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                  batchMode === 'batch'
+                    ? entryMode === 'INCOME'
                       ? 'bg-purple-600 dark:bg-[#A78BFA] text-white dark:text-[#0A0E1A] shadow-md font-black'
-                      : 'text-purple-600 dark:text-[#A78BFA] hover:text-purple-700'
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Daily Multi-Wallet</span>
-                </button>
-              </div>
+                      : 'bg-rose-600 dark:bg-[#EF4444] text-white shadow-md font-black'
+                    : entryMode === 'INCOME'
+                    ? 'text-purple-600 dark:text-[#A78BFA] hover:text-purple-700'
+                    : 'text-rose-600 dark:text-[#EF4444] hover:text-rose-700'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Daily Multi-Wallet ({entryMode === 'INCOME' ? 'Income' : 'Expense'})</span>
+              </button>
+            </div>
 
-              {/* Single Income: Sale on Credit Toggle */}
-              {incomeType === 'single' && (
+            {/* Single Income: Sale on Credit Toggle */}
+            {entryMode === 'INCOME' && batchMode === 'single' && (
                 <div className={`p-3.5 rounded-2xl border transition-all ${
                   isCreditSale
                     ? 'bg-blue-50 dark:bg-[#3B82F6]/10 border-blue-300 dark:border-[#3B82F6]/50 shadow-lg shadow-blue-500/10'
@@ -474,20 +528,29 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                 </div>
               )}
             </div>
-          )}
 
           {/* MULTI-WALLET DAILY BATCH MODE BODY */}
-          {entryMode === 'INCOME' && incomeType === 'batch' ? (
+          {batchMode === 'batch' ? (
             <div className="space-y-4 animate-fadeIn">
               
-              <div className="bg-purple-50 dark:bg-[#A78BFA]/10 border border-purple-200 dark:border-[#A78BFA]/30 rounded-2xl p-3.5 flex items-center justify-between">
+              <div className={`p-3.5 rounded-2xl border flex items-center justify-between ${
+                entryMode === 'INCOME'
+                  ? 'bg-purple-50 dark:bg-[#A78BFA]/10 border-purple-200 dark:border-[#A78BFA]/30'
+                  : 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-500/30'
+              }`}>
                 <div>
-                  <h4 className="text-xs font-bold text-purple-900 dark:text-white flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4 text-purple-600 dark:text-[#A78BFA]" />
-                    <span>Daily Sales Across Accounts</span>
+                  <h4 className={`text-xs font-bold flex items-center gap-1.5 ${
+                    entryMode === 'INCOME' ? 'text-purple-900 dark:text-white' : 'text-rose-900 dark:text-white'
+                  }`}>
+                    <Sparkles className={`w-4 h-4 ${entryMode === 'INCOME' ? 'text-purple-600 dark:text-[#A78BFA]' : 'text-rose-600 dark:text-rose-400'}`} />
+                    <span>{entryMode === 'INCOME' ? 'Daily Earnings Across Accounts' : 'Daily Expenses Across Accounts'}</span>
                   </h4>
-                  <p className="text-[11px] text-purple-700 dark:text-[#8899BB] mt-0.5">
-                    Enter the total earnings received in each account today
+                  <p className={`text-[11px] mt-0.5 ${
+                    entryMode === 'INCOME' ? 'text-purple-700 dark:text-[#8899BB]' : 'text-rose-700 dark:text-[#8899BB]'
+                  }`}>
+                    {entryMode === 'INCOME'
+                      ? 'Enter the total earnings received in each wallet today'
+                      : 'Enter the total expenses paid out from each wallet today'}
                   </p>
                 </div>
 
@@ -497,7 +560,9 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                     triggerHaptic('light');
                     setBatchAmounts({});
                   }}
-                  className="text-[10px] text-purple-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white underline cursor-pointer"
+                  className={`text-[10px] underline cursor-pointer ${
+                    entryMode === 'INCOME' ? 'text-purple-600 dark:text-[#8899BB]' : 'text-rose-600 dark:text-[#8899BB]'
+                  }`}
                 >
                   Clear All
                 </button>
@@ -507,10 +572,19 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
               <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
                 {wallets.map((w) => {
                   const val = batchAmounts[w.id] || '';
+                  const liveBalance = calculateWalletBalance(w, transactions, transfers);
+                  const active = isWalletActive(w);
+                  const creditOk = isOverdraftAllowed(w);
                   return (
                     <div
                       key={w.id}
-                      className="bg-slate-50 dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] hover:border-purple-300 dark:hover:border-[#A78BFA]/50 rounded-2xl p-3 transition-colors space-y-2"
+                      className={`bg-slate-50 dark:bg-[#131926] border rounded-2xl p-3 transition-colors space-y-2 ${
+                        !active
+                          ? 'opacity-60 border-slate-300 dark:border-slate-800 bg-slate-100 dark:bg-[#0B0F19]'
+                          : entryMode === 'INCOME'
+                          ? 'border-slate-200 dark:border-[#1E2D40] hover:border-purple-300 dark:hover:border-[#A78BFA]/50'
+                          : 'border-slate-200 dark:border-[#1E2D40] hover:border-rose-300 dark:hover:border-rose-500/50'
+                      }`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -518,26 +592,41 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                             className="w-3 h-3 rounded-full shrink-0"
                             style={{ backgroundColor: w.color }}
                           />
-                          <span className="text-xs font-bold text-slate-900 dark:text-white">{w.name}</span>
+                          <span className="text-xs font-bold text-slate-900 dark:text-white">{getWalletNickname(w.name)}</span>
                           <span className="text-[9px] bg-slate-200 dark:bg-[#1E2D40] text-slate-600 dark:text-[#8899BB] px-1.5 py-0.2 rounded font-mono">
                             {w.type}
                           </span>
+                          {!active && (
+                            <span className="text-[9px] bg-rose-500/10 text-rose-600 font-bold px-1.5 py-0.2 rounded border border-rose-500/20">
+                              {w.status || 'INACTIVE'}
+                            </span>
+                          )}
+                          {creditOk && active && (
+                            <span className="text-[9px] bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold px-1.5 py-0.2 rounded border border-blue-500/20">
+                              Overdraft OK
+                            </span>
+                          )}
                         </div>
-                        <span className="text-[10px] font-mono text-slate-500 dark:text-[#8899BB]">
-                          Bal: {formatETB(w.balance || 0, true)}
+                        <span className={`text-[10px] font-mono font-bold ${liveBalance < 0 ? 'text-rose-500' : 'text-slate-500 dark:text-[#8899BB]'}`}>
+                          Bal: {formatETB(liveBalance)}
                         </span>
                       </div>
 
                       <div className="flex flex-col space-y-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-mono font-bold text-purple-600 dark:text-[#A78BFA]">ETB</span>
+                          <span className={`text-xs font-mono font-bold ${
+                            entryMode === 'INCOME' ? 'text-purple-600 dark:text-[#A78BFA]' : 'text-rose-600 dark:text-rose-400'
+                          }`}>ETB</span>
                           <input
                             type="text"
                             inputMode="decimal"
+                            disabled={!active}
                             value={val}
                             onChange={(e) => handleBatchAmountChange(w.id, e.target.value)}
-                            placeholder="0.00"
-                            className="w-full bg-white dark:bg-[#0A0E1A] border border-slate-200 dark:border-[#1E2D40] focus:border-purple-500 dark:focus:border-[#A78BFA] rounded-xl py-2 px-3 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
+                            placeholder={active ? '0.00' : 'Wallet inactive'}
+                            className={`w-full bg-white dark:bg-[#0A0E1A] border border-slate-200 dark:border-[#1E2D40] rounded-xl py-2 px-3 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none disabled:bg-slate-200 dark:disabled:bg-slate-900 disabled:cursor-not-allowed ${
+                              entryMode === 'INCOME' ? 'focus:border-purple-500 dark:focus:border-[#A78BFA]' : 'focus:border-rose-500 dark:focus:border-rose-400'
+                            }`}
                           />
                         </div>
 
@@ -546,7 +635,11 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                           const parsedRow = parseSummedAmount(val);
                           if (parsedRow.count > 1) {
                             return (
-                              <div className="text-[11px] font-mono font-bold text-purple-700 dark:text-[#A78BFA] bg-purple-50 dark:bg-[#A78BFA]/15 px-2.5 py-1 rounded-lg flex items-center justify-between border border-purple-200 dark:border-[#A78BFA]/30">
+                              <div className={`text-[11px] font-mono font-bold px-2.5 py-1 rounded-lg flex items-center justify-between border ${
+                                entryMode === 'INCOME'
+                                  ? 'text-purple-700 dark:text-[#A78BFA] bg-purple-50 dark:bg-[#A78BFA]/15 border-purple-200 dark:border-[#A78BFA]/30'
+                                  : 'text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-500/30'
+                              }`}>
                                 <span>Sum ({parsedRow.count} items): {parsedRow.formattedExpression}</span>
                                 <span className="font-black text-slate-900 dark:text-white">= {formatETB(parsedRow.total)}</span>
                               </div>
@@ -564,10 +657,12 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
               <div className="bg-slate-900 dark:bg-[#0A0E1A] border border-purple-500/40 rounded-2xl p-3.5 flex items-center justify-between text-white">
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 dark:text-[#8899BB] uppercase tracking-wider block">
-                    Combined Daily Total
+                    Combined Daily {entryMode === 'INCOME' ? 'Income' : 'Expense'} Total
                   </span>
-                  <span className="text-xs text-purple-300 dark:text-[#A78BFA] font-medium">
-                    {batchEntries.length} {batchEntries.length === 1 ? 'account' : 'accounts'} receiving income
+                  <span className={`text-xs font-medium ${
+                    entryMode === 'INCOME' ? 'text-purple-300 dark:text-[#A78BFA]' : 'text-rose-300 dark:text-rose-400'
+                  }`}>
+                    {batchEntries.length} {batchEntries.length === 1 ? 'account' : 'accounts'} {entryMode === 'INCOME' ? 'receiving income' : 'paying expense'}
                   </span>
                 </div>
                 <div className="text-right">
@@ -609,7 +704,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                 <input
                   type="text"
                   inputMode="decimal"
-                  required={incomeType === 'single'}
+                  required={batchMode === 'single'}
                   value={amountStr}
                   onChange={(e) => setAmountStr(e.target.value)}
                   placeholder="0.00"
@@ -645,7 +740,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
           )}
 
           {/* Wallet Selection Grid (Only for Single Entry Mode) */}
-          {(entryMode === 'EXPENSE' || incomeType === 'single') && (
+          {batchMode === 'single' && (
             <div>
               <label className="text-xs font-semibold text-slate-600 dark:text-[#8899BB] flex items-center gap-1.5 mb-2">
                 <WalletIcon className="w-3.5 h-3.5 text-emerald-600 dark:text-[#00D4AA]" />
@@ -654,10 +749,14 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
               <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
                 {wallets.map((w) => {
                   const isSelected = walletId === w.id;
+                  const liveBalance = calculateWalletBalance(w, transactions, transfers);
+                  const active = isWalletActive(w);
+                  const creditOk = isOverdraftAllowed(w);
                   return (
                     <button
                       key={w.id}
                       type="button"
+                      disabled={!active}
                       onClick={() => {
                         triggerHaptic('light');
                         setWalletId(w.id);
@@ -665,16 +764,32 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                       style={{
                         borderColor: isSelected ? w.color : undefined,
                       }}
-                      className={`p-2.5 rounded-xl border text-left flex items-center justify-between cursor-pointer transition-all hover:scale-[1.01] ${
-                        isSelected
-                          ? 'bg-slate-100 dark:bg-slate-800/50'
-                          : 'bg-slate-50 dark:bg-[#131926] border-slate-200 dark:border-[#1E2D40]'
+                      className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all ${
+                        !active
+                          ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+                          : isSelected
+                          ? 'bg-slate-100 dark:bg-slate-800/50 cursor-pointer hover:scale-[1.01]'
+                          : 'bg-slate-50 dark:bg-[#131926] border-slate-200 dark:border-[#1E2D40] cursor-pointer hover:scale-[1.01]'
                       }`}
                     >
                       <div className="min-w-0 pr-1">
-                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{w.name}</p>
-                        <p className="text-[10px] font-mono text-slate-500 dark:text-[#8899BB] mt-0.5">
-                          {formatETB(w.balance || 0, true)}
+                        <div className="flex items-center gap-1">
+                          <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                            {getWalletNickname(w.name)}
+                          </p>
+                          {!active && (
+                            <span className="text-[8px] bg-rose-500/10 text-rose-600 font-bold px-1 rounded">
+                              OFF
+                            </span>
+                          )}
+                          {creditOk && active && (
+                            <span className="text-[8px] bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold px-1 rounded">
+                              CR
+                            </span>
+                          )}
+                        </div>
+                        <p className={`text-[10px] font-mono font-bold mt-0.5 ${liveBalance < 0 ? 'text-rose-500' : 'text-emerald-600 dark:text-[#00D4AA]'}`}>
+                          Bal: {formatETB(liveBalance)}
                         </p>
                       </div>
                       <div
@@ -810,8 +925,10 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
           <button
             type="submit"
             className={`w-full py-3.5 rounded-2xl font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer hover:opacity-95 ${
-              entryMode === 'INCOME' && incomeType === 'batch'
-                ? 'bg-gradient-to-r from-purple-600 to-purple-800 dark:from-[#A78BFA] dark:to-[#8B5CF6] text-white dark:text-[#0A0E1A] shadow-purple-500/25'
+              batchMode === 'batch'
+                ? entryMode === 'INCOME'
+                  ? 'bg-gradient-to-r from-purple-600 to-purple-800 dark:from-[#A78BFA] dark:to-[#8B5CF6] text-white dark:text-[#0A0E1A] shadow-purple-500/25'
+                  : 'bg-gradient-to-r from-rose-600 to-rose-800 dark:from-rose-500 dark:to-rose-700 text-white shadow-rose-500/25'
                 : isCreditSale && entryMode === 'INCOME'
                 ? 'bg-gradient-to-r from-blue-600 to-blue-700 dark:from-[#3B82F6] dark:to-[#2563EB] text-white shadow-blue-500/25'
                 : entryMode === 'INCOME'
@@ -821,8 +938,8 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
           >
             <Check className="w-5 h-5" />
             <span>
-              {entryMode === 'INCOME' && incomeType === 'batch'
-                ? `Post Daily Incomes across ${batchEntries.length} ${batchEntries.length === 1 ? 'Wallet' : 'Wallets'} (${formatETB(totalBatchAmount)})`
+              {batchMode === 'batch'
+                ? `Post Daily ${entryMode === 'INCOME' ? 'Incomes' : 'Expenses'} across ${batchEntries.length} ${batchEntries.length === 1 ? 'Wallet' : 'Wallets'} (${formatETB(totalBatchAmount)})`
                 : isCreditSale && entryMode === 'INCOME'
                 ? `Record Credit Sale for ${customerName || 'Customer'}`
                 : `Post ${entryMode === 'INCOME' ? 'Income' : 'Expense'} to Ledger`}

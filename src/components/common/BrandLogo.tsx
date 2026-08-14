@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { WalletType } from '../../types';
-import { Vault, Wallet as WalletIcon } from 'lucide-react';
+import { Vault, Wallet as WalletIcon, CreditCard, Landmark } from 'lucide-react';
 
 interface BrandLogoProps {
   type: WalletType;
@@ -134,6 +134,28 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
           style={{ backgroundColor: customColor || '#3B82F6' }}
         >
           <Vault className="w-3/5 h-3/5 text-white" />
+        </div>
+      );
+
+    case 'CREDIT_LINE':
+      return (
+        <div
+          title="Credit Facility"
+          className={`rounded-xl flex items-center justify-center font-bold text-white shadow-sm shrink-0 ${sizeClasses} ${className}`}
+          style={{ backgroundColor: customColor || '#8B5CF6' }}
+        >
+          <CreditCard className="w-3/5 h-3/5 text-white" />
+        </div>
+      );
+
+    case 'LOAN':
+      return (
+        <div
+          title="Loan Account"
+          className={`rounded-xl flex items-center justify-center font-bold text-white shadow-sm shrink-0 ${sizeClasses} ${className}`}
+          style={{ backgroundColor: customColor || '#EC4899' }}
+        >
+          <Landmark className="w-3/5 h-3/5 text-white" />
         </div>
       );
 

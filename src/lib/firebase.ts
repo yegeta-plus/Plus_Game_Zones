@@ -1,5 +1,5 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, doc, onSnapshot, setDoc, getDoc, getDocFromServer, disableNetwork } from 'firebase/firestore';
+import { initializeFirestore, doc, onSnapshot, setDoc, getDoc, disableNetwork } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import config from '../../firebase-applet-config.json';
 import { ERPState } from './store';
@@ -16,16 +16,26 @@ const firebaseConfig = {
 };
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-export const db = getFirestore(app, config.firestoreDatabaseId || metaEnv.VITE_FIREBASE_DATABASE_ID || '(default)');
+const dbId = config.firestoreDatabaseId || metaEnv.VITE_FIREBASE_DATABASE_ID || '(default)';
+
+export const db = initializeFirestore(
+  app,
+  {
+    experimentalAutoDetectLongPolling: true,
+  },
+  dbId
+);
+
 export const auth = getAuth(app);
 
 // Skill required connection validation
 async function testConnection() {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    const docRef = doc(db, 'test', 'connection');
+    await getDoc(docRef);
   } catch (error) {
     if (error instanceof Error && (error.message.includes('the client is offline') || error.message.includes('unavailable') || error.message.includes('Could not reach Cloud Firestore'))) {
-      console.info('Firestore initial connection offline/unavailable, falling back to local state cache.');
+      console.info('Firestore operates in offline/local state mode.');
     }
   }
 }

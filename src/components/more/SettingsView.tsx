@@ -7,7 +7,7 @@ import { CategoriesView } from './CategoriesView';
 import { UsersView } from './UsersView';
 import { RecurringView } from './RecurringView';
 import { BackupView } from './BackupView';
-import { SecurityBiometricsView } from './SecurityBiometricsView';
+import { SecuritySystemView } from './SecuritySystemView';
 
 export type SettingsTabType = 'CATEGORIES' | 'PARTNERS' | 'RECURRING' | 'BACKUP' | 'SECURITY';
 
@@ -85,11 +85,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     },
     {
       id: 'SECURITY' as SettingsTabType,
-      label: 'Fingerprint & Push Alerts',
-      subtitle: 'Touch ID biometrics login & OS notifications outside app',
-      icon: Fingerprint,
-      color: '#10B981',
-      count: 'WebAuthn / SW'
+      label: 'Advanced Security & Threat Shield',
+      subtitle: '2FA, Master PIN, WebAuthn Passkeys, SOC Threat Radar & Device Manager',
+      icon: ShieldAlert,
+      color: '#00D4AA',
+      count: 'SOC Center'
     }
   ];
 
@@ -224,7 +224,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         )}
 
         {activeTab === 'SECURITY' && (
-          <SecurityBiometricsView state={state} />
+          <SecuritySystemView state={state} />
         )}
       </div>
     </div>

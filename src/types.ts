@@ -47,7 +47,7 @@ export interface UserProfile {
   createdBy?: string;
 }
 
-export type WalletType = 'CASH' | 'CBE_BANK' | 'TELEBIRR' | 'EBIRR' | 'SAVINGS' | 'OTHER';
+export type WalletType = 'CASH' | 'CBE_BANK' | 'TELEBIRR' | 'EBIRR' | 'SAVINGS' | 'CREDIT_LINE' | 'LOAN' | 'OTHER';
 
 export interface Wallet {
   id: string;
@@ -61,6 +61,11 @@ export interface Wallet {
   iconName: string;
   customLogoUrl?: string;
   isDefault?: boolean;
+  status?: 'ACTIVE' | 'ARCHIVED' | 'DISABLED';
+  isArchived?: boolean;
+  isDisabled?: boolean;
+  isCreditAccount?: boolean; // Flagged as credit/loan account (allows negative balance / overdraft)
+  allowOverdraft?: boolean; // Explicit overdraft permission
 }
 
 export type TransactionType = 'INCOME' | 'EXPENSE';
@@ -81,6 +86,7 @@ export interface Transaction {
   refId?: string;
   reversed?: boolean;
   reversedAt?: string;
+  splits?: Array<{ walletId: string; amount: number }>;
 }
 
 export interface Transfer {
