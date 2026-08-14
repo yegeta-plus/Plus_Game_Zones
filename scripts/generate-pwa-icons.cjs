@@ -4,8 +4,8 @@ const sharp = require('sharp');
 
 async function generateIcons() {
   const publicDir = path.join(__dirname, '..', 'public');
+  const sourceAsset = path.join(__dirname, '..', 'src', 'assets', 'images', 'game_app_icon_1786707249717.jpg');
   const logoJpg = path.join(publicDir, 'app-logo.jpg');
-  const sourceAsset = path.join(__dirname, '..', 'src', 'assets', 'images', 'app_logo_preview_1786451598969.jpg');
 
   const inputPath = fs.existsSync(sourceAsset) ? sourceAsset : fs.existsSync(logoJpg) ? logoJpg : null;
 
@@ -14,10 +14,19 @@ async function generateIcons() {
     return;
   }
 
-  // Ensure public/app-logo.jpg exists as JPG
-  if (!fs.existsSync(logoJpg) || fs.statSync(inputPath).mtime > fs.statSync(logoJpg).mtime) {
-    fs.copyFileSync(inputPath, logoJpg);
-  }
+  // Ensure public/app-logo.jpg
+  await sharp(inputPath)
+    .resize(512, 512, { fit: 'cover' })
+    .jpeg({ quality: 92 })
+    .toFile(path.join(publicDir, 'app-logo.jpg.tmp'));
+  fs.renameSync(path.join(publicDir, 'app-logo.jpg.tmp'), path.join(publicDir, 'app-logo.jpg'));
+
+  // Ensure public/app-logo-transparent.png
+  await sharp(inputPath)
+    .resize(512, 512, { fit: 'cover' })
+    .png({ compressionLevel: 9, effort: 10 })
+    .toFile(path.join(publicDir, 'app-logo-transparent.png.tmp'));
+  fs.renameSync(path.join(publicDir, 'app-logo-transparent.png.tmp'), path.join(publicDir, 'app-logo-transparent.png'));
 
   const targets = [
     { file: 'pwa-192.png', size: 192 },
@@ -30,14 +39,14 @@ async function generateIcons() {
     const outPath = path.join(publicDir, t.file);
     await sharp(inputPath)
       .resize(t.size, t.size, { fit: 'cover' })
-      .png({ compressionLevel: 8 })
+      .png({ compressionLevel: 9, effort: 10 })
       .toFile(outPath + '.tmp');
     fs.renameSync(outPath + '.tmp', outPath);
-    console.log(`Successfully generated real PNG: ${t.file} (${t.size}x${t.size})`);
+    console.log(`Generated standard PNG: ${t.file} (${t.size}x${t.size})`);
   }
 }
 
 generateIcons().catch(err => {
   console.error('Failed to generate PNG icons:', err);
+  process.exit(1);
 });
-

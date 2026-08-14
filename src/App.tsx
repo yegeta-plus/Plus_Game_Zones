@@ -40,7 +40,7 @@ export default function App() {
   const [state, setState] = useState<ERPState>(() => loadInitialState());
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [moreSubView, setMoreSubView] = useState<SubViewType>('HUB');
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [isSessionLocked, setIsSessionLocked] = useState<boolean>(false);
   const [lastSeenChatTime, setLastSeenChatTime] = useState<number>(() => {
     const saved = localStorage.getItem('pgz_last_read_chat_time');
@@ -1825,13 +1825,22 @@ export default function App() {
         state={state}
       />
 
-      {/* Session Lock Screen Biometric Fingerprint Modal */}
+      {/* Session Lock Screen Biometric & Password Unlock Modal */}
       <FingerprintModal
         isOpen={isSessionLocked}
-        onClose={() => setIsSessionLocked(false)}
+        onClose={() => {
+          // If closed in locked state without authentication, log out safely
+          setIsSessionLocked(false);
+          setIsLoggedIn(false);
+        }}
         userEmail={state.currentUser.email}
         userName={state.currentUser.name}
+        currentUserPassword={state.currentUser.password || 'password123'}
         onSuccess={() => setIsSessionLocked(false)}
+        onLogout={() => {
+          setIsSessionLocked(false);
+          setIsLoggedIn(false);
+        }}
         mode="SESSION_UNLOCK"
       />
 
