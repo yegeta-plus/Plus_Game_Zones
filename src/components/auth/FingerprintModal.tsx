@@ -181,8 +181,8 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
           </h3>
           <p className="text-xs text-slate-500 dark:text-[#8899BB]">
             {mode === 'SESSION_UNLOCK'
-              ? `Session timed out for security. Unlock to resume as ${userName}.`
-              : `Place registered finger on sensor to authenticate as ${userName}.`}
+              ? `Session timed out for security. Touch your phone's sensor (screen, side power button, or rear) or enter password to resume as ${userName}.`
+              : `Touch your phone's biometric sensor (screen, side power button, or rear) to authenticate as ${userName}.`}
           </p>
         </div>
 

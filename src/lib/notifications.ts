@@ -1,19 +1,30 @@
 // System & Web Push Notification Helper for External OS / Browser Alerts
 
 export function isNotificationSupported(): boolean {
-  return typeof window !== 'undefined' && 'Notification' in window;
+  try {
+    return typeof window !== 'undefined' && 'Notification' in window;
+  } catch {
+    return false;
+  }
 }
 
 export function getNotificationPermission(): NotificationPermission {
   if (!isNotificationSupported()) return 'denied';
-  return Notification.permission;
+  try {
+    return Notification.permission;
+  } catch {
+    return 'denied';
+  }
 }
 
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
   if (!isNotificationSupported()) return 'denied';
   try {
-    const permission = await Notification.requestPermission();
-    return permission;
+    if (typeof Notification.requestPermission === 'function') {
+      const permission = await Notification.requestPermission();
+      return permission;
+    }
+    return 'denied';
   } catch (err) {
     console.warn('Error requesting notification permission:', err);
     return 'denied';
@@ -37,23 +48,27 @@ export async function sendExternalNotification(
 ): Promise<boolean> {
   if (!isNotificationSupported()) return false;
 
-  let permission = Notification.permission;
-  if (permission === 'default') {
-    permission = await requestNotificationPermission();
+  let permission: NotificationPermission = 'denied';
+  try {
+    permission = Notification.permission;
+    if (permission === 'default') {
+      permission = await requestNotificationPermission();
+    }
+  } catch {
+    return false;
   }
 
   if (permission !== 'granted') {
-    console.warn('Notification permission not granted.');
     return false;
   }
 
   const iconUrl = options.icon || '/pwa-192.png';
 
-  // 1. Try sending via active Service Worker (Best for backgrounded/minimized tabs)
+  // 1. Try sending via active Service Worker (Required on Android / Chrome to avoid "Illegal constructor")
   if ('serviceWorker' in navigator) {
     try {
       const registration = await navigator.serviceWorker.ready;
-      if (registration && registration.showNotification) {
+      if (registration && typeof registration.showNotification === 'function') {
         await registration.showNotification(title, {
           body: options.body,
           icon: iconUrl,
@@ -79,29 +94,35 @@ export async function sendExternalNotification(
         return true;
       }
     } catch (swErr) {
-      console.warn('Service worker showNotification failed, falling back to window Notification:', swErr);
+      console.warn('Service worker showNotification notice:', swErr);
     }
   }
 
-  // 2. Fallback to direct Window Notification API
+  // 2. Fallback to direct Window Notification API if constructible (non-Android desktop browsers)
   try {
-    const notif = new Notification(title, {
-      body: options.body,
-      icon: iconUrl,
-      badge: '/pwa-192.png',
-      tag: options.tag || `pluszone-notif-${Date.now()}`
-    });
+    const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent || '');
+    if (!isAndroid && typeof Notification === 'function') {
+      const notif = new Notification(title, {
+        body: options.body,
+        icon: iconUrl,
+        badge: '/pwa-192.png',
+        tag: options.tag || `pluszone-notif-${Date.now()}`
+      });
 
-    notif.onclick = () => {
-      window.focus();
-      notif.close();
-    };
+      notif.onclick = () => {
+        window.focus();
+        notif.close();
+      };
 
-    return true;
+      return true;
+    }
   } catch (err) {
-    console.error('Failed to trigger external notification:', err);
+    // Gracefully ignore if constructor is illegal on this platform
+    console.warn('Direct Notification constructor unavailable on this device:', err);
     return false;
   }
+
+  return false;
 }
 
 /**

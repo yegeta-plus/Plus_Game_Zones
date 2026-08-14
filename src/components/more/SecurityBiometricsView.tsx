@@ -30,7 +30,9 @@ export const SecurityBiometricsView: React.FC<{ state: ERPState }> = ({ state })
     try {
       localStorage.setItem('pluszone_session_timeout_mins', mins.toString());
       // Dispatch custom event so App.tsx picks it up instantly
-      window.dispatchEvent(new Event('sessionTimeoutChanged'));
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+        window.dispatchEvent(new CustomEvent('sessionTimeoutChanged'));
+      }
     } catch (err) {
       console.warn('Failed to save session timeout preference', err);
     }
