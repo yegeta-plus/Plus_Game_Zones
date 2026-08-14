@@ -3,6 +3,8 @@
   "short_name": "PlusZone ERP",
   "name": "Plus Game Zone — Finance & ERP System",
   "description": "Mobile-first PlayStation House & Game Zone management system — cash, Telebirr, CBE, gaming station tracking, Equb, and finance.",
+  "lang": "en",
+  "dir": "ltr",
   "icons": [
     {
       "src": "/pwa-192.png",
@@ -34,6 +36,11 @@
   "background_color": "#0A0E1A",
   "theme_color": "#00D4AA",
   "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
   "orientation": "portrait",
   "categories": ["finance", "business", "productivity"],
   "shortcuts": [
@@ -42,21 +49,39 @@
       "short_name": "New Tx",
       "description": "Log cash or digital payment quickly",
       "url": "/?shortcut=transaction",
-      "icons": [{ "src": "/pwa-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/pwa-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     },
     {
       "name": "Gaming Stations",
       "short_name": "Stations",
       "description": "View active PS5 timers & stations",
       "url": "/?shortcut=gaming",
-      "icons": [{ "src": "/pwa-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/pwa-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     },
     {
       "name": "Wallets & CBE",
       "short_name": "Wallets",
       "description": "Check CBE, Telebirr & eBirr balances",
       "url": "/?shortcut=wallets",
-      "icons": [{ "src": "/pwa-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/pwa-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     }
   ],
   "related_applications": [],
