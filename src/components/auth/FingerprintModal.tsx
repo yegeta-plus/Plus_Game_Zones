@@ -44,6 +44,12 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
       setIsVerifyingPassword(false);
       const cred = getEnrolledBiometric(userEmail);
       setEnrolledCred(cred);
+
+      // Auto-trigger sensor scan upon opening for immediate one-tap authentication
+      const timer = setTimeout(() => {
+        handleStartFingerprintScan();
+      }, 300);
+      return () => clearTimeout(timer);
     }
   }, [isOpen, userEmail]);
 
