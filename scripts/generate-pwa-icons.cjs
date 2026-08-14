@@ -5,7 +5,7 @@ const sharp = require('sharp');
 async function generateIcons() {
   const publicDir = path.join(__dirname, '..', 'public');
   const logoJpg = path.join(publicDir, 'app-logo.jpg');
-  const sourceAsset = path.join(__dirname, '..', 'src', 'assets', 'images', 'game_app_icon_1786707249717.jpg');
+  const sourceAsset = path.join(__dirname, '..', 'src', 'assets', 'images', 'app_logo_preview_1786451598969.jpg');
 
   const inputPath = fs.existsSync(sourceAsset) ? sourceAsset : fs.existsSync(logoJpg) ? logoJpg : null;
 
