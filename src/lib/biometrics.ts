@@ -65,9 +65,9 @@ export function detectOSBiometricProvider(): {
 
   if (isAndroid) {
     return {
-      label: 'Android BiometricPrompt (Fingerprint / In-Display)',
+      label: 'Android BiometricPrompt (Side-Mounted / In-Display Fingerprint)',
       platformType: 'ANDROID_BIOMETRIC_PROMPT',
-      promptName: 'Android BiometricPrompt'
+      promptName: 'Side Fingerprint / BiometricPrompt'
     };
   }
   if (isIOS) {

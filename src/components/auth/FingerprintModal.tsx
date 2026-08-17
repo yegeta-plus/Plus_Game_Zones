@@ -279,20 +279,20 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
               )}
             </button>
 
-            <p className="text-xs font-mono font-bold mt-3 text-slate-800 dark:text-slate-100 max-w-xs">
-              {scanState === 'IDLE' && '👉 Touch the sensor icon to verify with your device'}
-              {scanState === 'OS_PROMPTING' && 'Scanning physical fingerprint on phone...'}
-              {scanState === 'SUCCESS' && '✅ Authentication confirmed'}
+            <p className="text-xs font-mono font-bold mt-3 text-slate-800 dark:text-slate-100 max-w-xs text-center">
+              {scanState === 'IDLE' && '👉 Tap to start, then touch your phone\'s side fingerprint sensor'}
+              {scanState === 'OS_PROMPTING' && 'Scanning... Place your finger on the side power / fingerprint sensor'}
+              {scanState === 'SUCCESS' && '✅ Fingerprint confirmed by device'}
               {scanState === 'ERROR' && '❌ Authentication failed or cancelled'}
             </p>
 
-            <p className="text-[11px] text-slate-500 dark:text-[#8899BB] mt-1 max-w-[280px]">
-              {statusMessage}
+            <p className="text-[11px] text-slate-500 dark:text-[#8899BB] mt-1 max-w-[290px] text-center">
+              {statusMessage || 'Compatible with side-mounted, in-display, and rear phone fingerprint sensors.'}
             </p>
 
             <div className="mt-2 flex items-center justify-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 font-mono">
               <Cpu className="w-3 h-3 text-emerald-500" />
-              <span>OS Biometric API: {osProvider.promptName}</span>
+              <span>Sensor: Side-Mounted / Power Button Scanner</span>
             </div>
           </div>
         )}
