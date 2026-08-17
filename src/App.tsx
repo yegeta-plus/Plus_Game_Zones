@@ -34,7 +34,7 @@ import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavT
 import { CheckCircle2, Sparkles } from 'lucide-react';
 import { triggerHaptic } from './lib/haptics';
 import { FingerprintModal } from './components/auth/FingerprintModal';
-import { sendExternalNotification, formatRelativeNotifTime } from './lib/notifications';
+import { sendExternalNotification, formatRelativeNotifTime, playNotificationSound } from './lib/notifications';
 
 export default function App() {
   const [state, setState] = useState<ERPState>(() => loadInitialState());
@@ -162,7 +162,8 @@ export default function App() {
     setDismissedNotifIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
   }, []);
 
-  // Real-time Firebase Firestore Subscription
+  // Real-time Firebase Firestore Subscription & Chat Notifications
+  const prevChatCountRef = useRef<number>(0);
   useEffect(() => {
     const unsubscribe = subscribeToFirebaseState((remoteState) => {
       if (remoteState && typeof remoteState === 'object') {
@@ -176,6 +177,21 @@ export default function App() {
             : null) || prev.currentUser;
 
           const calType = prev.calendarType || remoteState.calendarType || 'ETHIOPIAN';
+
+          // Check for new chat messages from other team members
+          const incomingMsgs = remoteState.chatMessages || [];
+          if (incomingMsgs.length > prevChatCountRef.current && prevChatCountRef.current > 0) {
+            const latestMsg = incomingMsgs[incomingMsgs.length - 1];
+            if (latestMsg && latestMsg.senderId !== activeUser.id) {
+              playNotificationSound('chat');
+              triggerHaptic('medium');
+              sendExternalNotification(`Team Chat • ${latestMsg.senderName}`, {
+                body: latestMsg.text || 'Sent an attachment or financial reference.',
+                tag: `chat-${latestMsg.id}`
+              });
+            }
+          }
+          prevChatCountRef.current = incomingMsgs.length;
 
           return {
             ...prev,
@@ -1852,12 +1868,30 @@ export default function App() {
       });
     }
 
+    // Unread Team Chat Messages & Announcements
+    const unreadMsgs = (state.chatMessages || []).filter(
+      m => m.senderId !== state.currentUser.id && new Date(m.timestamp).getTime() > lastSeenChatTime
+    );
+    if (unreadMsgs.length > 0) {
+      const latestUnread = unreadMsgs[unreadMsgs.length - 1];
+      const msgTime = new Date(latestUnread.timestamp).getTime();
+      list.push({
+        id: `notif-chat-summary-${latestUnread.id}`,
+        title: latestUnread.isAnnouncement ? `📢 Announcement • ${latestUnread.senderName}` : `💬 ${latestUnread.senderName} (${unreadMsgs.length} new msg${unreadMsgs.length > 1 ? 's' : ''})`,
+        message: latestUnread.text || 'Shared a media attachment or financial reference in team chat.',
+        type: latestUnread.isAnnouncement ? 'HIGH' : 'MEDIUM',
+        time: formatRelativeNotifTime(msgTime),
+        timestamp: msgTime + 400,
+        actionTab: 'chat'
+      });
+    }
+
     // Filter out dismissed notifications so seen ones stay removed!
     const unreadList = list.filter(n => !dismissedNotifIds.includes(n.id));
 
     // Sort descending by timestamp (LATEST FIRST)
     return unreadList.sort((a, b) => b.timestamp - a.timestamp);
-  }, [state.equbs, state.loans, state.wallets, state.transactions, state.transfers, state.approvalRequests, state.receivables, state.currentUser, dismissedNotifIds]);
+  }, [state.equbs, state.loans, state.wallets, state.transactions, state.transfers, state.approvalRequests, state.receivables, state.chatMessages, state.currentUser, dismissedNotifIds, lastSeenChatTime]);
 
   const handleClearAllNotifications = React.useCallback(() => {
     const allIds = headerNotifications.map(n => n.id);
@@ -1872,6 +1906,9 @@ export default function App() {
       ).length;
 
   const handleSendMessage = (msgData: Omit<ChatMessage, 'id' | 'timestamp'>) => {
+    playNotificationSound('chat');
+    triggerHaptic('light');
+
     const newMsg: ChatMessage = {
       ...msgData,
       id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,

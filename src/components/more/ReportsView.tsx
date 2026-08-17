@@ -21,7 +21,13 @@ import {
   Eye,
   History,
   Users,
-  RefreshCw
+  RefreshCw,
+  Server,
+  Key,
+  Lock,
+  Check,
+  ExternalLink,
+  ShieldAlert
 } from 'lucide-react';
 import { ERPState, SentReportEmailLog } from '../../types';
 import { calculateTotalBusinessBalance, formatETB, calculateWalletBalance } from '../../lib/store';
@@ -50,7 +56,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
 
   // Email modal & automated schedule state
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
-  const [emailModalTab, setEmailModalTab] = useState<'SCHEDULE' | 'PREVIEW' | 'LOGS'>('SCHEDULE');
+  const [emailModalTab, setEmailModalTab] = useState<'SCHEDULE' | 'SMTP' | 'PREVIEW' | 'LOGS'>('SCHEDULE');
   const [attachPDF, setAttachPDF] = useState(state.automatedEmailReportsSettings?.includePdfAttachment ?? true);
   const [attachExcel, setAttachExcel] = useState(state.automatedEmailReportsSettings?.includeExcelAttachment ?? true);
   const [autoScheduleActive, setAutoScheduleActive] = useState(state.automatedEmailReportsSettings?.enabled ?? true);
@@ -61,6 +67,20 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
   // HTML Template Preview state
   const [previewHtml, setPreviewHtml] = useState<string>('');
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+
+  // SMTP Configuration state
+  const [smtpHost, setSmtpHost] = useState('smtp.gmail.com');
+  const [smtpPort, setSmtpPort] = useState('587');
+  const [smtpUser, setSmtpUser] = useState('');
+  const [smtpPass, setSmtpPass] = useState('');
+  const [smtpFrom, setSmtpFrom] = useState('');
+  const [smtpSecure, setSmtpSecure] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSmtpConfigured, setIsSmtpConfigured] = useState(false);
+  const [isTestingSmtp, setIsTestingSmtp] = useState(false);
+  const [isSavingSmtp, setIsSavingSmtp] = useState(false);
+  const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [smtpSaveMessage, setSmtpSaveMessage] = useState<string | null>(null);
 
   // Filter eligible recipients strictly to Admin and SuperUser roles
   const eligibleAdminSuperusers = useMemo(() => {
@@ -238,6 +258,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
         monthlyVolume: activeEqubVolume
       },
       topExpenseCategories: topCategoriesPayload,
+      includePdf: attachPDF,
       recipients: eligibleAdminSuperusers.map(u => ({
         name: u.name,
         email: u.email || `${u.username || 'admin'}@pluszone.et`,
@@ -267,11 +288,121 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
     }
   };
 
+  // Load SMTP config status
+  const loadSmtpConfig = async () => {
+    try {
+      const res = await fetch('/api/reports/smtp-config');
+      const data = await res.json();
+      if (data.status === 'success' && data.data) {
+        setSmtpHost(data.data.host || 'smtp.gmail.com');
+        setSmtpPort(String(data.data.port || 587));
+        setSmtpUser(data.data.user || '');
+        setSmtpFrom(data.data.from || '');
+        setSmtpSecure(Boolean(data.data.secure));
+        setIsSmtpConfigured(Boolean(data.data.isConfigured));
+      }
+    } catch (err) {
+      console.error('Failed to load SMTP status:', err);
+    }
+  };
+
   useEffect(() => {
-    if (isEmailModalOpen && emailModalTab === 'PREVIEW') {
-      loadHtmlPreview();
+    if (isEmailModalOpen && (emailModalTab === 'SMTP' || emailModalTab === 'SCHEDULE')) {
+      loadSmtpConfig();
     }
   }, [isEmailModalOpen, emailModalTab]);
+
+  // Test SMTP Connection
+  const handleTestSmtp = async () => {
+    if (!smtpHost || !smtpUser || !smtpPass) {
+      setSmtpTestResult({
+        success: false,
+        message: 'Please fill in SMTP Host, Username/Email, and Password/App Password.'
+      });
+      return;
+    }
+
+    triggerHaptic('medium');
+    setIsTestingSmtp(true);
+    setSmtpTestResult(null);
+    setSmtpSaveMessage(null);
+
+    try {
+      const res = await fetch('/api/reports/test-smtp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          host: smtpHost,
+          port: Number(smtpPort) || 587,
+          user: smtpUser,
+          pass: smtpPass,
+          secure: smtpSecure
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        setSmtpTestResult({
+          success: true,
+          message: data.message || 'SMTP connection and authentication verified successfully!'
+        });
+      } else {
+        setSmtpTestResult({
+          success: false,
+          message: data.error || 'Failed to authenticate with SMTP server.'
+        });
+      }
+    } catch (err: any) {
+      setSmtpTestResult({
+        success: false,
+        message: err.message || 'Network error occurred while testing SMTP connection.'
+      });
+    } finally {
+      setIsTestingSmtp(false);
+    }
+  };
+
+  // Save SMTP Settings
+  const handleSaveSmtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!smtpHost || !smtpUser || !smtpPass) {
+      setSmtpSaveMessage('Host, Username/Email, and Password/App Password are required.');
+      return;
+    }
+
+    triggerHaptic('heavy');
+    setIsSavingSmtp(true);
+    setSmtpSaveMessage(null);
+
+    try {
+      const res = await fetch('/api/reports/smtp-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          host: smtpHost,
+          port: Number(smtpPort) || 587,
+          user: smtpUser,
+          pass: smtpPass,
+          from: smtpFrom || `PlusZone Finance ERP <${smtpUser}>`,
+          secure: smtpSecure
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        setIsSmtpConfigured(true);
+        setSmtpSaveMessage('SMTP Configuration successfully saved and activated!');
+        setSmtpTestResult(null);
+        setTimeout(() => setSmtpSaveMessage(null), 5000);
+      } else {
+        setSmtpSaveMessage(`Error: ${data.error || 'Failed to save SMTP settings'}`);
+      }
+    } catch (err: any) {
+      setSmtpSaveMessage(`Network Error: ${err.message || 'Failed to save settings'}`);
+    } finally {
+      setIsSavingSmtp(false);
+    }
+  };
 
   // Trigger immediate dispatch
   const handleSendEmailReport = async (e: React.FormEvent) => {
@@ -863,22 +994,41 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
               </button>
             </div>
 
-            {/* Modal Sub-Tabs: Schedule vs Preview vs Logs */}
-            <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-[#0A0E1A] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40] shrink-0">
+            {/* Modal Sub-Tabs: Schedule vs SMTP vs Preview vs Logs */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-slate-100 dark:bg-[#0A0E1A] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40] shrink-0">
               <button
                 type="button"
                 onClick={() => {
                   triggerHaptic('light');
                   setEmailModalTab('SCHEDULE');
                 }}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`py-1.5 px-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                   emailModalTab === 'SCHEDULE'
                     ? 'bg-white dark:bg-[#131926] text-indigo-600 dark:text-[#00D4AA] shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 <Clock className="w-3.5 h-3.5" />
-                <span>Schedule & Dispatch</span>
+                <span>Schedule</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setEmailModalTab('SMTP');
+                }}
+                className={`py-1.5 px-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  emailModalTab === 'SMTP'
+                    ? 'bg-white dark:bg-[#131926] text-indigo-600 dark:text-[#00D4AA] shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Server className="w-3.5 h-3.5" />
+                <span>SMTP Config</span>
+                {isSmtpConfigured && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                )}
               </button>
 
               <button
@@ -887,14 +1037,14 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
                   triggerHaptic('light');
                   setEmailModalTab('PREVIEW');
                 }}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`py-1.5 px-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                   emailModalTab === 'PREVIEW'
                     ? 'bg-white dark:bg-[#131926] text-indigo-600 dark:text-[#00D4AA] shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 <Eye className="w-3.5 h-3.5" />
-                <span>Email Layout Preview</span>
+                <span>Preview</span>
               </button>
 
               <button
@@ -903,16 +1053,216 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
                   triggerHaptic('light');
                   setEmailModalTab('LOGS');
                 }}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`py-1.5 px-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                   emailModalTab === 'LOGS'
                     ? 'bg-white dark:bg-[#131926] text-indigo-600 dark:text-[#00D4AA] shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 <History className="w-3.5 h-3.5" />
-                <span>Dispatch Logs ({logsList.length})</span>
+                <span>Logs ({logsList.length})</span>
               </button>
             </div>
+
+            {/* TAB: SMTP SERVER CONFIGURATION */}
+            {emailModalTab === 'SMTP' && (
+              <form onSubmit={handleSaveSmtp} className="space-y-4 overflow-y-auto pr-1 flex-1">
+                {/* Status Banners */}
+                {smtpSaveMessage && (
+                  <div className={`p-3.5 rounded-2xl text-center space-y-1 animate-fadeIn ${
+                    smtpSaveMessage.includes('Error')
+                      ? 'bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                      : 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                  }`}>
+                    <CheckCircle2 className="w-5 h-5 mx-auto" />
+                    <p className="text-xs font-bold">{smtpSaveMessage}</p>
+                  </div>
+                )}
+
+                {smtpTestResult && (
+                  <div className={`p-3.5 rounded-2xl text-center space-y-1 animate-fadeIn ${
+                    smtpTestResult.success
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                  }`}>
+                    {smtpTestResult.success ? (
+                      <Check className="w-5 h-5 text-emerald-500 mx-auto" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5 text-rose-500 mx-auto" />
+                    )}
+                    <p className="text-xs font-bold">{smtpTestResult.message}</p>
+                  </div>
+                )}
+
+                {/* Instruction Callout for Gmail & Corporate SMTP */}
+                <div className="p-3.5 bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 rounded-2xl text-xs space-y-2">
+                  <div className="flex items-center gap-2 text-indigo-950 dark:text-indigo-200 font-bold">
+                    <Key className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    <span>How to fill SMTP info for Gmail & Google Workspace</span>
+                  </div>
+                  <ol className="list-decimal list-inside text-[11px] text-indigo-900 dark:text-indigo-300 space-y-1 pl-1">
+                    <li>Set <strong>SMTP Host</strong> to <code className="bg-white/60 dark:bg-[#0A0E1A] px-1 py-0.5 rounded font-mono">smtp.gmail.com</code> (Port 587 or 465).</li>
+                    <li>Enter your Gmail account as the <strong>Username/Email</strong>.</li>
+                    <li>
+                      For <strong>Password</strong>: Generate a 16-letter <strong>Google App Password</strong> in your Google Account (*Security &gt; 2-Step Verification &gt; App Passwords*).
+                    </li>
+                  </ol>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Host */}
+                  <div className="sm:col-span-2 space-y-1">
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                      SMTP Host Server <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. smtp.gmail.com or mail.yourdomain.com"
+                      value={smtpHost}
+                      onChange={(e) => setSmtpHost(e.target.value)}
+                      required
+                      className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-mono outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  {/* Port */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                      Port <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="587"
+                      value={smtpPort}
+                      onChange={(e) => setSmtpPort(e.target.value)}
+                      required
+                      className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-mono outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* User / Email */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                      Username / Email Address <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="your.email@gmail.com"
+                      value={smtpUser}
+                      onChange={(e) => setSmtpUser(e.target.value)}
+                      required
+                      className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-mono outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  {/* Password / App Password */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                        Password / App Password <span className="text-rose-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="text-[10px] text-indigo-600 dark:text-[#00D4AA] font-bold hover:underline cursor-pointer"
+                      >
+                        {showPassword ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        placeholder="•••••••••••••••• (16-char App Password)"
+                        value={smtpPass}
+                        onChange={(e) => setSmtpPass(e.target.value)}
+                        required
+                        className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 pr-8 text-xs text-slate-900 dark:text-white font-mono outline-none focus:border-indigo-500"
+                      />
+                      <Lock className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-3" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* From Name & Address */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                    Sender Display Header (From)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={`PlusZone Finance ERP <${smtpUser || 'reports@pluszone.et'}>`}
+                    value={smtpFrom}
+                    onChange={(e) => setSmtpFrom(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-mono outline-none focus:border-indigo-500"
+                  />
+                  <p className="text-[10px] text-slate-400">
+                    Format: <code>Sender Name &lt;email@domain.com&gt;</code>. Defaults to your authenticated user address.
+                  </p>
+                </div>
+
+                {/* Secure SSL Toggle */}
+                <div className="p-3 bg-slate-50 dark:bg-[#1C2333] rounded-xl border border-slate-200 dark:border-[#1E2D40] flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                      Enforce SSL / TLS Encryption
+                    </span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                      Enable for Port 465 (SSL). Keep disabled for Port 587 (STARTTLS).
+                    </span>
+                  </div>
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={smtpSecure}
+                      onChange={(e) => setSmtpSecure(e.target.checked)}
+                      className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer"
+                    />
+                  </label>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-slate-100 dark:border-[#1E2D40]">
+                  <button
+                    type="button"
+                    onClick={handleTestSmtp}
+                    disabled={isTestingSmtp || !smtpHost || !smtpUser || !smtpPass}
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#1C2333] dark:hover:bg-[#252E42] text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-2 border border-slate-200 dark:border-[#1E2D40] cursor-pointer transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {isTestingSmtp ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Verifying Connection...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck className="w-3.5 h-3.5 text-indigo-500" />
+                        <span>Test Connection</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={isSavingSmtp || !smtpHost || !smtpUser || !smtpPass}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg cursor-pointer transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {isSavingSmtp ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Saving Settings...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Save &amp; Activate SMTP</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
 
             {/* TAB 1: SCHEDULE & DISPATCH */}
             {emailModalTab === 'SCHEDULE' && (
@@ -987,6 +1337,38 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
                       <strong className="text-purple-600 dark:text-purple-400">SuperAdmin & Admin only</strong>
                     </div>
                   </div>
+                </div>
+
+                {/* SMTP Status Quick Badge */}
+                <div className={`p-3 rounded-2xl border text-xs flex items-center justify-between gap-3 ${
+                  isSmtpConfigured
+                    ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/50'
+                    : 'bg-amber-50/60 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/50'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <Server className={`w-4 h-4 shrink-0 ${isSmtpConfigured ? 'text-emerald-500' : 'text-amber-500'}`} />
+                    <div>
+                      <span className="font-bold text-slate-900 dark:text-white block text-[11px]">
+                        SMTP Mail Server: {isSmtpConfigured ? 'Connected & Verified' : 'Preview / Setup Required'}
+                      </span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                        {isSmtpConfigured
+                          ? `Host: ${smtpHost} (${smtpUser})`
+                          : 'Configure host, user & App Password to enable real inbox dispatches.'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setEmailModalTab('SMTP');
+                    }}
+                    className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] text-indigo-600 dark:text-[#00D4AA] hover:bg-slate-50 shrink-0 cursor-pointer shadow-2xs"
+                  >
+                    {isSmtpConfigured ? 'Manage SMTP' : 'Fill SMTP Info'}
+                  </button>
                 </div>
 
                 {/* Recipient List Verification */}

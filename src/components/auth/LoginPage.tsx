@@ -3,19 +3,13 @@ import {
   User,
   KeyRound,
   ArrowRight,
-  Sun,
-  Moon,
   ShieldAlert,
   CheckCircle2,
   Key,
-  X,
-  Gamepad2,
-  Fingerprint
+  X
 } from 'lucide-react';
 import { UserProfile } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
-import { FingerprintModal } from './FingerprintModal';
-import { getEnrolledBiometric } from '../../lib/biometrics';
 import { AppLogo } from '../common/AppLogo';
 
 interface LoginPageProps {
@@ -23,15 +17,13 @@ interface LoginPageProps {
   currentUser: UserProfile;
   onLogin: (selectedUser: UserProfile) => void;
   onRegisterUser?: (newUser: UserProfile) => void;
-  theme: 'dark' | 'light';
-  onToggleTheme: () => void;
+  theme?: 'dark' | 'light';
+  onToggleTheme?: () => void;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({
   allUsers,
-  onLogin,
-  theme,
-  onToggleTheme
+  onLogin
 }) => {
   // Sign In state - default to superadmin credentials for seamless experience
   const [username, setUsername] = useState<string>('ygyegeta@gmail.com');
@@ -52,45 +44,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [showGoogleModal, setShowGoogleModal] = useState<boolean>(false);
   const [googleEmailInput, setGoogleEmailInput] = useState<string>('');
   const [googleAuthError, setGoogleAuthError] = useState<string | null>(null);
-
-  // Fingerprint Modal State
-  const [showFingerprintModal, setShowFingerprintModal] = useState<boolean>(false);
-
-  const handleBiometricSuccess = (verifiedEmail: string) => {
-    triggerHaptic('heavy');
-    const target = allUsers.find(
-      u => u.email.toLowerCase() === verifiedEmail.toLowerCase() || u.name.toLowerCase().includes(verifiedEmail.toLowerCase())
-    ) || {
-      id: 'u-1',
-      name: 'Yegeta Huawei',
-      email: 'ygyegeta@gmail.com',
-      username: 'yegeta',
-      role: 'SuperAdmin' as const,
-      active: true,
-      isApproved: true,
-      invitationCode: 'PZ-SUPER-GOOGLE',
-      hasSetPassword: true,
-      password: 'password123',
-      isTemporaryPassword: false,
-      mustChangePassword: false,
-      permissions: {
-        Dashboard: { view: true, add: true, edit: true, delete: true, export: true },
-        Income: { view: true, add: true, edit: true, delete: true, export: true },
-        Expenses: { view: true, add: true, edit: true, delete: true, export: true },
-        Equb: { view: true, add: true, edit: true, delete: true, export: true },
-        Loans: { view: true, add: true, edit: true, delete: true, export: true },
-        Reports: { view: true, add: true, edit: true, delete: true, export: true },
-        Analytics: { view: true, add: true, edit: true, delete: true, export: true },
-        Partners: { view: true, add: true, edit: true, delete: true, export: true },
-        Settings: { view: true, add: true, edit: true, delete: true, export: true },
-        UserManagement: { view: true, add: true, edit: true, delete: true, export: true }
-      },
-      branch: 'Addis Ababa HQ',
-      lastActive: 'Just now'
-    };
-
-    onLogin(target);
-  };
 
   // Password strength score (0-4)
   const getPasswordStrength = (pwd: string) => {
@@ -355,15 +308,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             <p className="text-[11px] text-slate-400">PlayStation House & Gaming Lounge Management</p>
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={onToggleTheme}
-          className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-300 hover:text-white cursor-pointer transition-all hover:bg-slate-800"
-          title="Toggle Visual Theme"
-        >
-          {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-400" />}
-        </button>
       </header>
 
       {/* Center Card */}
@@ -476,20 +420,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   OR
                 </span>
               </div>
-
-              {/* Sign in with Fingerprint / Touch ID Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('medium');
-                  setShowFingerprintModal(true);
-                }}
-                disabled={isSubmitting}
-                className="w-full py-3.5 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/40 hover:border-emerald-400 text-emerald-400 font-bold text-xs flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-md group active:scale-95"
-              >
-                <Fingerprint className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform animate-pulse" />
-                <span>Fingerprint / Touch ID Quick Login</span>
-              </button>
 
               {/* Sign in with Google Button */}
               <button
@@ -791,16 +721,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           </div>
         </div>
       )}
-
-      {/* Fingerprint / Touch ID Biometric Scanner Modal */}
-      <FingerprintModal
-        isOpen={showFingerprintModal}
-        onClose={() => setShowFingerprintModal(false)}
-        userEmail={username.includes('@') ? username : 'yegeta.huawei@gmail.com'}
-        userName={username || 'Yegeta Huawei'}
-        onSuccess={handleBiometricSuccess}
-        mode="LOGIN"
-      />
     </div>
   );
 };
+

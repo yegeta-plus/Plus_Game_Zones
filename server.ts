@@ -231,9 +231,96 @@ Give a concise, highly professional, actionable response. Format with clear bull
     sendMonthlyFinancialReport,
     buildMonthlyReportHtml,
     getDispatchHistory,
-    getLastDispatchedMonth
+    getLastDispatchedMonth,
+    setCustomSmtpConfig,
+    getEffectiveSmtpConfig,
+    testSmtpConnection
   } = await import('./server/emailReporter.js').catch(async () => {
     return await import('./server/emailReporter');
+  });
+
+  // Get current SMTP Configuration Status
+  app.get('/api/reports/smtp-config', (req, res) => {
+    try {
+      const config = getEffectiveSmtpConfig();
+      return res.json({
+        status: 'success',
+        data: {
+          host: config.host,
+          port: config.port,
+          user: config.user,
+          from: config.from,
+          secure: config.secure,
+          isConfigured: config.isConfigured,
+          passwordSet: Boolean(config.pass && config.pass.length > 0)
+        }
+      });
+    } catch (err: any) {
+      return res.status(500).json({ status: 'error', error: err.message });
+    }
+  });
+
+  // Save / Update Custom SMTP Configuration
+  app.post('/api/reports/smtp-config', (req, res) => {
+    try {
+      const { host, port, user, pass, from, secure } = req.body;
+      if (!host || !user || !pass) {
+        return res.status(400).json({
+          status: 'error',
+          error: 'Host, User/Email, and Password/App Password are required.'
+        });
+      }
+
+      setCustomSmtpConfig({
+        host,
+        port: Number(port) || 587,
+        user,
+        pass,
+        from,
+        secure: Boolean(secure)
+      });
+
+      const updated = getEffectiveSmtpConfig();
+      return res.json({
+        status: 'success',
+        message: 'SMTP settings updated successfully.',
+        data: {
+          host: updated.host,
+          port: updated.port,
+          user: updated.user,
+          from: updated.from,
+          secure: updated.secure,
+          isConfigured: updated.isConfigured
+        }
+      });
+    } catch (err: any) {
+      return res.status(500).json({ status: 'error', error: err.message });
+    }
+  });
+
+  // Test SMTP Connection with Current or Provided Credentials
+  app.post('/api/reports/test-smtp', async (req, res) => {
+    try {
+      const { host, port, user, pass, secure } = req.body || {};
+      const result = await testSmtpConnection(host ? { host, port: Number(port) || 587, user, pass, secure: Boolean(secure) } : undefined);
+
+      if (result.success) {
+        return res.json({
+          status: 'success',
+          message: result.message
+        });
+      } else {
+        return res.status(400).json({
+          status: 'error',
+          error: result.error
+        });
+      }
+    } catch (err: any) {
+      return res.status(500).json({
+        status: 'error',
+        error: err.message || 'Error occurred while testing SMTP connection.'
+      });
+    }
   });
 
   // 1. Dispatch or Manually Trigger Monthly Financial Report Email

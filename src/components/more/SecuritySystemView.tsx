@@ -1120,81 +1120,201 @@ export const SecuritySystemView: React.FC<{ state: ERPState }> = ({ state }) => 
         </div>
       )}
 
-      {/* TAB 5: BIOMETRICS & TOUCH ID */}
+      {/* TAB 5: BIOMETRICS & TOUCH ID (OS-Level BiometricPrompt / iOS LocalAuthentication) */}
       {activeTab === 'biometrics' && (
-        <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-5 space-y-4 shadow-sm animate-fadeIn">
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#1E2D40] pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
-                <Fingerprint className="w-5 h-5" />
+        <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-5 space-y-6 shadow-sm animate-fadeIn">
+          {/* Section Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-[#1E2D40] pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                <Fingerprint className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
-                  Fingerprint & Touch ID Passkeys
+                <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>OS Biometric Authentication</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
+                    Android BiometricPrompt • iOS Touch ID
+                  </span>
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-[#8899BB]">
-                  Authenticate with biometric hardware sensors on session lock
+                  App requests the phone's native OS to verify biometrics. The OS checks the sensor and returns only the authentication result.
                 </p>
               </div>
             </div>
 
             <span
-              className={`text-xs font-mono font-bold px-2.5 py-1 rounded-full border ${
+              className={`text-xs font-mono font-bold px-3 py-1 rounded-full border self-start sm:self-auto ${
                 enrolledCred
                   ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-[#00D4AA] border-emerald-200 dark:border-emerald-800'
                   : 'bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800'
               }`}
             >
-              {enrolledCred ? '✓ Hardware Enrolled' : 'Not Enrolled'}
+              {enrolledCred ? '✓ OS Sensor Enrolled' : 'Ready to Enroll'}
             </span>
           </div>
 
+          {/* Architectural 4-Step Flow Explanation */}
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1C2333]/70 border border-slate-200 dark:border-[#1E2D40] space-y-3">
+            <h4 className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+              <Zap className="w-4 h-4 text-amber-400" />
+              <span>How OS Biometric Authentication Works</span>
+            </h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 pt-1">
+              <div className="p-3 rounded-xl bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] space-y-1">
+                <span className="text-[10px] font-mono font-bold text-indigo-500 dark:text-indigo-400 block">
+                  STEP 1 • REQUEST
+                </span>
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  App asks OS to authenticate
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  App displays “Verify your fingerprint to continue” and calls the OS Biometric API.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] space-y-1">
+                <span className="text-[10px] font-mono font-bold text-amber-500 dark:text-amber-400 block">
+                  STEP 2 • SENSOR CHECK
+                </span>
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Phone hardware checks touch
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  OS compares sensor input against enrolled prints in the device's Secure Enclave.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] space-y-1">
+                <span className="text-[10px] font-mono font-bold text-emerald-500 dark:text-emerald-400 block">
+                  STEP 3 • BINARY RESULT
+                </span>
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  OS gives only result
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  ✅ Authentication successful or ❌ Failed/Cancelled. App never reads raw biometric data.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] space-y-1">
+                <span className="text-[10px] font-mono font-bold text-cyan-500 dark:text-cyan-400 block">
+                  STEP 4 • EXECUTE ACTION
+                </span>
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  App performs action
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Unlocks app, confirms sensitive transfer, or reveals financial records (with PIN fallback).
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Enrolled Status Card */}
           {enrolledCred ? (
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] space-y-3">
-              <div className="flex items-start justify-between">
+            <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="space-y-1">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
-                    Registered Passkey Device
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider block">
+                    Registered Platform Authenticator
                   </span>
-                  <p className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <p className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-2">
                     <Smartphone className="w-4 h-4 text-emerald-500" />
                     <span>{enrolledCred.deviceLabel}</span>
                   </p>
-                  <p className="text-[11px] text-slate-500 font-mono">
-                    Enrolled for: {enrolledCred.userEmail}
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                    Enrolled User: {enrolledCred.userEmail} ({enrolledCred.userName})
                   </p>
                 </div>
 
                 <button
                   onClick={handleRemoveBiometric}
-                  className="px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-bold text-xs hover:bg-rose-100 cursor-pointer transition-all"
+                  className="px-3.5 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-bold text-xs hover:bg-rose-100 cursor-pointer transition-all self-start sm:self-auto"
                 >
-                  Remove Passkey
+                  Remove Biometric Enrollment
                 </button>
               </div>
             </div>
           ) : (
-            <p className="text-xs text-slate-500">
-              No biometric hardware key enrolled for {state.currentUser.email}.
-            </p>
+            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-600 dark:text-amber-300">
+              No biometric hardware key enrolled for {state.currentUser.email}. Click below to register.
+            </div>
           )}
 
-          <div className="flex items-center gap-2 pt-1">
+          {/* Action Tests: App Unlock, Private Finance, Sensitive Transfer */}
+          <div className="space-y-3 pt-2">
+            <h4 className="text-xs font-extrabold text-slate-900 dark:text-white">
+              Test OS Biometric Authentication Scenarios:
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <button
+                onClick={() => {
+                  triggerHaptic('medium');
+                  setIsBioModalOpen(true);
+                }}
+                className="p-3 rounded-xl bg-slate-50 dark:bg-[#1C2333] hover:bg-slate-100 dark:hover:bg-[#253047] border border-slate-200 dark:border-[#1E2D40] text-left space-y-1 transition-all cursor-pointer group"
+              >
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-500">
+                  <Lock className="w-4 h-4 text-emerald-500" />
+                  <span>1. Unlock App</span>
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Prompts OS sensor → Success → Resumes app dashboard.
+                </p>
+              </button>
+
+              <button
+                onClick={() => {
+                  triggerHaptic('medium');
+                  setIsBioModalOpen(true);
+                }}
+                className="p-3 rounded-xl bg-slate-50 dark:bg-[#1C2333] hover:bg-slate-100 dark:hover:bg-[#253047] border border-slate-200 dark:border-[#1E2D40] text-left space-y-1 transition-all cursor-pointer group"
+              >
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-indigo-500">
+                  <Eye className="w-4 h-4 text-indigo-500" />
+                  <span>2. Private Financial Info</span>
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Prompts OS sensor → Success → Reveals confidential balances.
+                </p>
+              </button>
+
+              <button
+                onClick={() => {
+                  triggerHaptic('medium');
+                  setIsBioModalOpen(true);
+                }}
+                className="p-3 rounded-xl bg-slate-50 dark:bg-[#1C2333] hover:bg-slate-100 dark:hover:bg-[#253047] border border-slate-200 dark:border-[#1E2D40] text-left space-y-1 transition-all cursor-pointer group"
+              >
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-amber-500">
+                  <Send className="w-4 h-4 text-amber-500" />
+                  <span>3. Authorize Transfer</span>
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Prompts OS sensor → Success → Authorizes high-value payout.
+                </p>
+              </button>
+            </div>
+          </div>
+
+          {/* Primary Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2.5 pt-2">
             <button
               onClick={handleEnrollBiometric}
               disabled={isRegisteringBio}
-              className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-extrabold text-xs flex items-center gap-2 shadow-md cursor-pointer hover:brightness-110 transition-all"
+              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-md cursor-pointer transition-all"
             >
               <Fingerprint className="w-4 h-4" />
-              <span>{isRegisteringBio ? 'Scanning...' : 'Enroll Hardware Fingerprint'}</span>
+              <span>{isRegisteringBio ? 'Connecting to OS...' : 'Re-Enroll OS Biometrics'}</span>
             </button>
 
             <button
               onClick={() => setIsBioModalOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] text-slate-700 dark:text-slate-200 font-extrabold text-xs flex items-center gap-2 hover:bg-slate-200 cursor-pointer transition-all"
+              className="px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-[#1C2333] text-white dark:text-slate-200 font-extrabold text-xs flex items-center gap-2 hover:bg-slate-800 cursor-pointer transition-all border border-slate-700 dark:border-[#2A3B53]"
             >
-              <Sparkles className="w-4 h-4 text-indigo-500" />
-              <span>Test Fingerprint Scan</span>
+              <Sparkles className="w-4 h-4 text-emerald-400" />
+              <span>Trigger OS Biometric Prompt</span>
             </button>
           </div>
         </div>

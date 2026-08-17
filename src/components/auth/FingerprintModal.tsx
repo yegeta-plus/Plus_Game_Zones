@@ -1,7 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Fingerprint, CheckCircle2, AlertCircle, X, ShieldCheck, Lock, Sparkles, KeyRound, Eye, EyeOff, LogOut } from 'lucide-react';
+import {
+  Fingerprint,
+  CheckCircle2,
+  AlertCircle,
+  X,
+  ShieldCheck,
+  Lock,
+  KeyRound,
+  Eye,
+  EyeOff,
+  LogOut,
+  Smartphone,
+  Cpu
+} from 'lucide-react';
 import { triggerHaptic } from '../../lib/haptics';
-import { authenticateWithBiometrics, getEnrolledBiometric, StoredBiometricCredential } from '../../lib/biometrics';
+import {
+  authenticateWithBiometrics,
+  getEnrolledBiometric,
+  detectOSBiometricProvider,
+  StoredBiometricCredential,
+  BiometricActionType
+} from '../../lib/biometrics';
 
 interface FingerprintModalProps {
   isOpen: boolean;
@@ -11,7 +30,9 @@ interface FingerprintModalProps {
   currentUserPassword?: string;
   onSuccess: (verifiedEmail: string) => void;
   onLogout?: () => void;
-  mode?: 'LOGIN' | 'SESSION_UNLOCK' | 'ENROLL';
+  mode?: 'LOGIN' | 'SESSION_UNLOCK' | 'ENROLL' | 'SENSITIVE_OPERATION' | 'PRIVATE_INFO' | 'PAYMENT_AUTHORIZE';
+  actionTitle?: string;
+  actionSubtitle?: string;
 }
 
 export const FingerprintModal: React.FC<FingerprintModalProps> = ({
@@ -22,10 +43,13 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
   currentUserPassword = 'password123',
   onSuccess,
   onLogout,
-  mode = 'LOGIN'
+  mode = 'SESSION_UNLOCK',
+  actionTitle,
+  actionSubtitle
 }) => {
-  const [activeMethod, setActiveMethod] = useState<'BIOMETRIC' | 'PASSWORD'>('BIOMETRIC');
-  const [scanState, setScanState] = useState<'IDLE' | 'SCANNING' | 'SUCCESS' | 'ERROR'>('IDLE');
+  const [activeMethod, setActiveMethod] = useState<'OS_BIOMETRIC' | 'PASSWORD'>('OS_BIOMETRIC');
+  const [scanState, setScanState] = useState<'IDLE' | 'OS_PROMPTING' | 'SUCCESS' | 'ERROR'>('IDLE');
+  const [statusMessage, setStatusMessage] = useState<string>('Touch the fingerprint sensor when ready.');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -34,9 +58,11 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
   const [enrolledCred, setEnrolledCred] = useState<StoredBiometricCredential | null>(null);
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
 
+  const osProvider = detectOSBiometricProvider();
+
   useEffect(() => {
     if (isOpen) {
-      setActiveMethod('BIOMETRIC');
+      setActiveMethod('OS_BIOMETRIC');
       setScanState('IDLE');
       setErrorMessage(null);
       setPasswordInput('');
@@ -45,10 +71,10 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
       const cred = getEnrolledBiometric(userEmail);
       setEnrolledCred(cred);
 
-      // Auto-trigger sensor scan upon opening for immediate one-tap authentication
+      // Auto-ask OS to authenticate upon opening
       const timer = setTimeout(() => {
-        handleStartFingerprintScan();
-      }, 300);
+        handleTriggerOSBiometricPrompt();
+      }, 250);
       return () => clearTimeout(timer);
     }
   }, [isOpen, userEmail]);
@@ -61,31 +87,39 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleStartFingerprintScan = async () => {
+  // Step 1 & 2: App asks the operating system to authenticate
+  const handleTriggerOSBiometricPrompt = async () => {
     triggerHaptic('medium');
-    setScanState('SCANNING');
+    setScanState('OS_PROMPTING');
+    setStatusMessage(`App requested ${osProvider.promptName}... Place finger on sensor.`);
     setErrorMessage(null);
 
+    let actionType: BiometricActionType = 'APP_UNLOCK';
+    if (mode === 'SENSITIVE_OPERATION' || mode === 'PAYMENT_AUTHORIZE') actionType = 'CONFIRM_SENSITIVE_OPERATION';
+    if (mode === 'PRIVATE_INFO') actionType = 'REVEAL_PRIVATE_FINANCE';
+
     try {
-      // Simulate physical scanner sensor reading (600ms scan animation + WebAuthn verification)
-      setTimeout(async () => {
-        const res = await authenticateWithBiometrics(userEmail);
-        if (res.success && res.email) {
-          triggerHaptic('heavy');
-          setScanState('SUCCESS');
-          setTimeout(() => {
-            onSuccess(res.email!);
-          }, 800);
-        } else {
-          triggerHaptic('warning');
-          setScanState('ERROR');
-          setErrorMessage(res.message || 'Fingerprint verification failed. Try placing your finger on the sensor again or use your password.');
-        }
-      }, 700);
-    } catch (err) {
+      // Step 3: Phone checks the fingerprint in hardware & OS returns binary result
+      const res = await authenticateWithBiometrics(userEmail, actionType);
+
+      if (res.success && res.userEmail) {
+        // Step 4: ✅ OS Authentication Successful -> App executes action
+        triggerHaptic('heavy');
+        setScanState('SUCCESS');
+        setStatusMessage(res.message);
+        setTimeout(() => {
+          onSuccess(res.userEmail!);
+        }, 700);
+      } else {
+        // ❌ Authentication failed or cancelled -> Provide fallback
+        triggerHaptic('warning');
+        setScanState('ERROR');
+        setErrorMessage(res.message || '❌ Biometric authentication cancelled/failed. Use Password or Master PIN.');
+      }
+    } catch (err: any) {
       triggerHaptic('warning');
       setScanState('ERROR');
-      setErrorMessage('Fingerprint sensor timeout or error.');
+      setErrorMessage('❌ OS Biometric sensor timeout. Please retry or enter Password/PIN.');
     }
   };
 
@@ -93,7 +127,7 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
     e.preventDefault();
     if (!passwordInput.trim()) {
       triggerHaptic('warning');
-      setErrorMessage('Please enter your account password or Master PIN.');
+      setErrorMessage('Please enter your account password or 4-digit Master PIN.');
       return;
     }
 
@@ -104,7 +138,6 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
       const storedSecurityPin = localStorage.getItem('pluszone_security_pin') || '1234';
       const cleanInput = passwordInput.trim();
 
-      // Check against account password, master password, or master security PIN
       const isValidPassword =
         cleanInput === currentUserPassword ||
         cleanInput === 'password123' ||
@@ -122,33 +155,22 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
         setIsVerifyingPassword(false);
         const newAttempts = failedAttempts + 1;
         setFailedAttempts(newAttempts);
-        setErrorMessage(`Invalid password or Master PIN. (Attempt ${newAttempts})`);
+        setErrorMessage(`❌ Invalid password or Master PIN (Attempt ${newAttempts}).`);
         setPasswordInput('');
         if (passwordInputRef.current) {
           passwordInputRef.current.focus();
         }
       }
-    }, 400);
+    }, 350);
   };
 
-  const handleSafeExitOrLogout = () => {
-    if (mode === 'SESSION_UNLOCK') {
-      if (onLogout) {
-        onLogout();
-      } else {
-        onClose();
-      }
-    } else {
-      onClose();
-    }
-  };
+  const isSessionLock = mode === 'SESSION_UNLOCK';
 
   return (
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn"
       onClick={(e) => {
-        // Prevent accidental backdrop dismissal if in locked session mode
-        if (mode !== 'SESSION_UNLOCK' && e.target === e.currentTarget) {
+        if (!isSessionLock && e.target === e.currentTarget) {
           onClose();
         }
       }}
@@ -160,9 +182,9 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
         <div className="absolute -bottom-12 -right-12 w-32 h-32 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
 
         {/* Close or Log Out Button */}
-        {mode === 'SESSION_UNLOCK' ? (
+        {isSessionLock ? (
           <button
-            onClick={handleSafeExitOrLogout}
+            onClick={onLogout || onClose}
             title="Log Out of Session"
             className="absolute top-4 right-4 p-1.5 rounded-full text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors flex items-center gap-1 text-[11px] font-bold"
           >
@@ -178,64 +200,63 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
         )}
 
         {/* Modal Header */}
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <div className="inline-flex p-3 rounded-2xl bg-emerald-500/10 dark:bg-[#00D4AA]/15 text-emerald-600 dark:text-[#00D4AA] mb-1">
-            {mode === 'SESSION_UNLOCK' ? <Lock className="w-6 h-6" /> : <ShieldCheck className="w-6 h-6" />}
+            {isSessionLock ? <Lock className="w-6 h-6" /> : <ShieldCheck className="w-6 h-6" />}
           </div>
+          
           <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
-            {mode === 'SESSION_UNLOCK' ? 'Session Locked' : 'Biometric Fingerprint Login'}
+            {actionTitle || 'Verify your fingerprint to continue'}
           </h3>
-          <p className="text-xs text-slate-500 dark:text-[#8899BB]">
-            {mode === 'SESSION_UNLOCK'
-              ? `Session timed out for security. Touch your phone's sensor (screen, side power button, or rear) or enter password to resume as ${userName}.`
-              : `Touch your phone's biometric sensor (screen, side power button, or rear) to authenticate as ${userName}.`}
+          
+          <p className="text-xs text-slate-500 dark:text-[#8899BB] leading-relaxed">
+            {actionSubtitle ||
+              `The app delegates to your phone's ${osProvider.promptName}. The OS compares your touch with enrolled fingerprints and returns the result.`}
           </p>
         </div>
 
-        {/* Unlock Method Selector (for Session Unlock) */}
-        {mode === 'SESSION_UNLOCK' && (
-          <div className="grid grid-cols-2 p-1 bg-slate-100 dark:bg-[#1C2333] rounded-2xl gap-1">
-            <button
-              type="button"
-              onClick={() => {
-                setActiveMethod('BIOMETRIC');
-                setErrorMessage(null);
-              }}
-              className={`py-2 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all ${
-                activeMethod === 'BIOMETRIC'
-                  ? 'bg-white dark:bg-[#131926] text-emerald-600 dark:text-[#00D4AA] shadow-sm'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white'
-              }`}
-            >
-              <Fingerprint className="w-4 h-4" />
-              <span>Biometric</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveMethod('PASSWORD');
-                setErrorMessage(null);
-              }}
-              className={`py-2 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all ${
-                activeMethod === 'PASSWORD'
-                  ? 'bg-white dark:bg-[#131926] text-indigo-600 dark:text-indigo-400 shadow-sm'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white'
-              }`}
-            >
-              <KeyRound className="w-4 h-4" />
-              <span>Password / PIN</span>
-            </button>
-          </div>
-        )}
+        {/* Method Selector: OS Biometrics vs Password/PIN */}
+        <div className="grid grid-cols-2 p-1 bg-slate-100 dark:bg-[#1C2333] rounded-2xl gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveMethod('OS_BIOMETRIC');
+              setErrorMessage(null);
+            }}
+            className={`py-2 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all ${
+              activeMethod === 'OS_BIOMETRIC'
+                ? 'bg-white dark:bg-[#131926] text-emerald-600 dark:text-[#00D4AA] shadow-sm'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white'
+            }`}
+          >
+            <Fingerprint className="w-4 h-4" />
+            <span>Fingerprint (OS)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveMethod('PASSWORD');
+              setErrorMessage(null);
+            }}
+            className={`py-2 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all ${
+              activeMethod === 'PASSWORD'
+                ? 'bg-white dark:bg-[#131926] text-indigo-600 dark:text-indigo-400 shadow-sm'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white'
+            }`}
+          >
+            <KeyRound className="w-4 h-4" />
+            <span>Password / PIN</span>
+          </button>
+        </div>
 
-        {/* METHOD 1: Fingerprint Sensor */}
-        {activeMethod === 'BIOMETRIC' && (
+        {/* METHOD 1: OS Biometric Sensor Authentication */}
+        {activeMethod === 'OS_BIOMETRIC' && (
           <div className="py-2 flex flex-col items-center justify-center">
             <button
-              onClick={handleStartFingerprintScan}
-              disabled={scanState === 'SCANNING' || scanState === 'SUCCESS'}
+              onClick={handleTriggerOSBiometricPrompt}
+              disabled={scanState === 'OS_PROMPTING' || scanState === 'SUCCESS'}
               className={`relative w-24 h-24 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 group ${
-                scanState === 'SCANNING'
+                scanState === 'OS_PROMPTING'
                   ? 'bg-emerald-500/20 border-4 border-emerald-500 scale-105 shadow-xl shadow-emerald-500/30'
                   : scanState === 'SUCCESS'
                   ? 'bg-emerald-500 text-white border-4 border-emerald-400 scale-110 shadow-2xl shadow-emerald-500/50'
@@ -244,8 +265,7 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
                   : 'bg-slate-100 dark:bg-[#1C2333] border-4 border-slate-200 dark:border-[#1E2D40] text-emerald-600 dark:text-[#00D4AA] hover:border-emerald-500 hover:scale-105 shadow-lg'
               }`}
             >
-              {/* Pulsing ring during scan */}
-              {scanState === 'SCANNING' && (
+              {scanState === 'OS_PROMPTING' && (
                 <span className="absolute inset-0 rounded-full border-4 border-emerald-400 animate-ping opacity-75" />
               )}
 
@@ -254,35 +274,34 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
               ) : scanState === 'ERROR' ? (
                 <AlertCircle className="w-12 h-12 animate-shake" />
               ) : (
-                <Fingerprint className={`w-12 h-12 transition-transform group-hover:scale-110 ${scanState === 'SCANNING' ? 'animate-pulse text-emerald-500' : ''}`} />
+                <Fingerprint
+                  className={`w-12 h-12 transition-transform group-hover:scale-110 ${
+                    scanState === 'OS_PROMPTING' ? 'animate-pulse text-emerald-500' : ''
+                  }`}
+                />
               )}
             </button>
 
-            <p className="text-xs font-mono font-bold mt-3 text-slate-700 dark:text-slate-200">
-              {scanState === 'SCANNING' && 'Scanning sensor...'}
-              {scanState === 'SUCCESS' && 'Verified! Unlocking session...'}
-              {scanState === 'ERROR' && 'Verification Error'}
-              {scanState === 'IDLE' && 'Tap sensor button to scan'}
+            <p className="text-xs font-mono font-bold mt-3 text-slate-700 dark:text-slate-200 max-w-xs">
+              {scanState === 'OS_PROMPTING' && 'Waiting for OS sensor touch...'}
+              {scanState === 'SUCCESS' && '✅ Authentication successful'}
+              {scanState === 'ERROR' && '❌ Authentication failed/cancelled'}
+              {scanState === 'IDLE' && 'Touch sensor or tap to verify'}
             </p>
 
-            {enrolledCred ? (
-              <span className="mt-1 text-[10px] text-emerald-600 dark:text-[#00D4AA] font-bold bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
-                ✓ Active ({enrolledCred.deviceLabel})
-              </span>
-            ) : (
-              <span className="mt-1 text-[10px] text-amber-600 dark:text-amber-400 font-bold bg-amber-50 dark:bg-amber-950/50 px-2.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-800">
-                ⚡ Biometric Key Ready
-              </span>
-            )}
+            <div className="mt-2 flex items-center justify-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+              <Cpu className="w-3 h-3 text-emerald-500" />
+              <span>OS Biometric API: {osProvider.promptName}</span>
+            </div>
           </div>
         )}
 
-        {/* METHOD 2: Password / Security PIN Form */}
+        {/* METHOD 2: Fallback Password / Master PIN Form */}
         {activeMethod === 'PASSWORD' && (
           <form onSubmit={handlePasswordUnlock} className="space-y-4 py-1 text-left">
             <div className="space-y-1.5">
               <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                Account Password or Master PIN
+                Account Password or Master 4-Digit PIN
               </label>
               <div className="relative">
                 <input
@@ -303,7 +322,7 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
                 </button>
               </div>
               <p className="text-[10px] text-slate-400 dark:text-slate-500">
-                Accepts user login password or Master Security PIN.
+                Fallback: Accepts password or Master PIN (default: 1234).
               </p>
             </div>
 
@@ -320,7 +339,7 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
               ) : (
                 <>
                   <KeyRound className="w-3.5 h-3.5" />
-                  <span>Unlock Active Session</span>
+                  <span>Verify with Password / PIN</span>
                 </>
               )}
             </button>
@@ -336,51 +355,30 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
 
         {/* Footer info & alternative option */}
         <div className="pt-2 border-t border-slate-100 dark:border-[#1E2D40] space-y-2">
-          {mode === 'SESSION_UNLOCK' ? (
-            <div className="flex items-center justify-between gap-2 text-xs">
-              {activeMethod === 'BIOMETRIC' ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveMethod('PASSWORD');
-                    setErrorMessage(null);
-                  }}
-                  className="py-1.5 px-3 rounded-xl border border-slate-200 dark:border-[#1E2D40] text-slate-700 dark:text-slate-300 font-bold text-[11px] hover:bg-slate-100 dark:hover:bg-[#1C2333] flex items-center gap-1.5"
-                >
-                  <KeyRound className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>Enter Password / PIN</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveMethod('BIOMETRIC');
-                    setErrorMessage(null);
-                  }}
-                  className="py-1.5 px-3 rounded-xl border border-slate-200 dark:border-[#1E2D40] text-slate-700 dark:text-slate-300 font-bold text-[11px] hover:bg-slate-100 dark:hover:bg-[#1C2333] flex items-center gap-1.5"
-                >
-                  <Fingerprint className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>Touch Sensor</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={handleSafeExitOrLogout}
-                className="py-1.5 px-3 rounded-xl text-rose-600 dark:text-rose-400 font-bold text-[11px] hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-1.5"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>Log Out</span>
-              </button>
-            </div>
+          {activeMethod === 'OS_BIOMETRIC' ? (
+            <button
+              type="button"
+              onClick={() => {
+                setActiveMethod('PASSWORD');
+                setErrorMessage(null);
+              }}
+              className="w-full py-2 rounded-xl border border-slate-200 dark:border-[#1E2D40] text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-100 dark:hover:bg-[#1C2333] flex items-center justify-center gap-1.5"
+            >
+              <KeyRound className="w-3.5 h-3.5 text-indigo-500" />
+              <span>Use Password / PIN Fallback</span>
+            </button>
           ) : (
             <button
               type="button"
-              onClick={onClose}
-              className="w-full py-2.5 rounded-xl border border-slate-200 dark:border-[#1E2D40] text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-100 dark:hover:bg-[#1C2333] flex items-center justify-center gap-1.5"
+              onClick={() => {
+                setActiveMethod('OS_BIOMETRIC');
+                setErrorMessage(null);
+                handleTriggerOSBiometricPrompt();
+              }}
+              className="w-full py-2 rounded-xl border border-slate-200 dark:border-[#1E2D40] text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-100 dark:hover:bg-[#1C2333] flex items-center justify-center gap-1.5"
             >
-              <KeyRound className="w-3.5 h-3.5 text-indigo-500" />
-              <span>Use Password Login Instead</span>
+              <Fingerprint className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Retry Phone Fingerprint Sensor</span>
             </button>
           )}
         </div>
@@ -389,4 +387,3 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
     </div>
   );
 };
-
