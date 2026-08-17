@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut, Gamepad2, Send, Sparkles, X, CheckCheck, Users, Lock, Shield, UserCheck, Plus } from 'lucide-react';
-import { UserProfile, UserRole, NavTab } from '../../types';
+import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut, Gamepad2, Send, Sparkles, X, CheckCheck } from 'lucide-react';
+import { UserProfile, NavTab } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 import { requestNotificationPermission, sendExternalNotification } from '../../lib/notifications';
 import { AppLogo } from '../common/AppLogo';
@@ -62,20 +62,15 @@ export const Header: React.FC<HeaderProps> = ({
   onManualRefresh,
   unreadChatCount = 0
 }) => {
-  const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const [pushSentMessage, setPushSentMessage] = useState<string | null>(null);
 
   const notifRef = useRef<HTMLDivElement>(null);
-  const roleRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
         setShowNotifMenu(false);
-      }
-      if (roleRef.current && !roleRef.current.contains(e.target as Node)) {
-        setShowRoleMenu(false);
       }
     };
 
@@ -107,18 +102,10 @@ export const Header: React.FC<HeaderProps> = ({
     }, 4000);
   };
 
-  const getRoleBadgeColor = (role: UserRole) => {
-    switch (role) {
-      case 'SuperAdmin': return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
-      case 'Admin': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-      case 'Partner': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
-    }
-  };
-
   return (
     <header className="sticky top-0 z-30 bg-white/90 dark:bg-[#0A0E1A]/90 backdrop-blur-md border-b border-slate-200/80 dark:border-[#1E2D40] px-4 py-3 transition-colors">
       <div className="max-w-6xl mx-auto flex items-center justify-between w-full">
-        {/* Left: Brand logo & interactive role/user selector */}
+        {/* Left: Brand logo */}
         <div className="flex items-center gap-3">
           <div
             onClick={() => {
@@ -129,160 +116,12 @@ export const Header: React.FC<HeaderProps> = ({
             title="Return to Dashboard"
           >
             <AppLogo size="md" className="group-hover:scale-105 transition-transform" />
-            <div className="hidden sm:block">
+            <div>
               <h1 className="text-sm font-bold text-slate-900 dark:text-[#F0F4FF] leading-tight group-hover:text-emerald-500 dark:group-hover:text-[#00D4AA] transition-colors">
                 Plus Game Zone
               </h1>
               <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">Financial ERP</p>
             </div>
-          </div>
-
-          {/* User Badge & Switcher Button */}
-          <div className="relative" ref={roleRef}>
-            <button
-              onClick={() => {
-                triggerHaptic('light');
-                setShowRoleMenu(!showRoleMenu);
-                setShowNotifMenu(false);
-              }}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] hover:border-emerald-500/50 dark:hover:border-[#00D4AA]/50 transition-all cursor-pointer text-left"
-              title="Switch user account or manage roles"
-            >
-              <div className="w-5 h-5 rounded-full bg-emerald-500/20 dark:bg-[#00D4AA]/20 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-[#00D4AA] text-[10px] font-extrabold shrink-0">
-                {currentUser.name.charAt(0)}
-              </div>
-              <div className="max-w-[90px] sm:max-w-[120px] truncate">
-                <span className="text-[11px] font-bold text-slate-800 dark:text-white block truncate leading-tight">
-                  {currentUser.name}
-                </span>
-                <span className={`text-[8px] font-mono px-1 py-0.2 rounded border font-semibold inline-block leading-none ${getRoleBadgeColor(currentUser.role)}`}>
-                  {currentUser.role}
-                </span>
-              </div>
-              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showRoleMenu ? 'rotate-180' : ''}`} />
-            </button>
-
-            {/* Multi-User Switcher Dropdown Panel */}
-            {showRoleMenu && (
-              <div className="absolute top-11 left-0 bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#2A3B53] rounded-2xl shadow-2xl p-3 w-72 sm:w-80 z-50 animate-fadeIn space-y-2.5 text-slate-900 dark:text-white">
-                <div className="flex items-center justify-between border-b border-slate-200 dark:border-[#2A3B53] pb-2">
-                  <div className="flex items-center gap-1.5">
-                    <Users className="w-4 h-4 text-[#00D4AA]" />
-                    <h4 className="text-xs font-bold text-slate-900 dark:text-white">Multi-User Accounts</h4>
-                  </div>
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-[#1C2538] text-slate-600 dark:text-[#8899BB] border border-slate-200 dark:border-slate-700">
-                    {allUsers.length} Users
-                  </span>
-                </div>
-
-                <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
-                  {allUsers.map((u) => {
-                    const isCurrent = u.id === currentUser.id;
-                    return (
-                      <button
-                        key={u.id}
-                        onClick={() => {
-                          triggerHaptic('success');
-                          onSwitchUser(u);
-                          setShowRoleMenu(false);
-                        }}
-                        disabled={!u.active}
-                        className={`w-full p-2 rounded-xl border flex items-center justify-between transition-all text-left cursor-pointer ${
-                          isCurrent
-                            ? 'bg-emerald-500/10 border-emerald-500/40 text-slate-900 dark:text-white ring-1 ring-emerald-500/30'
-                            : u.active
-                            ? 'bg-slate-50 dark:bg-[#1C2538] border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 dark:hover:border-[#00D4AA]/40'
-                            : 'opacity-50 bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800 cursor-not-allowed'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 overflow-hidden">
-                          <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
-                            isCurrent
-                              ? 'bg-emerald-500 text-slate-950'
-                              : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
-                          }`}>
-                            {u.name.charAt(0)}
-                          </div>
-                          <div className="truncate">
-                            <div className="flex items-center gap-1">
-                              <p className="text-[11px] font-bold truncate leading-tight">{u.name}</p>
-                              {isCurrent && (
-                                <span className="text-[8px] font-bold text-emerald-600 dark:text-[#00D4AA] font-mono">
-                                  (Active)
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1 mt-0.5">
-                              <span className={`text-[8px] font-mono px-1 py-0.2 rounded border ${getRoleBadgeColor(u.role)}`}>
-                                {u.role}
-                              </span>
-                              <span className="text-[9px] text-slate-500 dark:text-[#8899BB] truncate">
-                                • {u.branch || 'Addis Ababa'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {isCurrent ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-[#00D4AA] shrink-0" />
-                        ) : (
-                          <span className="text-[10px] text-slate-500 hover:text-emerald-500 font-bold shrink-0">
-                            Switch
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Footer Quick Actions */}
-                <div className="pt-2 border-t border-slate-200 dark:border-[#2A3B53] flex items-center justify-between gap-2">
-                  {onNavigateTab && (
-                    <button
-                      onClick={() => {
-                        triggerHaptic('light');
-                        onNavigateTab('more');
-                        setShowRoleMenu(false);
-                      }}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-[#1C2538] hover:bg-slate-200 dark:hover:bg-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1 cursor-pointer transition-colors"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>Manage Users</span>
-                    </button>
-                  )}
-
-                  <div className="flex items-center gap-1.5 ml-auto">
-                    {onLockSession && (
-                      <button
-                        onClick={() => {
-                          triggerHaptic('medium');
-                          onLockSession();
-                          setShowRoleMenu(false);
-                        }}
-                        className="p-1.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
-                        title="Lock Screen"
-                      >
-                        <Lock className="w-3 h-3" />
-                      </button>
-                    )}
-
-                    {onLogout && (
-                      <button
-                        onClick={() => {
-                          triggerHaptic('medium');
-                          onLogout();
-                          setShowRoleMenu(false);
-                        }}
-                        className="p-1.5 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
-                        title="Log Out Session"
-                      >
-                        <LogOut className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -350,7 +189,6 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={() => {
                   triggerHaptic('medium');
                   setShowNotifMenu(!showNotifMenu);
-                  setShowRoleMenu(false);
                 }}
                 title="Operational Notifications & Alerts"
                 className="p-2 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-[#F0F4FF] transition-colors cursor-pointer relative"

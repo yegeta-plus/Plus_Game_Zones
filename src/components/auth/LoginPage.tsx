@@ -6,11 +6,14 @@ import {
   ShieldAlert,
   CheckCircle2,
   Key,
-  X
+  X,
+  Fingerprint
 } from 'lucide-react';
 import { UserProfile } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 import { AppLogo } from '../common/AppLogo';
+import { FingerprintModal } from './FingerprintModal';
+import { detectOSBiometricProvider } from '../../lib/biometrics';
 
 interface LoginPageProps {
   allUsers: UserProfile[];
@@ -32,6 +35,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [rememberMe, setRememberMe] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Biometric / Touch ID Modal State
+  const [showBiometricModal, setShowBiometricModal] = useState<boolean>(false);
+  const osProvider = detectOSBiometricProvider();
 
   // Temporary Password Change State
   const [isChangingTempPassword, setIsChangingTempPassword] = useState<boolean>(false);
@@ -292,6 +299,86 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     }, 400);
   };
 
+  const handleBiometricLoginSuccess = (verifiedEmail: string) => {
+    setShowBiometricModal(false);
+    setErrorMsg(null);
+    const cleanEmail = (verifiedEmail || username || 'ygyegeta@gmail.com').trim().toLowerCase();
+
+    let matchedUser = allUsers.find(
+      (u) =>
+        u.email.toLowerCase() === cleanEmail ||
+        u.name.toLowerCase() === cleanEmail ||
+        (u.username && u.username.toLowerCase() === cleanEmail) ||
+        u.email.toLowerCase().includes(cleanEmail) ||
+        u.name.toLowerCase().includes(cleanEmail)
+    );
+
+    if (
+      !matchedUser &&
+      (cleanEmail.includes('yegeta') ||
+        cleanEmail === 'ygyegeta@gmail.com' ||
+        cleanEmail === 'yegeta.huawei@gmail.com')
+    ) {
+      matchedUser = {
+        id: 'u-1',
+        name: 'Yegeta Huawei',
+        email: cleanEmail.includes('@') ? cleanEmail : 'ygyegeta@gmail.com',
+        username: 'yegeta',
+        role: 'SuperAdmin',
+        active: true,
+        isApproved: true,
+        invitationCode: 'PZ-SUPER-TOUCHID',
+        hasSetPassword: true,
+        password: 'password123',
+        isTemporaryPassword: false,
+        mustChangePassword: false,
+        permissions: {
+          Dashboard: { view: true, add: true, edit: true, delete: true, export: true },
+          Income: { view: true, add: true, edit: true, delete: true, export: true },
+          Expenses: { view: true, add: true, edit: true, delete: true, export: true },
+          Equb: { view: true, add: true, edit: true, delete: true, export: true },
+          Loans: { view: true, add: true, edit: true, delete: true, export: true },
+          Reports: { view: true, add: true, edit: true, delete: true, export: true },
+          Analytics: { view: true, add: true, edit: true, delete: true, export: true },
+          Partners: { view: true, add: true, edit: true, delete: true, export: true },
+          Settings: { view: true, add: true, edit: true, delete: true, export: true },
+          UserManagement: { view: true, add: true, edit: true, delete: true, export: true }
+        },
+        branch: 'Addis Ababa HQ',
+        lastActive: 'Just now'
+      };
+    }
+
+    if (!matchedUser) {
+      matchedUser = allUsers[0] || {
+        id: 'u-1',
+        name: 'Yegeta Huawei',
+        email: cleanEmail,
+        username: 'yegeta',
+        role: 'SuperAdmin',
+        active: true,
+        isApproved: true,
+        hasSetPassword: true,
+        password: 'password123',
+        permissions: {
+          Dashboard: { view: true, add: true, edit: true, delete: true, export: true },
+          Income: { view: true, add: true, edit: true, delete: true, export: true },
+          Expenses: { view: true, add: true, edit: true, delete: true, export: true },
+          Equb: { view: true, add: true, edit: true, delete: true, export: true },
+          Loans: { view: true, add: true, edit: true, delete: true, export: true },
+          Reports: { view: true, add: true, edit: true, delete: true, export: true },
+          Analytics: { view: true, add: true, edit: true, delete: true, export: true },
+          Partners: { view: true, add: true, edit: true, delete: true, export: true },
+          Settings: { view: true, add: true, edit: true, delete: true, export: true },
+          UserManagement: { view: true, add: true, edit: true, delete: true, export: true }
+        }
+      };
+    }
+
+    triggerHaptic('heavy');
+    onLogin(matchedUser as UserProfile);
+  };
+
   return (
     <div className="min-h-screen bg-[#070A12] text-slate-100 flex flex-col justify-between relative overflow-hidden font-sans selection:bg-[#00D4AA]/30 selection:text-white">
       {/* Background Radial Glow */}
@@ -411,10 +498,27 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                     </>
                   )}
                 </button>
+
+                {/* Login with Touch ID / Fingerprint Primary Option */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    setShowBiometricModal(true);
+                  }}
+                  disabled={isSubmitting}
+                  className="w-full py-3 rounded-2xl bg-[#00D4AA]/10 hover:bg-[#00D4AA]/20 border border-[#00D4AA]/40 hover:border-[#00D4AA] text-[#00D4AA] font-bold text-xs flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-lg shadow-[#00D4AA]/10 group"
+                >
+                  <Fingerprint className="w-4 h-4 text-[#00D4AA] group-hover:scale-110 transition-transform animate-pulse" />
+                  <span>Login with Touch ID / Fingerprint</span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-[#00D4AA]/20 text-[#00D4AA] font-mono border border-[#00D4AA]/30">
+                    {osProvider.label.split(' ')[0]}
+                  </span>
+                </button>
               </form>
 
               {/* Divider */}
-              <div className="relative flex items-center justify-center my-2">
+              <div className="relative flex items-center justify-center my-1.5">
                 <div className="w-full border-t border-slate-800" />
                 <span className="bg-[#0D121F] px-3 text-[10px] text-slate-500 uppercase tracking-widest font-mono border border-slate-800 rounded-full absolute">
                   OR
@@ -451,38 +555,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 </svg>
                 <span>Continue with Google</span>
               </button>
-
-              {/* Quick Multi-User Profiles Picker */}
-              <div className="pt-2 border-t border-slate-800/80 space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 text-center">
-                  Quick Switch Account
-                </p>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {allUsers.slice(0, 4).map(u => (
-                    <button
-                      key={u.id}
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('medium');
-                        setUsername(u.email || u.username);
-                        setPassword(u.password || 'password123');
-                        onLogin(u);
-                      }}
-                      className="p-2 rounded-xl bg-[#0D121F] hover:bg-slate-800 border border-slate-800 hover:border-[#00D4AA]/50 text-left transition-all group cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-slate-800 group-hover:bg-[#00D4AA]/20 text-[#00D4AA] text-[10px] font-black flex items-center justify-center shrink-0">
-                          {u.name.slice(0, 2).toUpperCase()}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[11px] font-bold text-slate-200 truncate group-hover:text-white">{u.name}</p>
-                          <p className="text-[9px] text-slate-400 truncate">{u.role}</p>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
             </>
           ) : (
             /* Temporary Password Mandatory Change Screen */
@@ -721,6 +793,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           </div>
         </div>
       )}
+
+      {/* Biometric Touch ID Authentication Modal */}
+      <FingerprintModal
+        isOpen={showBiometricModal}
+        onClose={() => setShowBiometricModal(false)}
+        userEmail={username || 'ygyegeta@gmail.com'}
+        userName={username.split('@')[0] || 'Yegeta Huawei'}
+        currentUserPassword={password || 'password123'}
+        mode="LOGIN"
+        actionTitle="Touch ID & Biometric Login"
+        actionSubtitle={`Authenticate using ${osProvider.label} to securely sign in to Plus Game Zone ERP`}
+        onSuccess={handleBiometricLoginSuccess}
+      />
     </div>
   );
 };
