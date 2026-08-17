@@ -60,6 +60,7 @@ interface EqubViewProps {
   onDeleteLoan?: (loanId: string) => void;
   onRepayLoan?: (loanId: string, walletId: string, amount: number) => void;
   onCreateReceivable?: (receivable: Omit<Receivable, 'id' | 'amountCollected' | 'status' | 'createdDate'>) => void;
+  onUpdateReceivable?: (receivableId: string, updates: Partial<Receivable>) => void;
   onCollectReceivable?: (receivableId: string, walletId: string, amount: number) => void;
   onDeleteReceivable?: (receivableId: string) => void;
   onRequestApproval?: (req: Omit<AdminApprovalRequest, 'id' | 'createdAt' | 'requestedBy' | 'requestedByName' | 'status'>) => void;
@@ -88,6 +89,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
   onDeleteLoan,
   onRepayLoan,
   onCreateReceivable,
+  onUpdateReceivable,
   onCollectReceivable,
   onDeleteReceivable,
   onRequestApproval,
@@ -144,9 +146,16 @@ export const EqubView: React.FC<EqubViewProps> = ({
   const [editLoanAmount, setEditLoanAmount] = useState('');
   const [editLoanDueDate, setEditLoanDueDate] = useState('');
 
+  const [editingReceivable, setEditingReceivable] = useState<Receivable | null>(null);
+  const [editReceivableCustomerName, setEditReceivableCustomerName] = useState('');
+  const [editReceivableDescription, setEditReceivableDescription] = useState('');
+  const [editReceivableAmountOwed, setEditReceivableAmountOwed] = useState('');
+  const [editReceivableDueDate, setEditReceivableDueDate] = useState('');
+  const [editReceivableStatus, setEditReceivableStatus] = useState<Receivable['status']>('OUTSTANDING');
+
   // Co-Admin Confirmation Modal State
   const [pendingAdminAction, setPendingAdminAction] = useState<{
-    type: 'EDIT_EQUB' | 'DELETE_EQUB' | 'EDIT_LOAN' | 'DELETE_LOAN' | 'DELETE_RECEIVABLE';
+    type: 'EDIT_EQUB' | 'DELETE_EQUB' | 'EDIT_LOAN' | 'DELETE_LOAN' | 'EDIT_RECEIVABLE' | 'DELETE_RECEIVABLE';
     targetId: string;
     targetTitle: string;
     payload?: any;
@@ -177,8 +186,17 @@ export const EqubView: React.FC<EqubViewProps> = ({
     setEditLoanDueDate(ln.dueDate.split('T')[0]);
   };
 
+  const startEditReceivable = (rcv: Receivable) => {
+    setEditingReceivable(rcv);
+    setEditReceivableCustomerName(rcv.customerName);
+    setEditReceivableDescription(rcv.description || '');
+    setEditReceivableAmountOwed(rcv.amountOwed.toString());
+    setEditReceivableDueDate(rcv.dueDate ? rcv.dueDate.split('T')[0] : '');
+    setEditReceivableStatus(rcv.status);
+  };
+
   const executeOrConfirmAction = (
-    type: 'EDIT_EQUB' | 'DELETE_EQUB' | 'EDIT_LOAN' | 'DELETE_LOAN' | 'DELETE_RECEIVABLE',
+    type: 'EDIT_EQUB' | 'DELETE_EQUB' | 'EDIT_LOAN' | 'DELETE_LOAN' | 'EDIT_RECEIVABLE' | 'DELETE_RECEIVABLE',
     targetId: string,
     targetTitle: string,
     payload?: any
@@ -192,7 +210,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
   };
 
   const performDirectAction = (
-    type: 'EDIT_EQUB' | 'DELETE_EQUB' | 'EDIT_LOAN' | 'DELETE_LOAN' | 'DELETE_RECEIVABLE',
+    type: 'EDIT_EQUB' | 'DELETE_EQUB' | 'EDIT_LOAN' | 'DELETE_LOAN' | 'EDIT_RECEIVABLE' | 'DELETE_RECEIVABLE',
     targetId: string,
     payload?: any
   ) => {
@@ -204,11 +222,14 @@ export const EqubView: React.FC<EqubViewProps> = ({
       onUpdateLoan(targetId, payload);
     } else if (type === 'DELETE_LOAN' && onDeleteLoan) {
       onDeleteLoan(targetId);
+    } else if (type === 'EDIT_RECEIVABLE' && onUpdateReceivable) {
+      onUpdateReceivable(targetId, payload);
     } else if (type === 'DELETE_RECEIVABLE' && onDeleteReceivable) {
       onDeleteReceivable(targetId);
     }
     setEditingEqub(null);
     setEditingLoan(null);
+    setEditingReceivable(null);
     setPendingAdminAction(null);
   };
 
@@ -489,9 +510,11 @@ export const EqubView: React.FC<EqubViewProps> = ({
     const amt = parseFloat(collectRcvAmount);
     if (isNaN(amt) || amt <= 0) return;
 
+    const resolvedWalletId = collectRcvWalletId || wallets.find(w => w.isDefault)?.id || wallets[0]?.id || 'w-cash';
+
     triggerHaptic('success');
     if (onCollectReceivable) {
-      onCollectReceivable(activeCollectRcvModal.id, collectRcvWalletId, amt);
+      onCollectReceivable(activeCollectRcvModal.id, resolvedWalletId, amt);
     }
 
     setActiveCollectRcvModal(null);
@@ -1332,24 +1355,39 @@ export const EqubView: React.FC<EqubViewProps> = ({
                             {hideBalances ? '••••••' : formatETB(outstanding)}
                           </p>
                         </div>
-                        {onDeleteReceivable && (currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              triggerHaptic('warning');
-                              const activeOtherUsers = (users || []).filter(u => u.id !== currentUser.id && u.active !== false);
-                              if (activeOtherUsers.length > 0) {
-                                executeOrConfirmAction('DELETE_RECEIVABLE', rcv.id, `Receivable: ${rcv.customerName} (ETB ${rcv.amountOwed.toLocaleString()})`);
-                              } else if (onDeleteReceivable) {
-                                onDeleteReceivable(rcv.id);
-                              }
-                            }}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors cursor-pointer"
-                            title="Delete Receivable"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
+                        <div className="flex items-center gap-1 pl-1 border-l border-slate-200 dark:border-[#1E2D40]">
+                          {onUpdateReceivable && (currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                triggerHaptic('light');
+                                startEditReceivable(rcv);
+                              }}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-colors cursor-pointer"
+                              title="Edit Receivable"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                          )}
+                          {onDeleteReceivable && (currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                triggerHaptic('warning');
+                                const activeOtherUsers = (users || []).filter(u => u.id !== currentUser.id && u.active !== false);
+                                if (activeOtherUsers.length > 0) {
+                                  executeOrConfirmAction('DELETE_RECEIVABLE', rcv.id, `Receivable: ${rcv.customerName} (ETB ${rcv.amountOwed.toLocaleString()})`);
+                                } else if (onDeleteReceivable) {
+                                  onDeleteReceivable(rcv.id);
+                                }
+                              }}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors cursor-pointer"
+                              title="Delete Receivable"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -2341,6 +2379,124 @@ export const EqubView: React.FC<EqubViewProps> = ({
                   className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-xs font-bold text-white shadow-md hover:bg-indigo-700 cursor-pointer"
                 >
                   Save Loan Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Edit Receivable Invoice */}
+      {editingReceivable && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] w-full max-w-md p-5 rounded-2xl space-y-4 text-slate-900 dark:text-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-[#1E2D40] pb-3">
+              <h3 className="text-sm font-bold flex items-center gap-2">
+                <Edit className="w-4 h-4 text-blue-600 dark:text-[#3B82F6]" />
+                <span>Edit Receivable Invoice</span>
+              </h3>
+              <button onClick={() => setEditingReceivable(null)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-[#1C2333]">
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const amt = parseFloat(editReceivableAmountOwed);
+              if (isNaN(amt) || amt <= 0) return;
+
+              executeOrConfirmAction('EDIT_RECEIVABLE', editingReceivable.id, editReceivableCustomerName, {
+                customerName: editReceivableCustomerName,
+                description: editReceivableDescription,
+                amountOwed: amt,
+                dueDate: editReceivableDueDate ? new Date(editReceivableDueDate).toISOString() : editingReceivable.dueDate,
+                status: editReceivableStatus
+              });
+            }} className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Customer / Debtor Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editReceivableCustomerName}
+                  onChange={e => setEditReceivableCustomerName(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Description / Goods Supplied</label>
+                <input
+                  type="text"
+                  value={editReceivableDescription}
+                  onChange={e => setEditReceivableDescription(e.target.value)}
+                  placeholder="e.g. VIP Gaming Hours & Drinks"
+                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Total Owed (ETB)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="any"
+                    required
+                    value={editReceivableAmountOwed}
+                    onChange={e => setEditReceivableAmountOwed(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Due Date</label>
+                  <input
+                    type="date"
+                    value={editReceivableDueDate}
+                    onChange={e => setEditReceivableDueDate(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Status</label>
+                <select
+                  value={editReceivableStatus}
+                  onChange={e => setEditReceivableStatus(e.target.value as Receivable['status'])}
+                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none"
+                >
+                  <option value="OUTSTANDING">OUTSTANDING (Active)</option>
+                  <option value="COLLECTED">COLLECTED (Fully Paid)</option>
+                  <option value="LATE">LATE (&gt;15 Days)</option>
+                  <option value="OVERDUE">OVERDUE</option>
+                  <option value="WRITTEN_OFF">WRITTEN OFF</option>
+                </select>
+              </div>
+
+              {otherAdmins.length > 0 ? (
+                <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300">
+                  🛡️ <strong>Co-Admin Rule:</strong> Saving changes will prompt co-admin confirmation.
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30 text-[11px] text-purple-800 dark:text-purple-300">
+                  ⚡ <strong>SuperAdmin Direct Execution:</strong> No other active admins exist in system. Direct save authorized.
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingReceivable(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] text-xs font-bold text-slate-600 dark:text-[#8899BB]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-blue-600 text-xs font-bold text-white shadow-md hover:bg-blue-700 cursor-pointer"
+                >
+                  Save Receivable Changes
                 </button>
               </div>
             </form>

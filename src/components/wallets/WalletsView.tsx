@@ -18,7 +18,8 @@ import {
   ShieldCheck,
   Upload,
   Image,
-  X
+  X,
+  Lock
 } from 'lucide-react';
 import { Wallet, Transaction, Transfer, UserProfile, TransactionType } from '../../types';
 import { calculateWalletBalance, formatETB, isOverdraftAllowed, isWalletActive } from '../../lib/store';
@@ -753,13 +754,13 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
         })}
       </div>
 
-      {/* Selected Wallet Ledger History */}
+      {/* Selected Wallet Ledger History & Quick Actions */}
       {selectedWallet && (
         <div
           className="bg-white dark:bg-[#131926] border rounded-2xl p-4 space-y-3 transition-colors shadow-sm"
           style={{ borderColor: `${selectedWallet.color}40` }}
         >
-          <div className="flex items-center justify-between border-b border-slate-200 dark:border-[#1E2D40] pb-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-[#1E2D40] pb-2.5 gap-2">
             <h3 className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF] flex items-center gap-2">
               <div
                 className="w-5 h-5 rounded-md flex items-center justify-center"
@@ -769,15 +770,52 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
               </div>
               <span>{selectedWallet.name} — Recent Activity ({walletTxs.length})</span>
             </h3>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span
                 className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-50 dark:bg-[#1C2333] border"
                 style={{ color: selectedWallet.color, borderColor: `${selectedWallet.color}30` }}
               >
-                Current: {formatETB(selectedBal)}
+                Current: {hideBalances ? '••••••••' : formatETB(selectedBal)}
               </span>
 
-              {/* Add Transaction removed from wallet page as requested */}
+              {onOpenQuickEntry && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    onOpenQuickEntry(selectedWallet.id);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                  title="Deposit or record money in this wallet"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Deposit / Record</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  onOpenTransferModal();
+                }}
+                className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                title="Transfer funds between wallets"
+              >
+                <ArrowRightLeft className="w-3 h-3" />
+                <span>Transfer</span>
+              </button>
+
+              {onUpdateWallet && (currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
+                <button
+                  type="button"
+                  onClick={() => openEditModal(selectedWallet)}
+                  className="p-1 rounded-lg bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-500 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+                  title="Edit Wallet Settings"
+                >
+                  <Palette className="w-3 h-3" style={{ color: selectedWallet.color }} />
+                </button>
+              )}
             </div>
           </div>
 

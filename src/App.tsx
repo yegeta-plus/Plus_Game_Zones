@@ -30,7 +30,7 @@ import {
   syncStateToFirebaseNow,
   fetchLatestFirebaseState
 } from './lib/firebase';
-import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest, ChatMessage, ChatChannel } from './types';
+import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest, ChatMessage, ChatChannel, AuditLogEntry } from './types';
 import { CheckCircle2, Sparkles } from 'lucide-react';
 import { triggerHaptic } from './lib/haptics';
 import { FingerprintModal } from './components/auth/FingerprintModal';
@@ -55,13 +55,15 @@ export default function App() {
     } catch (e) {}
   }, []);
 
-  const handleNavigateTab = (tab: TabType, subView?: SubViewType) => {
+  const handleNavigateTab = (tab: TabType, subView?: SubViewType | string) => {
     setActiveTab(tab);
     if (tab === 'chat') {
       markChatAsRead();
     }
     if (tab === 'more') {
-      setMoreSubView(subView || 'HUB');
+      const raw = subView || 'HUB';
+      const upper = raw.toUpperCase() as SubViewType;
+      setMoreSubView(upper);
     }
   };
 
@@ -353,10 +355,9 @@ export default function App() {
   }) => {
     const targetWallet = state.wallets.find(w => w.id === data.walletId);
 
-    // If Sale on Credit is toggled, also generate a Receivable entry for tracking
-    let newReceivable: Receivable | null = null;
+    // If Sale on Credit is toggled, only record the Receivable debt entry without posting uncollected money to the wallet ledger
     if (data.isCreditSale && data.customerName) {
-      newReceivable = {
+      const newReceivable: Receivable = {
         id: `rcv-${Date.now()}`,
         customerName: data.customerName,
         description: data.description || `Credit Sale - ${data.category}`,
@@ -364,13 +365,43 @@ export default function App() {
         amountCollected: 0,
         status: 'OUTSTANDING',
         dueDate: data.dueDate || new Date(Date.now() + 86400000 * 14).toISOString(),
-        createdDate: data.date || new Date().toISOString()
+        createdDate: data.date || new Date().toISOString(),
+        walletId: data.walletId
       };
-    }
 
-    const txDescription = data.isCreditSale && data.customerName
-      ? `[Sale on Credit - Customer: ${data.customerName}] ${data.description}`
-      : data.description;
+      const newAuditLog = {
+        id: `aud-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        actorId: state.currentUser.id,
+        actorName: state.currentUser.name,
+        action: 'CREATE_RECEIVABLE',
+        entity: 'Receivable',
+        entityId: newReceivable.id,
+        diffAfter: {
+          customerName: data.customerName,
+          amountOwed: data.amount,
+          category: data.category,
+          dueDate: newReceivable.dueDate,
+          isCreditSale: true,
+          walletId: data.walletId,
+          walletName: targetWallet?.name
+        },
+        branch: state.currentUser.branch
+      };
+
+      setState(prev => ({
+        ...prev,
+        receivables: [newReceivable, ...prev.receivables],
+        auditLogs: [newAuditLog, ...prev.auditLogs]
+      }));
+
+      triggerToast(`📋 Credit Sale recorded for ${data.customerName}! Saved to Receivables ledger (Wallet balance unchanged until collected).`);
+      sendExternalNotification('PlusZone ERP - Credit Sale 📋', {
+        body: `Credit Sale of ${formatETB(data.amount)} recorded for customer ${data.customerName}. Money will enter wallet when collected.`
+      });
+      performRefresh(true);
+      return;
+    }
 
     const newTx: Transaction = {
       id: `tx-${Date.now()}`,
@@ -379,12 +410,10 @@ export default function App() {
       amount: data.amount,
       walletId: data.walletId,
       category: data.category,
-      description: txDescription,
+      description: data.description,
       creatorId: state.currentUser.id,
       creatorName: state.currentUser.name,
-      branch: state.currentUser.branch,
-      refType: data.isCreditSale ? 'RECEIVABLE' : undefined,
-      refId: newReceivable?.id
+      branch: state.currentUser.branch
     };
 
     const newAuditLog = {
@@ -402,21 +431,13 @@ export default function App() {
     setState(prev => ({
       ...prev,
       transactions: [newTx, ...prev.transactions],
-      receivables: newReceivable ? [newReceivable, ...prev.receivables] : prev.receivables,
       auditLogs: [newAuditLog, ...prev.auditLogs]
     }));
 
-    if (data.isCreditSale) {
-      triggerToast(`📋 Credit Sale recorded for ${data.customerName}! Saved to Receivables ledger.`);
-      sendExternalNotification('PlusZone ERP - Credit Sale 📋', {
-        body: `Credit Sale of ${formatETB(data.amount)} recorded for customer ${data.customerName}.`
-      });
-    } else {
-      triggerToast(`${formatETB(data.amount)} ${(data.type || '').toLowerCase()} logged to ${targetWallet?.name || 'wallet'}`);
-      sendExternalNotification(`PlusZone ERP - ${data.type === 'INCOME' ? 'Income' : 'Expense'} Logged 💰`, {
-        body: `${formatETB(data.amount)} ${data.type.toLowerCase()} logged to ${targetWallet?.name || 'wallet'} (${data.category}).`
-      });
-    }
+    triggerToast(`${formatETB(data.amount)} ${(data.type || '').toLowerCase()} logged to ${targetWallet?.name || 'wallet'}`);
+    sendExternalNotification(`PlusZone ERP - ${data.type === 'INCOME' ? 'Income' : 'Expense'} Logged 💰`, {
+      body: `${formatETB(data.amount)} ${data.type.toLowerCase()} logged to ${targetWallet?.name || 'wallet'} (${data.category}).`
+    });
     performRefresh(true);
   };
 
@@ -790,44 +811,88 @@ export default function App() {
     const created: Wallet = {
       ...newW,
       id: `w-${Date.now()}`,
+      openingBalance: Number(newW.openingBalance) || 0,
       totalIn: 0,
       totalOut: 0
+    };
+
+    const newAuditLog = {
+      id: `aud-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      actorId: state.currentUser.id,
+      actorName: state.currentUser.name,
+      action: 'CREATE_WALLET',
+      entity: 'Wallet',
+      entityId: created.id,
+      diffAfter: { name: created.name, type: created.type, openingBalance: created.openingBalance },
+      branch: state.currentUser.branch
     };
 
     setState(prev => {
       const updated = {
         ...prev,
-        wallets: [...prev.wallets, created]
+        wallets: [...prev.wallets, created],
+        auditLogs: [newAuditLog, ...(prev.auditLogs || [])]
       };
       saveStateToStorage(updated);
       syncStateToFirebaseNow(updated);
       return updated;
     });
 
-    triggerToast(`Wallet "${created.name}" initialized.`);
+    triggerToast(`✓ Wallet "${created.name}" initialized.`);
+    performRefresh(true);
   };
 
   const handleUpdateWallet = (walletId: string, updates: Partial<Wallet>) => {
+    const target = state.wallets.find(w => w.id === walletId);
+    const newAuditLog = {
+      id: `aud-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      actorId: state.currentUser.id,
+      actorName: state.currentUser.name,
+      action: 'UPDATE_WALLET',
+      entity: 'Wallet',
+      entityId: walletId,
+      diffBefore: target,
+      diffAfter: { ...target, ...updates },
+      branch: state.currentUser.branch
+    };
+
     setState(prev => {
       const updated = {
         ...prev,
-        wallets: prev.wallets.map(w => w.id === walletId ? { ...w, ...updates } : w)
+        wallets: prev.wallets.map(w => w.id === walletId ? { ...w, ...updates } : w),
+        auditLogs: [newAuditLog, ...(prev.auditLogs || [])]
       };
       saveStateToStorage(updated);
       syncStateToFirebaseNow(updated);
       return updated;
     });
-    triggerToast(`Wallet settings updated.`);
+    triggerToast(`Wallet "${updates.name || target?.name || 'settings'}" updated.`);
+    performRefresh(true);
   };
 
   const handleDeleteWallet = (walletId: string) => {
     const targetWallet = state.wallets.find(w => w.id === walletId);
     if (!targetWallet) return;
 
+    const newAuditLog = {
+      id: `aud-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      actorId: state.currentUser.id,
+      actorName: state.currentUser.name,
+      action: 'DELETE_WALLET',
+      entity: 'Wallet',
+      entityId: walletId,
+      diffAfter: { deleted: true, name: targetWallet.name },
+      branch: state.currentUser.branch
+    };
+
     setState(prev => {
       const updated = {
         ...prev,
-        wallets: prev.wallets.filter(w => w.id !== walletId)
+        wallets: prev.wallets.filter(w => w.id !== walletId),
+        auditLogs: [newAuditLog, ...(prev.auditLogs || [])]
       };
       saveStateToStorage(updated);
       syncStateToFirebaseNow(updated);
@@ -835,6 +900,7 @@ export default function App() {
     });
 
     triggerToast(`🗑️ Wallet "${targetWallet.name}" removed.`);
+    performRefresh(true);
   };
 
   // 7. Add Equb
@@ -995,7 +1061,12 @@ export default function App() {
     const target = state.receivables.find(r => r.id === receivableId);
     if (!target) return;
 
-    const newCollected = target.amountCollected + amount;
+    // Resolve target wallet with safe fallback
+    const targetWallet = state.wallets.find(w => w.id === walletId) || state.wallets.find(w => w.isDefault) || state.wallets[0];
+    const resolvedWalletId = targetWallet?.id || walletId || 'w-cash';
+    const walletName = targetWallet?.name || 'Wallet';
+
+    const newCollected = (target.amountCollected || 0) + amount;
     const isFull = newCollected >= target.amountOwed;
 
     const newTx: Transaction = {
@@ -1003,9 +1074,9 @@ export default function App() {
       date: new Date().toISOString(),
       type: 'INCOME',
       amount,
-      walletId,
+      walletId: resolvedWalletId,
       category: 'Sales Revenue',
-      description: `Collected customer debt: ${target.customerName} (${target.description})`,
+      description: `Collected customer debt: ${target.customerName}${target.description ? ` (${target.description})` : ''}`,
       creatorId: state.currentUser.id,
       creatorName: state.currentUser.name,
       branch: state.currentUser.branch,
@@ -1013,21 +1084,53 @@ export default function App() {
       refId: receivableId
     };
 
-    setState(prev => ({
-      ...prev,
-      receivables: syncReceivablesLateStatus(prev.receivables.map(r =>
+    const newAuditLog = {
+      id: `aud-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      actorId: state.currentUser.id,
+      actorName: state.currentUser.name,
+      action: 'COLLECT_RECEIVABLE',
+      entity: 'Receivable',
+      entityId: receivableId,
+      diffAfter: {
+        amountCollected: amount,
+        totalCollected: newCollected,
+        walletId: resolvedWalletId,
+        walletName,
+        customerName: target.customerName,
+        isFullyPaid: isFull
+      },
+      branch: state.currentUser.branch
+    };
+
+    setState(prev => {
+      const updatedReceivables = syncReceivablesLateStatus(prev.receivables.map(r =>
         r.id === receivableId
           ? {
               ...r,
               amountCollected: newCollected,
-              status: isFull ? 'COLLECTED' : 'OUTSTANDING'
+              status: isFull ? ('COLLECTED' as const) : ('OUTSTANDING' as const),
+              lastPaymentDate: new Date().toISOString()
             }
           : r
-      )),
-      transactions: [newTx, ...prev.transactions]
-    }));
+      ));
 
-    triggerToast(`Collected ${formatETB(amount)} from ${target.customerName}!`);
+      const updatedState = {
+        ...prev,
+        receivables: updatedReceivables,
+        transactions: [newTx, ...prev.transactions],
+        auditLogs: [newAuditLog, ...(prev.auditLogs || [])]
+      };
+
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
+
+    triggerToast(`✓ Collected ${formatETB(amount)} from ${target.customerName} → Deposited into ${walletName}!`);
+    sendExternalNotification('PlusZone ERP - Receivable Collected 💰', {
+      body: `Collected ${formatETB(amount)} from ${target.customerName} into ${walletName}.`
+    });
     performRefresh(true);
   };
 
@@ -1141,6 +1244,42 @@ export default function App() {
     performRefresh(true);
   };
 
+  const handleUpdateReceivable = (receivableId: string, updates: Partial<Receivable>) => {
+    const targetRcv = (state.receivables || []).find(r => r.id === receivableId);
+    if (!targetRcv) return;
+
+    setState(prev => {
+      const updatedReceivables = syncReceivablesLateStatus((prev.receivables || []).map(r =>
+        r.id === receivableId ? { ...r, ...updates } : r
+      ));
+      const updatedState = {
+        ...prev,
+        receivables: updatedReceivables,
+        auditLogs: [
+          {
+            id: `aud-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            actorId: prev.currentUser.id,
+            actorName: prev.currentUser.name,
+            action: 'UPDATE_RECEIVABLE',
+            entity: 'Receivable',
+            entityId: receivableId,
+            diffBefore: targetRcv,
+            diffAfter: { ...targetRcv, ...updates },
+            branch: prev.currentUser.branch
+          },
+          ...(prev.auditLogs || [])
+        ]
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
+
+    triggerToast(`Customer receivable for "${updates.customerName || targetRcv.customerName}" updated.`);
+    performRefresh(true);
+  };
+
   const handleDeleteReceivable = (receivableId: string) => {
     const targetRcv = (state.receivables || []).find(r => r.id === receivableId);
     if (!targetRcv) return;
@@ -1236,40 +1375,6 @@ export default function App() {
 
     triggerHaptic('success');
 
-    if (req.actionType === 'EDIT_EQUB' && req.payload) {
-      handleUpdateEqub(req.targetId, req.payload);
-    } else if (req.actionType === 'DELETE_EQUB') {
-      handleDeleteEqub(req.targetId);
-    } else if (req.actionType === 'EDIT_LOAN' && req.payload) {
-      handleUpdateLoan(req.targetId, req.payload);
-    } else if (req.actionType === 'DELETE_LOAN') {
-      handleDeleteLoan(req.targetId);
-    } else if (req.actionType === 'DELETE_RECEIVABLE') {
-      handleDeleteReceivable(req.targetId);
-    } else if (req.actionType === 'REVERSE_TRANSACTION') {
-      handleReverseTransaction(req.targetId);
-    } else if (req.actionType === 'DELETE_TRANSACTION') {
-      handleDeleteTransaction(req.targetId);
-    } else if (req.actionType === 'EDIT_TRANSACTION' && req.payload) {
-      handleUpdateTransaction(req.targetId, req.payload);
-    } else if (req.actionType === 'DELETE_WALLET') {
-      handleDeleteWallet(req.targetId);
-    } else if (req.actionType === 'EDIT_WALLET' && req.payload) {
-      handleUpdateWallet(req.targetId, req.payload);
-    } else if (req.actionType === 'DELETE_USER') {
-      setState(prev => ({
-        ...prev,
-        users: prev.users.filter(u => u.id !== req.targetId)
-      }));
-    } else if (req.actionType === 'DELETE_CATEGORY') {
-      setState(prev => ({
-        ...prev,
-        categories: prev.categories.filter(c => c.id !== req.targetId)
-      }));
-    } else if (req.actionType === 'SYSTEM_RESET') {
-      handleResetAllData();
-    }
-
     const effectiveReason = approvalNote || req.reason || 'Verified and approved by co-admin';
     const approveMsg: ChatMessage = {
       id: `msg-appr-ok-${Date.now()}`,
@@ -1277,7 +1382,7 @@ export default function App() {
       senderId: state.currentUser.id,
       senderName: state.currentUser.name,
       senderRole: state.currentUser.role,
-      text: `✅ **Approval Granted**\n• **Item:** ${req.targetTitle}\n• **Action:** ${req.actionType.replace(/_/g, ' ')}\n• **Reason for Approval:** ${effectiveReason}\n• **Approved By:** ${state.currentUser.name}`,
+      text: `✅ **Approval Granted & Executed**\n• **Item:** ${req.targetTitle}\n• **Action:** ${req.actionType.replace(/_/g, ' ')}\n• **Reason for Approval:** ${effectiveReason}\n• **Approved By:** ${state.currentUser.name}`,
       timestamp: new Date().toISOString(),
       reference: {
         type: 'APPROVAL',
@@ -1289,9 +1394,297 @@ export default function App() {
       }
     };
 
+    let toastText = `✅ Approval granted for "${req.targetTitle}". Change automatically executed!`;
+
     setState(prev => {
+      let updatedTransactions = prev.transactions;
+      let updatedEqubs = prev.equbs;
+      let updatedLoans = prev.loans;
+      let updatedReceivables = prev.receivables || [];
+      let updatedWallets = prev.wallets;
+      let updatedUsers = prev.users;
+      let updatedCategories = prev.categories;
+      let updatedAssets = prev.assets || [];
+      const newAuditLogs: AuditLogEntry[] = [];
+
+      if (req.actionType === 'DELETE_TRANSACTION') {
+        const deletedTx = prev.transactions.find(t => t.id === req.targetId);
+        updatedTransactions = prev.transactions.filter(t => t.id !== req.targetId);
+        newAuditLogs.push({
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'DELETE_TRANSACTION',
+          entity: 'Transaction',
+          entityId: req.targetId,
+          diffBefore: deletedTx,
+          diffAfter: { deleted: true },
+          branch: prev.currentUser.branch
+        });
+        toastText = `🗑️ Transaction deleted from financial ledger.`;
+      } else if (req.actionType === 'EDIT_TRANSACTION' && req.payload) {
+        const existingTx = prev.transactions.find(t => t.id === req.targetId);
+        updatedTransactions = prev.transactions.map(t =>
+          t.id === req.targetId ? { ...t, ...req.payload } : t
+        );
+        newAuditLogs.push({
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'UPDATE_TRANSACTION',
+          entity: 'Transaction',
+          entityId: req.targetId,
+          diffBefore: existingTx,
+          diffAfter: req.payload,
+          branch: prev.currentUser.branch
+        });
+        toastText = `✏️ Transaction updated in financial ledger.`;
+      } else if (req.actionType === 'REVERSE_TRANSACTION') {
+        const existingTx = prev.transactions.find(t => t.id === req.targetId);
+        updatedTransactions = prev.transactions.map(t =>
+          t.id === req.targetId ? { ...t, reversed: true, reversedAt: new Date().toISOString() } : t
+        );
+        newAuditLogs.push({
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'REVERSE_TRANSACTION',
+          entity: 'Transaction',
+          entityId: req.targetId,
+          diffBefore: existingTx,
+          diffAfter: { reversed: true, reversedAt: new Date().toISOString() },
+          branch: prev.currentUser.branch
+        });
+        toastText = `↩️ Transaction reversed in financial ledger.`;
+      } else if (req.actionType === 'DELETE_EQUB') {
+        const targetEqub = prev.equbs.find(e => e.id === req.targetId);
+        updatedEqubs = prev.equbs.filter(e => e.id !== req.targetId);
+        newAuditLogs.push({
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'DELETE_EQUB',
+          entity: 'Equb',
+          entityId: req.targetId,
+          diffBefore: targetEqub,
+          diffAfter: { deleted: true, name: targetEqub?.name },
+          branch: prev.currentUser.branch
+        });
+        toastText = `🗑️ Equb circle "${targetEqub?.name || req.targetTitle}" deleted.`;
+      } else if (req.actionType === 'EDIT_EQUB' && req.payload) {
+        const targetEqub = prev.equbs.find(e => e.id === req.targetId);
+        updatedEqubs = prev.equbs.map(e => e.id === req.targetId ? { ...e, ...req.payload } : e);
+        newAuditLogs.push({
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'UPDATE_EQUB',
+          entity: 'Equb',
+          entityId: req.targetId,
+          diffBefore: targetEqub,
+          diffAfter: req.payload,
+          branch: prev.currentUser.branch
+        });
+        toastText = `✏️ Equb circle "${targetEqub?.name || req.targetTitle}" updated.`;
+      } else if (req.actionType === 'DELETE_LOAN') {
+        const targetLoan = prev.loans.find(l => l.id === req.targetId);
+        updatedLoans = prev.loans.filter(l => l.id !== req.targetId);
+        newAuditLogs.push({
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'DELETE_LOAN',
+          entity: 'Loan',
+          entityId: req.targetId,
+          diffBefore: targetLoan,
+          diffAfter: { deleted: true, title: targetLoan?.title },
+          branch: prev.currentUser.branch
+        });
+        toastText = `🗑️ Loan contract "${targetLoan?.title || req.targetTitle}" deleted.`;
+      } else if (req.actionType === 'EDIT_LOAN' && req.payload) {
+        const targetLoan = prev.loans.find(l => l.id === req.targetId);
+        updatedLoans = prev.loans.map(l => l.id === req.targetId ? { ...l, ...req.payload } : l);
+        newAuditLogs.push({
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'UPDATE_LOAN',
+          entity: 'Loan',
+          entityId: req.targetId,
+          diffBefore: targetLoan,
+          diffAfter: req.payload,
+          branch: prev.currentUser.branch
+        });
+        toastText = `✏️ Loan contract "${targetLoan?.title || req.targetTitle}" updated.`;
+      } else if (req.actionType === 'DELETE_RECEIVABLE') {
+        const targetRcv = (prev.receivables || []).find(r => r.id === req.targetId);
+        updatedReceivables = (prev.receivables || []).filter(r => r.id !== req.targetId);
+        newAuditLogs.push({
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'DELETE_RECEIVABLE',
+          entity: 'Receivable',
+          entityId: req.targetId,
+          diffBefore: targetRcv,
+          diffAfter: { deleted: true, customerName: targetRcv?.customerName },
+          branch: prev.currentUser.branch
+        });
+        toastText = `🗑️ Customer receivable for "${targetRcv?.customerName || req.targetTitle}" deleted.`;
+      } else if (req.actionType === 'EDIT_RECEIVABLE' && req.payload) {
+        const targetRcv = (prev.receivables || []).find(r => r.id === req.targetId);
+        updatedReceivables = syncReceivablesLateStatus(
+          (prev.receivables || []).map(r => r.id === req.targetId ? { ...r, ...req.payload } : r)
+        );
+        newAuditLogs.push({
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'UPDATE_RECEIVABLE',
+          entity: 'Receivable',
+          entityId: req.targetId,
+          diffBefore: targetRcv,
+          diffAfter: req.payload,
+          branch: prev.currentUser.branch
+        });
+        toastText = `✏️ Customer receivable for "${targetRcv?.customerName || req.targetTitle}" updated.`;
+      } else if (req.actionType === 'DELETE_WALLET') {
+        const targetWallet = prev.wallets.find(w => w.id === req.targetId);
+        updatedWallets = prev.wallets.filter(w => w.id !== req.targetId);
+        newAuditLogs.push({
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'DELETE_WALLET',
+          entity: 'Wallet',
+          entityId: req.targetId,
+          diffBefore: targetWallet,
+          diffAfter: { deleted: true, name: targetWallet?.name },
+          branch: prev.currentUser.branch
+        });
+        toastText = `🗑️ Wallet "${targetWallet?.name || req.targetTitle}" deleted.`;
+      } else if (req.actionType === 'EDIT_WALLET' && req.payload) {
+        const targetWallet = prev.wallets.find(w => w.id === req.targetId);
+        updatedWallets = prev.wallets.map(w => w.id === req.targetId ? { ...w, ...req.payload } : w);
+        newAuditLogs.push({
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'UPDATE_WALLET',
+          entity: 'Wallet',
+          entityId: req.targetId,
+          diffBefore: targetWallet,
+          diffAfter: req.payload,
+          branch: prev.currentUser.branch
+        });
+        toastText = `✏️ Wallet "${targetWallet?.name || req.targetTitle}" updated.`;
+      } else if (req.actionType === 'DELETE_USER') {
+        const targetUser = prev.users.find(u => u.id === req.targetId);
+        updatedUsers = prev.users.filter(u => u.id !== req.targetId);
+        newAuditLogs.push({
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'DELETE_USER',
+          entity: 'User',
+          entityId: req.targetId,
+          diffBefore: targetUser,
+          diffAfter: { deleted: true, name: targetUser?.name },
+          branch: prev.currentUser.branch
+        });
+        toastText = `🗑️ User profile "${targetUser?.name || req.targetTitle}" deleted.`;
+      } else if (req.actionType === 'DELETE_CATEGORY') {
+        const targetCat = prev.categories.find(c => c.id === req.targetId);
+        updatedCategories = prev.categories.filter(c => c.id !== req.targetId);
+        newAuditLogs.push({
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'DELETE_CATEGORY',
+          entity: 'Category',
+          entityId: req.targetId,
+          diffBefore: targetCat,
+          diffAfter: { deleted: true, name: targetCat?.name },
+          branch: prev.currentUser.branch
+        });
+        toastText = `🗑️ Category "${targetCat?.name || req.targetTitle}" deleted.`;
+      } else if (req.actionType === 'DELETE_ASSET') {
+        const targetAsset = (prev.assets || []).find(a => a.id === req.targetId);
+        updatedAssets = (prev.assets || []).filter(a => a.id !== req.targetId);
+        newAuditLogs.push({
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'DELETE_ASSET',
+          entity: 'Asset',
+          entityId: req.targetId,
+          diffBefore: targetAsset,
+          diffAfter: { deleted: true, name: targetAsset?.name },
+          branch: prev.currentUser.branch
+        });
+        toastText = `🗑️ Asset "${targetAsset?.name || req.targetTitle}" deleted.`;
+      } else if (req.actionType === 'CLEAR_ALL_TRANSACTIONS') {
+        updatedTransactions = [];
+        newAuditLogs.push({
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'CLEAR_ALL_TRANSACTIONS',
+          entity: 'Transaction',
+          entityId: 'all',
+          diffAfter: { clearedCount: prev.transactions.length },
+          branch: prev.currentUser.branch
+        });
+        toastText = `🗑️ All transactions cleared from ledger.`;
+      } else if (req.actionType === 'RESTORE_BACKUP' && req.payload) {
+        const restoredState = req.payload;
+        const updatedState = {
+          ...prev,
+          ...restoredState,
+          approvalRequests: (prev.approvalRequests || []).map(r => r.id === reqId ? {
+            ...r,
+            status: 'APPROVED' as const,
+            approvedBy: prev.currentUser.id,
+            approvedByName: prev.currentUser.name,
+            approvedAt: new Date().toISOString()
+          } : r),
+          chatMessages: [...(prev.chatMessages || []), approveMsg]
+        };
+        saveStateToStorage(updatedState);
+        syncStateToFirebaseNow(updatedState);
+        return updatedState;
+      } else if (req.actionType === 'SYSTEM_RESET') {
+        localStorage.clear();
+        window.location.reload();
+        return prev;
+      }
+
       const updatedState = {
         ...prev,
+        transactions: updatedTransactions,
+        equbs: updatedEqubs,
+        loans: updatedLoans,
+        receivables: updatedReceivables,
+        wallets: updatedWallets,
+        users: updatedUsers,
+        categories: updatedCategories,
+        assets: updatedAssets,
+        auditLogs: [...newAuditLogs, ...(prev.auditLogs || [])],
         approvalRequests: (prev.approvalRequests || []).map(r => r.id === reqId ? {
           ...r,
           status: 'APPROVED' as const,
@@ -1301,12 +1694,13 @@ export default function App() {
         } : r),
         chatMessages: [...(prev.chatMessages || []), approveMsg]
       };
+
       saveStateToStorage(updatedState);
       syncStateToFirebaseNow(updatedState);
       return updatedState;
     });
 
-    triggerToast(`✅ Request approved and status posted to live chat!`);
+    triggerToast(toastText);
     performRefresh(true);
   };
 
@@ -1675,6 +2069,7 @@ export default function App() {
           <TransactionsView
             transactions={state.transactions}
             transfers={state.transfers}
+            receivables={state.receivables}
             wallets={state.wallets}
             categories={state.categories}
             currentUser={state.currentUser}
@@ -1686,6 +2081,7 @@ export default function App() {
             onDeleteTransaction={handleDeleteTransaction}
             onClearAllTransactions={handleClearAllTransactions}
             onRequestApproval={handleCreateApprovalRequest}
+            onNavigateTab={(tab, subView) => handleNavigateTab(tab, subView)}
           />
         )}
 
@@ -1735,6 +2131,7 @@ export default function App() {
             onDeleteLoan={handleDeleteLoan}
             onRepayLoan={handleRepayLoan}
             onCreateReceivable={handleCreateReceivable}
+            onUpdateReceivable={handleUpdateReceivable}
             onCollectReceivable={handleCollectReceivable}
             onDeleteReceivable={handleDeleteReceivable}
             onRequestApproval={handleCreateApprovalRequest}

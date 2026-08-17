@@ -8,6 +8,22 @@ export function isNotificationSupported(): boolean {
   }
 }
 
+export function isNotificationConstructible(): boolean {
+  try {
+    if (!isNotificationSupported()) return false;
+    // If inside an iframe or Android browser, Notification constructor is prohibited
+    if (typeof window !== 'undefined' && window.self !== window.top) {
+      return false;
+    }
+    if (typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '')) {
+      return false;
+    }
+    return typeof Notification === 'function';
+  } catch {
+    return false;
+  }
+}
+
 export function getNotificationPermission(): NotificationPermission {
   if (!isNotificationSupported()) return 'denied';
   try {
@@ -41,88 +57,93 @@ export interface ExternalNotificationOptions {
 
 /**
  * Sends a notification that pops up OUTSIDE the web app (on OS / Mobile Notification Center)
+ * Safe from "TypeError: Illegal constructor" in iframes / mobile browsers.
  */
 export async function sendExternalNotification(
   title: string,
   options: ExternalNotificationOptions
 ): Promise<boolean> {
-  if (!isNotificationSupported()) return false;
-
-  let permission: NotificationPermission = 'denied';
   try {
-    permission = Notification.permission;
-    if (permission === 'default') {
-      permission = await requestNotificationPermission();
-    }
-  } catch {
-    return false;
-  }
+    if (!isNotificationSupported()) return false;
 
-  if (permission !== 'granted') {
-    return false;
-  }
-
-  const iconUrl = options.icon || '/pwa-192.png';
-
-  // 1. Try sending via active Service Worker (Required on Android / Chrome to avoid "Illegal constructor")
-  if ('serviceWorker' in navigator) {
+    let permission: NotificationPermission = 'denied';
     try {
-      const registration = await navigator.serviceWorker.ready;
-      if (registration && typeof registration.showNotification === 'function') {
-        await registration.showNotification(title, {
+      permission = Notification.permission;
+      if (permission === 'default') {
+        permission = await requestNotificationPermission();
+      }
+    } catch {
+      return false;
+    }
+
+    if (permission !== 'granted') {
+      return false;
+    }
+
+    const iconUrl = options.icon || '/pwa-192.png';
+
+    // 1. Try sending via active Service Worker if available (safe non-blocking getRegistration)
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg && typeof reg.showNotification === 'function') {
+          await reg.showNotification(title, {
+            body: options.body,
+            icon: iconUrl,
+            badge: '/pwa-192.png',
+            tag: options.tag || `pluszone-notif-${Date.now()}`,
+            renotify: true,
+            data: options.data || { url: '/' }
+          } as NotificationOptions);
+
+          if (reg.active) {
+            reg.active.postMessage({
+              type: 'SHOW_NOTIFICATION',
+              payload: {
+                title,
+                body: options.body,
+                icon: iconUrl,
+                tag: options.tag,
+                data: options.data
+              }
+            });
+          }
+          return true;
+        }
+      } catch (swErr) {
+        // Ignore SW showNotification errors safely
+      }
+    }
+
+    // 2. Direct Notification constructor fallback (only when safe and not in iframe)
+    if (isNotificationConstructible()) {
+      try {
+        const notif = new (window as any).Notification(title, {
           body: options.body,
           icon: iconUrl,
           badge: '/pwa-192.png',
-          tag: options.tag || `pluszone-notif-${Date.now()}`,
-          renotify: true,
-          data: options.data || { url: '/' }
-        } as NotificationOptions);
+          tag: options.tag || `pluszone-notif-${Date.now()}`
+        });
 
-        // Also post message to SW
-        if (registration.active) {
-          registration.active.postMessage({
-            type: 'SHOW_NOTIFICATION',
-            payload: {
-              title,
-              body: options.body,
-              icon: iconUrl,
-              tag: options.tag,
-              data: options.data
-            }
-          });
-        }
+        notif.onclick = () => {
+          try {
+            window.focus();
+            notif.close();
+          } catch {}
+        };
+
         return true;
+      } catch (constructErr) {
+        // Catch Illegal constructor quietly
+        return false;
       }
-    } catch (swErr) {
-      console.warn('Service worker showNotification notice:', swErr);
     }
-  }
 
-  // 2. Fallback to direct Window Notification API if constructible (non-Android desktop browsers)
-  try {
-    const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent || '');
-    if (!isAndroid && typeof Notification === 'function') {
-      const notif = new Notification(title, {
-        body: options.body,
-        icon: iconUrl,
-        badge: '/pwa-192.png',
-        tag: options.tag || `pluszone-notif-${Date.now()}`
-      });
-
-      notif.onclick = () => {
-        window.focus();
-        notif.close();
-      };
-
-      return true;
-    }
-  } catch (err) {
-    // Gracefully ignore if constructor is illegal on this platform
-    console.warn('Direct Notification constructor unavailable on this device:', err);
+    return false;
+  } catch (outerErr) {
+    // Blanket catch to ensure zero unhandled exceptions
     return false;
   }
-
-  return false;
 }
 
 /**

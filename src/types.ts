@@ -209,12 +209,15 @@ export interface RecurringTemplate {
 export interface Receivable {
   id: string;
   customerName: string;
+  phone?: string;
   description: string;
   amountOwed: number;
   amountCollected: number;
   dueDate: string;
   status: 'OUTSTANDING' | 'COLLECTED' | 'WRITTEN_OFF' | 'LATE' | 'OVERDUE';
   createdDate: string;
+  walletId?: string;
+  lastPaymentDate?: string;
 }
 
 export interface AuditLogEntry {
@@ -268,7 +271,9 @@ export interface AdminApprovalRequest {
     | 'DELETE_USER'
     | 'RESTORE_BACKUP'
     | 'DELETE_ASSET'
+    | 'EDIT_RECEIVABLE'
     | 'DELETE_RECEIVABLE'
+    | 'CLEAR_ALL_TRANSACTIONS'
     | 'SYSTEM_RESET';
   targetId: string;
   targetTitle: string;
@@ -355,6 +360,40 @@ export interface ChatChannel {
   createdDate?: string;
 }
 
+export interface AutomatedEmailReportsSettings {
+  enabled: boolean;
+  dayOfMonth: number; // Strictly 2nd of each month
+  sendHourEAT: number; // e.g. 8 (08:00 AM EAT)
+  roles: UserRole[]; // ['SuperAdmin', 'Admin']
+  customRecipients?: string[];
+  includePdfAttachment?: boolean;
+  includeExcelAttachment?: boolean;
+  lastSentPeriod?: string;
+  lastSentTimestamp?: string;
+  autoTriggerEnabled?: boolean;
+}
+
+export interface SentReportEmailLog {
+  id: string;
+  period: string; // e.g. "August 2026"
+  sentAt: string; // ISO string
+  recipients: Array<{ email: string; name: string; role: string }>;
+  status: 'DELIVERED' | 'SIMULATED' | 'FAILED';
+  subject: string;
+  summary: {
+    totalBalance: number;
+    monthlyIncome: number;
+    monthlyExpense: number;
+    netProfit: number;
+    activeWalletsCount: number;
+    outstandingReceivables: number;
+    outstandingLoans: number;
+    equbVolume?: number;
+  };
+  triggerType: 'AUTOMATIC_SCHEDULE' | 'MANUAL_DISPATCH';
+  errorMessage?: string;
+}
+
 export interface ERPState {
   currentUser: UserProfile;
   users: UserProfile[];
@@ -375,6 +414,8 @@ export interface ERPState {
   pendingReviewTransactions?: PendingReviewTransaction[];
   chatMessages?: ChatMessage[];
   chatChannels?: ChatChannel[];
+  automatedEmailReportsSettings?: AutomatedEmailReportsSettings;
+  sentReportEmailLogs?: SentReportEmailLog[];
   theme: 'dark' | 'light';
   hideBalances: boolean;
   calendarType?: 'ETHIOPIAN' | 'GREGORIAN';

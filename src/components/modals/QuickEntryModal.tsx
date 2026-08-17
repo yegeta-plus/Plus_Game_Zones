@@ -739,12 +739,19 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
             </div>
           )}
 
-          {/* Wallet Selection Grid (Only for Single Entry Mode) */}
+          {/* Wallet Selection Grid for Single Entry Mode */}
           {batchMode === 'single' && (
             <div>
-              <label className="text-xs font-semibold text-slate-600 dark:text-[#8899BB] flex items-center gap-1.5 mb-2">
-                <WalletIcon className="w-3.5 h-3.5 text-emerald-600 dark:text-[#00D4AA]" />
-                <span>{isCreditSale && entryMode === 'INCOME' ? 'Settlement Account / Wallet' : 'Source / Destination Wallet'}</span>
+              <label className="text-xs font-semibold text-slate-600 dark:text-[#8899BB] flex items-center justify-between mb-2">
+                <span className="flex items-center gap-1.5">
+                  <WalletIcon className={`w-3.5 h-3.5 ${isCreditSale ? 'text-blue-500' : 'text-emerald-600 dark:text-[#00D4AA]'}`} />
+                  <span>{isCreditSale ? 'Target Collection Wallet (Deposit Destination)' : 'Source / Destination Wallet'}</span>
+                </span>
+                {isCreditSale && (
+                  <span className="text-[10px] bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800">
+                    Collection Target
+                  </span>
+                )}
               </label>
               <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
                 {wallets.map((w) => {
@@ -768,7 +775,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                         !active
                           ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800'
                           : isSelected
-                          ? 'bg-slate-100 dark:bg-slate-800/50 cursor-pointer hover:scale-[1.01]'
+                          ? 'bg-slate-100 dark:bg-slate-800/50 cursor-pointer hover:scale-[1.01] ring-1 ring-blue-500/50'
                           : 'bg-slate-50 dark:bg-[#131926] border-slate-200 dark:border-[#1E2D40] cursor-pointer hover:scale-[1.01]'
                       }`}
                     >
@@ -799,6 +806,22 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                     </button>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {/* Informational notice when Sale on Credit is active */}
+          {batchMode === 'single' && isCreditSale && entryMode === 'INCOME' && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/50 rounded-2xl flex items-start gap-2.5 text-xs text-blue-900 dark:text-blue-200">
+              <FileCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold">Receivables Ledger & Collection Target</p>
+                <p className="text-[11px] text-blue-700 dark:text-blue-300/90 leading-relaxed">
+                  This credit sale will be recorded in <strong>Receivables</strong> for <strong>{customerName || 'the customer'}</strong>.
+                </p>
+                <p className="text-[11px] text-blue-800 dark:text-blue-200 bg-blue-100/60 dark:bg-blue-900/40 p-2 rounded-lg border border-blue-200/50 dark:border-blue-800/40">
+                  💼 <strong>Target Collection Wallet:</strong> <span className="font-bold text-blue-900 dark:text-white underline">{wallets.find(w => w.id === walletId)?.name || 'Main Cash Drawer'}</span>. No balance is added now; money will be deposited when collected in the Receivables Hub.
+                </p>
               </div>
             </div>
           )}

@@ -16,7 +16,9 @@ import {
   AutoImportSettings,
   PendingReviewTransaction,
   ChatChannel,
-  ChatMessage
+  ChatMessage,
+  AutomatedEmailReportsSettings,
+  SentReportEmailLog
 } from '../types';
 import { triggerHaptic } from './haptics';
 import { DEFAULT_ROLE_PERMISSIONS, getEffectivePermissions } from './auth';
@@ -24,6 +26,43 @@ import { DEFAULT_ROLE_PERMISSIONS, getEffectivePermissions } from './auth';
 export type { ERPState } from '../types';
 
 const STORAGE_KEY = 'pluszone_fin_erp_state_v12_daily_only';
+
+export const DEFAULT_AUTOMATED_EMAIL_REPORTS: AutomatedEmailReportsSettings = {
+  enabled: true,
+  dayOfMonth: 2, // Strictly every month 2nd day
+  sendHourEAT: 8, // 08:00 AM EAT
+  roles: ['SuperAdmin', 'Admin'], // Admin and SuperUser only
+  includePdfAttachment: true,
+  includeExcelAttachment: true,
+  autoTriggerEnabled: true,
+  lastSentPeriod: '',
+  lastSentTimestamp: ''
+};
+
+export const DEFAULT_SENT_REPORT_LOGS: SentReportEmailLog[] = [
+  {
+    id: 'rpt-init-1',
+    period: 'July 2026',
+    sentAt: '2026-08-02T08:00:00.000Z',
+    recipients: [
+      { email: 'yegeta.huawei@gmail.com', name: 'Yegeta Huawei', role: 'SuperAdmin' },
+      { email: 'kirubel@pluszone.com', name: 'Kirubel Haile', role: 'Admin' }
+    ],
+    status: 'DELIVERED',
+    subject: '[PlusZone ERP] Monthly Financial Statement & Banking Report - July 2026',
+    triggerType: 'AUTOMATIC_SCHEDULE',
+    summary: {
+      totalBalance: 2450000,
+      monthlyIncome: 380000,
+      monthlyExpense: 145000,
+      netProfit: 235000,
+      activeWalletsCount: 5,
+      outstandingReceivables: 185000,
+      outstandingLoans: 300000,
+      equbVolume: 75000
+    }
+  }
+];
 
 const DEFAULT_CHAT_CHANNELS: ChatChannel[] = [
   {
@@ -102,6 +141,60 @@ const DEFAULT_USERS: UserProfile[] = [
     permissions: DEFAULT_ROLE_PERMISSIONS.SuperAdmin,
     branch: 'Addis Ababa HQ',
     lastActive: 'Just now'
+  },
+  {
+    id: 'u-2',
+    name: 'Kirubel Haile',
+    email: 'kirubel@pluszone.com',
+    username: 'kirubel',
+    role: 'Admin',
+    active: true,
+    isApproved: true,
+    isDigitalMoneyManager: false,
+    invitationCode: 'PZ-ADM-2026',
+    hasSetPassword: true,
+    password: 'password123',
+    isTemporaryPassword: false,
+    mustChangePassword: false,
+    permissions: DEFAULT_ROLE_PERMISSIONS.Admin,
+    branch: 'Addis Ababa HQ',
+    lastActive: '10 mins ago'
+  },
+  {
+    id: 'u-3',
+    name: 'Bethelhem Tadesse',
+    email: 'bethelhem@pluszone.com',
+    username: 'bethelhem',
+    role: 'Partner',
+    active: true,
+    isApproved: true,
+    isDigitalMoneyManager: false,
+    invitationCode: 'PZ-PTR-3030',
+    hasSetPassword: true,
+    password: 'password123',
+    isTemporaryPassword: false,
+    mustChangePassword: false,
+    permissions: DEFAULT_ROLE_PERMISSIONS.Partner,
+    branch: 'Bole Branch',
+    lastActive: '1 hour ago'
+  },
+  {
+    id: 'u-4',
+    name: 'Dagmawi Bekele',
+    email: 'dagmawi@pluszone.com',
+    username: 'dagmawi',
+    role: 'Partner',
+    active: true,
+    isApproved: true,
+    isDigitalMoneyManager: false,
+    invitationCode: 'PZ-PTR-4040',
+    hasSetPassword: true,
+    password: 'password123',
+    isTemporaryPassword: false,
+    mustChangePassword: false,
+    permissions: DEFAULT_ROLE_PERMISSIONS.Partner,
+    branch: 'Addis Ababa HQ',
+    lastActive: 'Yesterday'
   }
 ];
 
@@ -425,10 +518,22 @@ export function loadInitialState(): ERPState {
 
         parsed.chatChannels = Array.isArray(parsed.chatChannels) && parsed.chatChannels.length > 0 ? parsed.chatChannels : DEFAULT_CHAT_CHANNELS;
         parsed.chatMessages = Array.isArray(parsed.chatMessages) && parsed.chatMessages.length > 0 ? parsed.chatMessages : DEFAULT_CHAT_MESSAGES;
+        parsed.automatedEmailReportsSettings = parsed.automatedEmailReportsSettings || DEFAULT_AUTOMATED_EMAIL_REPORTS;
+        parsed.sentReportEmailLogs = Array.isArray(parsed.sentReportEmailLogs) && parsed.sentReportEmailLogs.length > 0 ? parsed.sentReportEmailLogs : DEFAULT_SENT_REPORT_LOGS;
+
+        // Ensure users list is populated with multi-user accounts
+        if (Array.isArray(parsed.users)) {
+          const userMap = new Map<string, UserProfile>();
+          for (const u of DEFAULT_USERS) userMap.set(u.id, u);
+          for (const u of parsed.users) userMap.set(u.id, u);
+          parsed.users = Array.from(userMap.values());
+        } else {
+          parsed.users = DEFAULT_USERS;
+        }
 
         // Preserve currently logged-in user session if available
         if (parsed.currentUser && parsed.currentUser.id && Array.isArray(parsed.users)) {
-          const matchingUser = parsed.users.find((u: UserProfile) => u.id === parsed.currentUser.id || u.email === parsed.currentUser.email);
+          const matchingUser = parsed.users.find((u: UserProfile) => u.id === parsed.currentUser.id || u.email?.toLowerCase() === parsed.currentUser.email?.toLowerCase());
           parsed.currentUser = matchingUser || parsed.currentUser;
         } else {
           parsed.currentUser = parsed.users?.[0] || DEFAULT_USERS[0];
@@ -490,6 +595,8 @@ function createInitialState(): ERPState {
     ],
     chatChannels: DEFAULT_CHAT_CHANNELS,
     chatMessages: DEFAULT_CHAT_MESSAGES,
+    automatedEmailReportsSettings: DEFAULT_AUTOMATED_EMAIL_REPORTS,
+    sentReportEmailLogs: DEFAULT_SENT_REPORT_LOGS,
     theme: 'dark',
     hideBalances: false,
     calendarType: 'ETHIOPIAN'

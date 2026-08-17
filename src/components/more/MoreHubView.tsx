@@ -18,8 +18,10 @@ import {
   LogOut,
   MessageSquare
 } from 'lucide-react';
-import { ERPState } from '../../types';
+import { ERPState, Receivable } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
+import { saveStateToStorage } from '../../lib/store';
+import { syncStateToFirebaseNow } from '../../lib/firebase';
 
 // Subviews
 import { GoalsView } from './GoalsView';
@@ -57,6 +59,27 @@ export type SubViewType =
   | 'FINANCIAL_SYSTEM'
   | 'PLAY_STORE_STANDARDS';
 
+export const normalizeSubView = (raw?: string): SubViewType => {
+  if (!raw) return 'HUB';
+  const u = raw.toUpperCase();
+  if (u === 'RECEIVABLES' || u === 'RECEIVABLE') return 'RECEIVABLES';
+  if (u === 'REPORTS' || u === 'REPORT') return 'REPORTS';
+  if (u === 'CALENDAR') return 'CALENDAR';
+  if (u === 'AUDIT' || u === 'AUDIT_LOG' || u === 'AUDIT_LOGS') return 'AUDIT_LOG';
+  if (u === 'PARTNERS' || u === 'USERS' || u === 'USER') return 'USERS';
+  if (u === 'CATEGORIES' || u === 'CATEGORY') return 'CATEGORIES';
+  if (u === 'SETTINGS' || u === 'SETTING') return 'SETTINGS';
+  if (u === 'SECURITY') return 'SECURITY';
+  if (u === 'ASSETS' || u === 'ASSET') return 'ASSETS';
+  if (u === 'GOALS' || u === 'GOAL') return 'GOALS';
+  if (u === 'RECURRING') return 'RECURRING';
+  if (u === 'BACKUP') return 'BACKUP';
+  if (u === 'PROFILE') return 'PROFILE';
+  if (u === 'FINANCIAL_SYSTEM') return 'FINANCIAL_SYSTEM';
+  if (u === 'PLAY_STORE_STANDARDS') return 'PLAY_STORE_STANDARDS';
+  return (u as SubViewType) || 'HUB';
+};
+
 interface MoreHubViewProps {
   state: ERPState;
   onUpdateState: (fn: (prev: ERPState) => ERPState) => void;
@@ -74,12 +97,12 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
   initialSubView,
   onNavigateTab
 }) => {
-  const [subView, setSubView] = useState<SubViewType>(initialSubView || 'HUB');
+  const [subView, setSubView] = useState<SubViewType>(() => normalizeSubView(initialSubView));
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabType | null>(null);
 
   React.useEffect(() => {
     if (initialSubView) {
-      setSubView(initialSubView);
+      setSubView(normalizeSubView(initialSubView));
     }
   }, [initialSubView]);
 
@@ -304,44 +327,166 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
             initialTab={settingsInitialTab}
           />
         )}
-        {subView === 'REPORTS' && <ReportsView state={state} />}
+        {subView === 'REPORTS' && <ReportsView state={state} onUpdateState={onUpdateState} />}
         {subView === 'RECEIVABLES' && (
           <ReceivablesView
             receivables={state.receivables}
             wallets={state.wallets}
+            currentUser={state.currentUser}
             onCollect={(id, wId, amt) => {
               onUpdateState(prev => {
                 const target = prev.receivables.find(r => r.id === id);
                 if (!target) return prev;
+
+                // Resolve valid wallet ID
+                const targetWallet = prev.wallets.find(w => w.id === wId) || prev.wallets.find(w => w.isDefault) || prev.wallets[0];
+                const resolvedWalletId = targetWallet?.id || wId || 'w-cash';
+
+                const newCollected = (target.amountCollected || 0) + amt;
+                const isFull = newCollected >= target.amountOwed;
+
                 const updatedReceivables = prev.receivables.map(r =>
                   r.id === id
                     ? {
                         ...r,
-                        amountCollected: r.amountCollected + amt,
-                        status:
-                          r.amountCollected + amt >= r.amountOwed
-                            ? ('COLLECTED' as const)
-                            : ('OUTSTANDING' as const)
+                        amountCollected: newCollected,
+                        status: isFull ? ('COLLECTED' as const) : ('OUTSTANDING' as const),
+                        lastPaymentDate: new Date().toISOString()
                       }
                     : r
                 );
+
                 const newTx = {
                   id: `tx-rcv-${Date.now()}`,
                   date: new Date().toISOString(),
                   type: 'INCOME' as const,
                   amount: amt,
-                  walletId: wId,
+                  walletId: resolvedWalletId,
                   category: 'Sales Revenue',
-                  description: `Receivable collection: ${target.customerName}`,
+                  description: `Receivable collected: ${target.customerName}${target.description ? ` (${target.description})` : ''}`,
                   creatorId: prev.currentUser.id,
                   creatorName: prev.currentUser.name,
+                  branch: prev.currentUser.branch,
+                  refType: 'RECEIVABLE',
+                  refId: id
+                };
+
+                const newAuditLog = {
+                  id: `aud-${Date.now()}`,
+                  timestamp: new Date().toISOString(),
+                  actorId: prev.currentUser.id,
+                  actorName: prev.currentUser.name,
+                  action: 'COLLECT_RECEIVABLE',
+                  entity: 'Receivable',
+                  entityId: id,
+                  diffAfter: {
+                    amountCollected: amt,
+                    totalCollected: newCollected,
+                    walletId: resolvedWalletId,
+                    walletName: targetWallet?.name || 'Wallet',
+                    customerName: target.customerName,
+                    isFullyPaid: isFull
+                  },
                   branch: prev.currentUser.branch
                 };
-                return {
+
+                const updated = {
                   ...prev,
                   receivables: updatedReceivables,
-                  transactions: [newTx, ...prev.transactions]
+                  transactions: [newTx, ...prev.transactions],
+                  auditLogs: [newAuditLog, ...(prev.auditLogs || [])]
                 };
+
+                saveStateToStorage(updated);
+                syncStateToFirebaseNow(updated);
+                return updated;
+              });
+            }}
+            onUpdate={(id, updates) => {
+              onUpdateState(prev => {
+                const target = prev.receivables.find(r => r.id === id);
+                if (!target) return prev;
+                const updated = {
+                  ...prev,
+                  receivables: prev.receivables.map(r => r.id === id ? { ...r, ...updates } : r),
+                  auditLogs: [
+                    {
+                      id: `aud-${Date.now()}`,
+                      timestamp: new Date().toISOString(),
+                      actorId: prev.currentUser.id,
+                      actorName: prev.currentUser.name,
+                      action: 'UPDATE_RECEIVABLE',
+                      entity: 'Receivable',
+                      entityId: id,
+                      diffBefore: target,
+                      diffAfter: { ...target, ...updates },
+                      branch: prev.currentUser.branch
+                    },
+                    ...(prev.auditLogs || [])
+                  ]
+                };
+                saveStateToStorage(updated);
+                syncStateToFirebaseNow(updated);
+                return updated;
+              });
+            }}
+            onDelete={(id) => {
+              onUpdateState(prev => {
+                const target = prev.receivables.find(r => r.id === id);
+                if (!target) return prev;
+                const updated = {
+                  ...prev,
+                  receivables: prev.receivables.filter(r => r.id !== id),
+                  auditLogs: [
+                    {
+                      id: `aud-${Date.now()}`,
+                      timestamp: new Date().toISOString(),
+                      actorId: prev.currentUser.id,
+                      actorName: prev.currentUser.name,
+                      action: 'DELETE_RECEIVABLE',
+                      entity: 'Receivable',
+                      entityId: id,
+                      diffAfter: { deleted: true, customerName: target.customerName },
+                      branch: prev.currentUser.branch
+                    },
+                    ...(prev.auditLogs || [])
+                  ]
+                };
+                saveStateToStorage(updated);
+                syncStateToFirebaseNow(updated);
+                return updated;
+              });
+            }}
+            onCreate={(data) => {
+              const created: Receivable = {
+                ...data,
+                id: `rcv-${Date.now()}`,
+                amountCollected: 0,
+                status: 'OUTSTANDING',
+                createdDate: new Date().toISOString()
+              };
+              onUpdateState(prev => {
+                const updated = {
+                  ...prev,
+                  receivables: [created, ...(prev.receivables || [])],
+                  auditLogs: [
+                    {
+                      id: `aud-${Date.now()}`,
+                      timestamp: new Date().toISOString(),
+                      actorId: prev.currentUser.id,
+                      actorName: prev.currentUser.name,
+                      action: 'CREATE_RECEIVABLE',
+                      entity: 'Receivable',
+                      entityId: created.id,
+                      diffAfter: created,
+                      branch: prev.currentUser.branch
+                    },
+                    ...(prev.auditLogs || [])
+                  ]
+                };
+                saveStateToStorage(updated);
+                syncStateToFirebaseNow(updated);
+                return updated;
               });
             }}
           />

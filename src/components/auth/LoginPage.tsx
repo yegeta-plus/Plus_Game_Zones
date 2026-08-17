@@ -521,6 +521,38 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 </svg>
                 <span>Continue with Google</span>
               </button>
+
+              {/* Quick Multi-User Profiles Picker */}
+              <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 text-center">
+                  Quick Switch Account
+                </p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {allUsers.slice(0, 4).map(u => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        setUsername(u.email || u.username);
+                        setPassword(u.password || 'password123');
+                        onLogin(u);
+                      }}
+                      className="p-2 rounded-xl bg-[#0D121F] hover:bg-slate-800 border border-slate-800 hover:border-[#00D4AA]/50 text-left transition-all group cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-slate-800 group-hover:bg-[#00D4AA]/20 text-[#00D4AA] text-[10px] font-black flex items-center justify-center shrink-0">
+                          {u.name.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[11px] font-bold text-slate-200 truncate group-hover:text-white">{u.name}</p>
+                          <p className="text-[9px] text-slate-400 truncate">{u.role}</p>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </>
           ) : (
             /* Temporary Password Mandatory Change Screen */

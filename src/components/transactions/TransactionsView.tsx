@@ -19,9 +19,10 @@ import {
   FileText,
   FileSpreadsheet,
   Sparkles,
-  ArrowRightLeft
+  ArrowRightLeft,
+  FileCheck
 } from 'lucide-react';
-import { Transaction, Transfer, Wallet, Category, UserProfile, TransactionType, ERPState } from '../../types';
+import { Transaction, Transfer, Receivable, Wallet, Category, UserProfile, TransactionType, ERPState, NavTab } from '../../types';
 import { formatETB, isTransactionEditable, parseSummedAmount, computeAllWalletRunningBalances, getRelativeWalletBalancesForTx, getRelativeWalletBalancesForTransfer, getWalletNickname } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 import { generatePDFReport, generateExcelReport } from '../../lib/exports';
@@ -30,6 +31,7 @@ import { formatDateByCalendar } from '../../lib/ethiopianCalendar';
 interface TransactionsViewProps {
   transactions: Transaction[];
   transfers?: Transfer[];
+  receivables?: Receivable[];
   wallets: Wallet[];
   categories: Category[];
   currentUser: UserProfile;
@@ -45,13 +47,16 @@ interface TransactionsViewProps {
     walletId: string;
   }) => void;
   onDeleteTransaction?: (txId: string) => void;
+  onClearAllTransactions?: () => void;
   users?: UserProfile[];
   onRequestApproval?: (req: Omit<import('../../types').AdminApprovalRequest, 'id' | 'createdAt' | 'requestedBy' | 'requestedByName' | 'status'>) => void;
+  onNavigateTab?: (tab: NavTab, subView?: string) => void;
 }
 
 export const TransactionsView: React.FC<TransactionsViewProps> = ({
   transactions,
   transfers = [],
+  receivables = [],
   wallets,
   categories,
   currentUser,
@@ -61,13 +66,16 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   onReverseTransaction,
   onUpdateTransaction,
   onDeleteTransaction,
-  onRequestApproval
+  onClearAllTransactions,
+  onRequestApproval,
+  onNavigateTab
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedWalletId, setSelectedWalletId] = useState('ALL');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
-  const [selectedType, setSelectedType] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
+  const [selectedType, setSelectedType] = useState<'ALL' | 'INCOME' | 'EXPENSE' | 'CREDIT_SALE'>('ALL');
   const [activeTxDetail, setActiveTxDetail] = useState<Transaction | null>(null);
+  const [activeCreditSaleDetail, setActiveCreditSaleDetail] = useState<Receivable | null>(null);
   const [confirmReversalTxId, setConfirmReversalTxId] = useState<string | null>(null);
   const [confirmDeleteTxId, setConfirmDeleteTxId] = useState<string | null>(null);
 
@@ -191,7 +199,8 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
   type LedgerItem =
     | { kind: 'TX'; id: string; date: string; time: number; tx: Transaction }
-    | { kind: 'TRANSFER'; id: string; date: string; time: number; transfer: Transfer };
+    | { kind: 'TRANSFER'; id: string; date: string; time: number; transfer: Transfer }
+    | { kind: 'CREDIT_SALE'; id: string; date: string; time: number; receivable: Receivable };
 
   const allLedgerItems: LedgerItem[] = React.useMemo(() => {
     const list: LedgerItem[] = [];
@@ -215,11 +224,21 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
         transfer: tr
       });
     });
+    (receivables || []).forEach(rcv => {
+      const timeVal = new Date(rcv.createdDate || rcv.dueDate || 0).getTime();
+      list.push({
+        kind: 'CREDIT_SALE',
+        id: rcv.id,
+        date: rcv.createdDate || rcv.dueDate || new Date().toISOString(),
+        time: isNaN(timeVal) ? 0 : timeVal,
+        receivable: rcv
+      });
+    });
     return list.sort((a, b) => {
       if (b.time !== a.time) return b.time - a.time;
       return (b.id || '').localeCompare(a.id || '');
     });
-  }, [transactions, transfers]);
+  }, [transactions, transfers, receivables]);
 
   // Filter ledger items (strictly sorted latest first)
   const filtered = allLedgerItems.filter((item) => {
@@ -238,9 +257,10 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
         }
       }
       if (selectedCategory !== 'ALL' && tx.category !== selectedCategory) return false;
-      if (selectedType !== 'ALL' && tx.type !== selectedType) return false;
+      if (selectedType !== 'ALL' && selectedType !== 'CREDIT_SALE' && tx.type !== selectedType) return false;
+      if (selectedType === 'CREDIT_SALE') return false;
       return true;
-    } else {
+    } else if (item.kind === 'TRANSFER') {
       const tr = item.transfer;
       if (selectedType !== 'ALL') return false;
       if (selectedCategory !== 'ALL') return false;
@@ -253,6 +273,18 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
         const matchFrom = (fromW?.name || '').toLowerCase().includes(q);
         const matchTo = (toW?.name || '').toLowerCase().includes(q);
         if (!matchReason && !matchFrom && !matchTo) return false;
+      }
+      return true;
+    } else {
+      const rcv = item.receivable;
+      if (selectedType !== 'ALL' && selectedType !== 'CREDIT_SALE') return false;
+      if (selectedWalletId !== 'ALL') return false; // Credit sales do not alter a specific cash wallet until collected
+      if (searchTerm) {
+        const q = searchTerm.toLowerCase();
+        const matchName = (rcv.customerName || '').toLowerCase().includes(q);
+        const matchDesc = (rcv.description || '').toLowerCase().includes(q);
+        const matchPhone = (rcv.phone || '').toLowerCase().includes(q);
+        if (!matchName && !matchDesc && !matchPhone) return false;
       }
       return true;
     }
@@ -405,15 +437,22 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
           
           {/* Type filter */}
           <div className="flex items-center bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-1 text-xs shrink-0">
-            {(['ALL', 'INCOME', 'EXPENSE'] as const).map((t) => (
+            {[
+              { id: 'ALL', label: 'ALL' },
+              { id: 'INCOME', label: 'INCOME' },
+              { id: 'EXPENSE', label: 'EXPENSE' },
+              { id: 'CREDIT_SALE', label: 'CREDIT SALES' }
+            ].map((btn) => (
               <button
-                key={t}
-                onClick={() => setSelectedType(t)}
+                key={btn.id}
+                onClick={() => setSelectedType(btn.id as any)}
                 className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
-                  selectedType === t ? 'bg-gradient-to-r from-[#00D4AA] to-[#00B894] text-[#0A0E1A]' : 'text-slate-500 dark:text-[#8899BB]'
+                  selectedType === btn.id
+                    ? 'bg-gradient-to-r from-[#00D4AA] to-[#00B894] text-[#0A0E1A]'
+                    : 'text-slate-500 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
-                {t}
+                {btn.label}
               </button>
             ))}
           </div>
@@ -496,6 +535,94 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
                 <div className="bg-white dark:bg-[#131926] border border-slate-200/80 dark:border-[#1E2D40] rounded-2xl divide-y divide-slate-100 dark:divide-[#1E2D40] overflow-hidden shadow-sm">
                   {sortedItemList.map((item) => {
+                    if (item.kind === 'CREDIT_SALE') {
+                      const rcv = item.receivable;
+                      const isSettled = rcv.status === 'COLLECTED';
+                      const isOverdue = rcv.status === 'OVERDUE' || (rcv.status === 'OUTSTANDING' && new Date(rcv.dueDate).getTime() < Date.now());
+                      const remaining = Math.max(0, rcv.amountOwed - (rcv.amountCollected || 0));
+                      const creditTargetWallet = wallets.find(w => w.id === rcv.walletId);
+
+                      return (
+                        <div
+                          key={rcv.id}
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setActiveCreditSaleDetail(rcv);
+                          }}
+                          className="p-3.5 flex items-center justify-between cursor-pointer bg-blue-50/25 dark:bg-blue-950/10 hover:bg-blue-50/70 dark:hover:bg-blue-950/25 transition-colors border-l-2 border-l-blue-500 dark:border-l-blue-400"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400 flex items-center justify-center shrink-0">
+                              <FileCheck className="w-4 h-4" />
+                            </div>
+
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF] line-clamp-1">
+                                  {rcv.customerName}
+                                </p>
+                                <span className="text-[9px] bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300 font-bold px-1.5 py-0.2 rounded border border-blue-200 dark:border-blue-500/30 shrink-0">
+                                  Sale on Credit
+                                </span>
+                                {isSettled ? (
+                                  <span className="text-[9px] bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300 font-bold px-1.5 py-0.2 rounded border border-emerald-200 dark:border-emerald-500/30 shrink-0">
+                                    Settled
+                                  </span>
+                                ) : isOverdue ? (
+                                  <span className="text-[9px] bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300 font-bold px-1.5 py-0.2 rounded border border-rose-200 dark:border-rose-500/30 shrink-0">
+                                    Overdue
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300 font-bold px-1.5 py-0.2 rounded border border-amber-200 dark:border-amber-500/30 shrink-0">
+                                    Pending Collection
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-slate-500 dark:text-[#8899BB] flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                <span>{rcv.description || 'Credit Sale'}</span>
+                                {rcv.phone && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="font-mono">{rcv.phone}</span>
+                                  </>
+                                )}
+                                <span>•</span>
+                                <span className="text-blue-600 dark:text-blue-400 font-medium">
+                                  Due: {formatDateByCalendar(rcv.dueDate, calendarType, true)}
+                                </span>
+                                <span>•</span>
+                                <span className="text-slate-600 dark:text-slate-300 font-medium bg-slate-100 dark:bg-[#1C2333] px-1.5 py-0.2 rounded">
+                                  💼 Wallet: {creditTargetWallet?.name || 'Main Cash Drawer'}
+                                </span>
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="text-right shrink-0 ml-2">
+                            <p className="text-xs font-bold font-mono text-blue-600 dark:text-blue-400">
+                              {hideBalances ? '••••••' : formatETB(rcv.amountOwed)}
+                            </p>
+
+                            <div className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono mt-0.5 flex items-center justify-end gap-1">
+                              {isSettled ? (
+                                <span className="text-emerald-600 dark:text-[#00D4AA] font-bold text-[9px]">Fully Collected</span>
+                              ) : rcv.amountCollected > 0 ? (
+                                <span className="text-amber-600 dark:text-amber-400 text-[9px]">
+                                  Rem: {hideBalances ? '••••' : formatETB(remaining)}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 dark:text-slate-500 text-[9px]">Uncollected Credit</span>
+                              )}
+                            </div>
+
+                            <p className="text-[9px] text-slate-400 dark:text-[#8899BB]/70 mt-0.5">
+                              {new Date(rcv.createdDate || rcv.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+
                     if (item.kind === 'TRANSFER') {
                       const tr = item.transfer;
                       const relTransfer = getRelativeWalletBalancesForTransfer(
@@ -795,6 +922,112 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
           </div>
         );
       })()}
+
+      {/* Credit Sale Detail Sheet Modal */}
+      {activeCreditSaleDetail && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] w-full max-w-md rounded-t-3xl sm:rounded-2xl p-5 text-slate-900 dark:text-[#F0F4FF] shadow-xl animate-slideUp">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-[#1E2D40]">
+              <h3 className="text-sm font-bold flex items-center gap-2 text-slate-900 dark:text-white">
+                <FileCheck className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <span>Credit Sale Entry Audit</span>
+              </h3>
+              <button
+                onClick={() => setActiveCreditSaleDetail(null)}
+                className="p-1 rounded-lg bg-slate-100 dark:bg-[#1C2333] text-slate-500 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div className="text-center py-3 bg-blue-50 dark:bg-blue-950/30 rounded-2xl border border-blue-200 dark:border-blue-800/40 relative">
+                <p className="text-[10px] text-blue-600 dark:text-blue-300 font-mono uppercase font-bold">SALE ON CREDIT</p>
+                <p className="text-2xl font-black font-mono text-blue-600 dark:text-blue-400">
+                  {formatETB(activeCreditSaleDetail.amountOwed)}
+                </p>
+                <p className="text-xs text-slate-800 dark:text-[#F0F4FF] font-medium mt-1">
+                  Customer: <strong>{activeCreditSaleDetail.customerName}</strong>
+                </p>
+              </div>
+
+              <div className="p-3 bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl text-xs space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 dark:text-[#8899BB]">Ledger Classification:</span>
+                  <span className="font-bold text-blue-600 dark:text-blue-400">Receivable / Customer Credit</span>
+                </div>
+                <div className="flex justify-between items-center bg-blue-50/50 dark:bg-blue-950/20 p-2.5 rounded-xl border border-blue-200/50 dark:border-blue-900/40">
+                  <span className="text-slate-600 dark:text-[#8899BB] flex items-center gap-1.5 font-medium">
+                    <WalletIcon className="w-3.5 h-3.5 text-blue-500" />
+                    Target Collection Wallet:
+                  </span>
+                  <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1">
+                    {wallets.find(w => w.id === activeCreditSaleDetail.walletId)?.name || 'Main Cash Drawer'}
+                    {wallets.find(w => w.id === activeCreditSaleDetail.walletId)?.type && (
+                      <span className="text-[10px] text-slate-500 font-normal">
+                        ({wallets.find(w => w.id === activeCreditSaleDetail.walletId)?.type})
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 dark:text-[#8899BB]">Wallet Cash Impact:</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">ETB 0.00 (Uncollected)</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 dark:text-[#8899BB]">Registration Date:</span>
+                  <span className="font-mono text-slate-800 dark:text-slate-200">
+                    {formatDateByCalendar(activeCreditSaleDetail.createdDate, calendarType, true)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 dark:text-[#8899BB]">Payment Due Date:</span>
+                  <span className="font-mono text-blue-600 dark:text-blue-400 font-bold">
+                    {formatDateByCalendar(activeCreditSaleDetail.dueDate, calendarType, true)}
+                  </span>
+                </div>
+                {activeCreditSaleDetail.phone && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500 dark:text-[#8899BB]">Customer Phone:</span>
+                    <span className="font-mono text-slate-800 dark:text-slate-200">{activeCreditSaleDetail.phone}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 dark:text-[#8899BB]">Collected So Far:</span>
+                  <span className="font-mono text-emerald-600 dark:text-[#00D4AA] font-bold">
+                    {formatETB(activeCreditSaleDetail.amountCollected || 0)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 dark:text-[#8899BB]">Remaining Debt:</span>
+                  <span className="font-mono text-amber-600 dark:text-amber-400 font-bold">
+                    {formatETB(Math.max(0, activeCreditSaleDetail.amountOwed - (activeCreditSaleDetail.amountCollected || 0)))}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-blue-50/60 dark:bg-blue-950/20 rounded-xl border border-blue-200/80 dark:border-blue-900/40 text-[11px] text-blue-900 dark:text-blue-200">
+                💡 <strong>Cash flow safety:</strong> Funds will be credited directly to <strong>{wallets.find(w => w.id === activeCreditSaleDetail.walletId)?.name || 'the collection wallet'}</strong> when collected in <strong>More &gt; Receivables</strong>.
+              </div>
+
+              {onNavigateTab && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setActiveCreditSaleDetail(null);
+                    onNavigateTab('more', 'RECEIVABLES');
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
+                >
+                  <FileCheck className="w-4 h-4" />
+                  <span>Open Receivables Hub to Collect</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Transaction Modal */}
       {editingTx && (
