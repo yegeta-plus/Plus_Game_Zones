@@ -34,9 +34,11 @@ import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavT
 import { CheckCircle2, Sparkles } from 'lucide-react';
 import { triggerHaptic } from './lib/haptics';
 import { FingerprintModal } from './components/auth/FingerprintModal';
+import { AppSplashScreen } from './components/common/AppSplashScreen';
 import { sendExternalNotification, formatRelativeNotifTime, playNotificationSound } from './lib/notifications';
 
 export default function App() {
+  const [showSplashScreen, setShowSplashScreen] = useState<boolean>(true);
   const [state, setState] = useState<ERPState>(() => loadInitialState());
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [moreSubView, setMoreSubView] = useState<SubViewType>('HUB');
@@ -1993,6 +1995,10 @@ export default function App() {
       return updatedState;
     });
   };
+
+  if (showSplashScreen) {
+    return <AppSplashScreen onFinish={() => setShowSplashScreen(false)} />;
+  }
 
   if (!isLoggedIn) {
     return (

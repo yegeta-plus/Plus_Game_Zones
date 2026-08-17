@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { MessageSquare, X, Send, Hash, Minimize2, Maximize2, Users, DollarSign } from 'lucide-react';
 import { ERPState, ChatMessage, ChatChannel } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
+import { UserChatAvatar } from './ChatView';
 
 interface FloatingChatWidgetProps {
   state: ERPState;
@@ -147,9 +148,14 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
 
                 return (
                   <div key={msg.id} className={`flex gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                    <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center font-bold text-[10px] shrink-0 border border-slate-300 dark:border-slate-700">
-                      {msg.senderName.charAt(0)}
-                    </div>
+                    <UserChatAvatar
+                      senderId={msg.senderId}
+                      senderName={msg.senderName}
+                      senderRole={msg.senderRole}
+                      senderAvatar={msg.senderAvatar}
+                      users={state.users}
+                      size="sm"
+                    />
 
                     <div className={`max-w-[85%] space-y-0.5 ${isMe ? 'items-end text-right' : 'items-start'}`}>
                       <div className={`text-[9px] text-slate-400 flex items-center gap-1 ${isMe ? 'justify-end' : ''}`}>

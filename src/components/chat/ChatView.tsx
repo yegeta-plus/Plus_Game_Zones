@@ -41,6 +41,62 @@ interface ChatViewProps {
 
 const COMMON_EMOJIS = ['👍', '❤️', '🚀', '💡', '💰', '✅', '🔥', '🙏', '👏', '🎯'];
 
+export const UserChatAvatar: React.FC<{
+  senderId: string;
+  senderName: string;
+  senderRole?: string;
+  senderAvatar?: string;
+  users: UserProfile[];
+  size?: 'sm' | 'md';
+}> = ({ senderId, senderName, senderRole, senderAvatar, users, size = 'md' }) => {
+  const matchedUser = users?.find(
+    u => u.id === senderId ||
+         (u.name && senderName && u.name.toLowerCase() === senderName.toLowerCase()) ||
+         (u.email && senderId && senderId.toLowerCase().includes(u.email.toLowerCase()))
+  );
+  const avatarUrl = senderAvatar || matchedUser?.avatarUrl;
+  const [imgFailed, setImgFailed] = useState(false);
+
+  const initial = (senderName || matchedUser?.name || 'U').charAt(0).toUpperCase();
+
+  const getRoleColor = (role?: string) => {
+    switch (role) {
+      case 'SuperAdmin':
+        return 'from-purple-600 to-indigo-600 text-white';
+      case 'Admin':
+        return 'from-blue-600 to-cyan-600 text-white';
+      case 'Partner':
+        return 'from-emerald-600 to-teal-600 text-white';
+      default:
+        return 'from-slate-600 to-slate-700 text-white';
+    }
+  };
+
+  const dimClasses = size === 'sm' ? 'w-6 h-6 text-[10px]' : 'w-8 h-8 text-xs';
+
+  if (avatarUrl && !imgFailed) {
+    return (
+      <div className={`${dimClasses} rounded-full overflow-hidden shrink-0 border-2 border-emerald-500/40 dark:border-[#00D4AA]/40 shadow-sm relative bg-[#0A0E1A]`}>
+        <img
+          src={avatarUrl}
+          alt={senderName}
+          referrerPolicy="no-referrer"
+          onError={() => setImgFailed(true)}
+          className="w-full h-full object-cover rounded-full"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`${dimClasses} rounded-full bg-gradient-to-tr ${getRoleColor(senderRole || matchedUser?.role)} flex items-center justify-center font-black shrink-0 border border-white/20 dark:border-slate-700 shadow-sm select-none`}
+    >
+      {initial}
+    </div>
+  );
+};
+
 export const ChatView: React.FC<ChatViewProps> = ({
   state,
   onSendMessage,
@@ -239,10 +295,15 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     key={msg.id}
                     className={`flex gap-3 group ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
                   >
-                    {/* User Avatar */}
-                    <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center font-bold text-xs text-slate-700 dark:text-slate-200 shrink-0 border border-slate-300 dark:border-slate-700 shadow-xs">
-                      {msg.senderName.charAt(0)}
-                    </div>
+                    {/* User Avatar with Profile Picture */}
+                    <UserChatAvatar
+                      senderId={msg.senderId}
+                      senderName={msg.senderName}
+                      senderRole={msg.senderRole}
+                      senderAvatar={msg.senderAvatar}
+                      users={state.users}
+                      size="md"
+                    />
 
                     {/* Message Bubble Column */}
                     <div className={`max-w-[80%] space-y-1 ${isMe ? 'items-end text-right' : 'items-start'}`}>
