@@ -64,18 +64,13 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
     if (isOpen) {
       setActiveMethod('OS_BIOMETRIC');
       setScanState('IDLE');
+      setStatusMessage('Place and hold your finger on the sensor button to authenticate.');
       setErrorMessage(null);
       setPasswordInput('');
       setShowPassword(false);
       setIsVerifyingPassword(false);
       const cred = getEnrolledBiometric(userEmail);
       setEnrolledCred(cred);
-
-      // Auto-ask OS to authenticate upon opening
-      const timer = setTimeout(() => {
-        handleTriggerOSBiometricPrompt();
-      }, 250);
-      return () => clearTimeout(timer);
     }
   }, [isOpen, userEmail]);
 
@@ -87,11 +82,11 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Step 1 & 2: App asks the operating system to authenticate
+  // Step 1 & 2: App asks the operating system / sensor to authenticate upon intentional touch
   const handleTriggerOSBiometricPrompt = async () => {
     triggerHaptic('medium');
     setScanState('OS_PROMPTING');
-    setStatusMessage(`App requested ${osProvider.promptName}... Place finger on sensor.`);
+    setStatusMessage(`Verifying ${osProvider.promptName}... Keep finger on sensor.`);
     setErrorMessage(null);
 
     let actionType: BiometricActionType = 'APP_UNLOCK';
@@ -99,7 +94,7 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
     if (mode === 'PRIVATE_INFO') actionType = 'REVEAL_PRIVATE_FINANCE';
 
     try {
-      // Step 3: Phone checks the fingerprint in hardware & OS returns binary result
+      // Step 3: Phone checks the physical fingerprint in hardware / user touch
       const res = await authenticateWithBiometrics(userEmail, actionType);
 
       if (res.success && res.userEmail) {
@@ -109,17 +104,19 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
         setStatusMessage(res.message);
         setTimeout(() => {
           onSuccess(res.userEmail!);
-        }, 700);
+        }, 800);
       } else {
         // ❌ Authentication failed or cancelled -> Provide fallback
         triggerHaptic('warning');
         setScanState('ERROR');
-        setErrorMessage(res.message || '❌ Biometric authentication cancelled/failed. Use Password or Master PIN.');
+        setStatusMessage('Fingerprint verification failed or cancelled.');
+        setErrorMessage(res.message || '❌ Sensor verification cancelled. Please use Password or Master PIN below.');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       triggerHaptic('warning');
       setScanState('ERROR');
-      setErrorMessage('❌ OS Biometric sensor timeout. Please retry or enter Password/PIN.');
+      setStatusMessage('Sensor verification failed.');
+      setErrorMessage('❌ Biometric verification error. Please retry or enter Password/PIN.');
     }
   };
 
@@ -282,11 +279,15 @@ export const FingerprintModal: React.FC<FingerprintModalProps> = ({
               )}
             </button>
 
-            <p className="text-xs font-mono font-bold mt-3 text-slate-700 dark:text-slate-200 max-w-xs">
-              {scanState === 'OS_PROMPTING' && 'Waiting for OS sensor touch...'}
-              {scanState === 'SUCCESS' && '✅ Authentication successful'}
-              {scanState === 'ERROR' && '❌ Authentication failed/cancelled'}
-              {scanState === 'IDLE' && 'Touch sensor or tap to verify'}
+            <p className="text-xs font-mono font-bold mt-3 text-slate-800 dark:text-slate-100 max-w-xs">
+              {scanState === 'IDLE' && '👉 Touch the sensor icon to verify with your device'}
+              {scanState === 'OS_PROMPTING' && 'Scanning physical fingerprint on phone...'}
+              {scanState === 'SUCCESS' && '✅ Authentication confirmed'}
+              {scanState === 'ERROR' && '❌ Authentication failed or cancelled'}
+            </p>
+
+            <p className="text-[11px] text-slate-500 dark:text-[#8899BB] mt-1 max-w-[280px]">
+              {statusMessage}
             </p>
 
             <div className="mt-2 flex items-center justify-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 font-mono">
