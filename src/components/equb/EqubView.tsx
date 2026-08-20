@@ -26,7 +26,9 @@ import {
   ShieldAlert,
   Lock,
   Check,
-  X
+  X,
+  Archive,
+  Layers
 } from 'lucide-react';
 import { Equb, Wallet, UserProfile, Loan, Receivable, LoanType, LoanDirection, AdminApprovalRequest } from '../../types';
 import { formatETB } from '../../lib/store';
@@ -100,6 +102,8 @@ export const EqubView: React.FC<EqubViewProps> = ({
   const [mainTab, setMainTab] = useState<'CIRCLES' | 'LOANS' | 'RECEIVABLES'>('CIRCLES');
 
   // --- EQUB CIRCLES STATE ---
+  const [equbStatusFilter, setEqubStatusFilter] = useState<'ALL' | 'ACTIVE' | 'COMPLETED'>('ALL');
+  const [isFinishedEqubExpanded, setIsFinishedEqubExpanded] = useState(false);
   const [expandedEqubId, setExpandedEqubId] = useState<string | null>(null);
   const [activeEqubModal, setActiveEqubModal] = useState<Equb | null>(null);
   const [paymentMode, setPaymentMode] = useState<'single' | 'split'>('single');
@@ -118,6 +122,8 @@ export const EqubView: React.FC<EqubViewProps> = ({
 
   // --- LOANS STATE ---
   const [loanCategoryFilter, setLoanCategoryFilter] = useState<'ALL' | 'LENT' | 'BORROWED'>('ALL');
+  const [loanStatusFilter, setLoanStatusFilter] = useState<'ALL' | 'ACTIVE' | 'SETTLED'>('ALL');
+  const [isFinishedLoansExpanded, setIsFinishedLoansExpanded] = useState(false);
   const [showCreateLoanModal, setShowCreateLoanModal] = useState(false);
   const [newLoanDirection, setNewLoanDirection] = useState<LoanDirection>('LENT');
   const [newLoanTitle, setNewLoanTitle] = useState('');
@@ -521,32 +527,49 @@ export const EqubView: React.FC<EqubViewProps> = ({
     setCollectRcvAmount('');
   };
 
-  // Derived Loan Calculations
+  // Derived Equb Grouping & Calculations
+  const activeEqubsList = equbs.filter(e => e.status === 'ACTIVE' && e.currentRound < e.totalRounds);
+  const finishedEqubsList = equbs.filter(e => e.status === 'COMPLETED' || e.currentRound >= e.totalRounds);
+
+  const totalActiveEqubCapital = activeEqubsList.reduce((sum, eq) => {
+    const membersCount = eq.totalRounds || eq.members.length || 1;
+    return sum + (eq.contributionPerRound * membersCount);
+  }, 0);
+  const myTotalRoundObligation = activeEqubsList.reduce((sum, eq) => {
+    return sum + (eq.contributionPerRound * (eq.mySlots || 1));
+  }, 0);
+
+  // Derived Loan Calculations & Grouping
   const totalLentAmount = loans
-    .filter(l => (l.direction === 'LENT' || l.title.toLowerCase().includes('lent') || l.title.toLowerCase().includes('lend')) && l.status === 'ACTIVE')
+    .filter(l => (l.direction === 'LENT' || l.title.toLowerCase().includes('lent') || l.title.toLowerCase().includes('lend')) && l.status === 'ACTIVE' && l.outstandingBalance > 0)
     .reduce((sum, l) => sum + l.outstandingBalance, 0);
 
   const totalBorrowedAmount = loans
-    .filter(l => (l.direction !== 'LENT' && !l.title.toLowerCase().includes('lent') && !l.title.toLowerCase().includes('lend')) && l.status === 'ACTIVE')
+    .filter(l => (l.direction !== 'LENT' && !l.title.toLowerCase().includes('lent') && !l.title.toLowerCase().includes('lend')) && l.status === 'ACTIVE' && l.outstandingBalance > 0)
     .reduce((sum, l) => sum + l.outstandingBalance, 0);
 
-  const sortedEqubs = [...equbs].sort((a, b) => {
-    if (a.status !== b.status) return a.status === 'ACTIVE' ? -1 : 1;
-    const dateA = new Date(a.startDate || 0).getTime();
-    const dateB = new Date(b.startDate || 0).getTime();
-    if (dateA !== dateB) return dateB - dateA;
-    return b.id.localeCompare(a.id);
-  });
+  const activeLoansList = loans.filter(l => l.status === 'ACTIVE' && l.outstandingBalance > 0);
+  const finishedLoansList = loans.filter(l => l.status === 'SETTLED' || l.status === 'CLOSED' || l.outstandingBalance <= 0);
 
   const filteredLoans = loans
     .filter(l => {
       const isLent = l.direction === 'LENT' || l.title.toLowerCase().includes('lent') || l.title.toLowerCase().includes('lend');
-      if (loanCategoryFilter === 'LENT') return isLent;
-      if (loanCategoryFilter === 'BORROWED') return !isLent;
+      const isSettled = l.status === 'SETTLED' || l.status === 'CLOSED' || l.outstandingBalance <= 0;
+
+      // Category filter (All / Lent / Borrowed)
+      if (loanCategoryFilter === 'LENT' && !isLent) return false;
+      if (loanCategoryFilter === 'BORROWED' && isLent) return false;
+
+      // Status filter (All / Active / Settled)
+      if (loanStatusFilter === 'ACTIVE' && isSettled) return false;
+      if (loanStatusFilter === 'SETTLED' && !isSettled) return false;
+
       return true;
     })
     .sort((a, b) => {
-      if (a.status !== b.status) return a.status === 'ACTIVE' ? -1 : 1;
+      const isSettledA = a.status === 'SETTLED' || a.status === 'CLOSED' || a.outstandingBalance <= 0;
+      const isSettledB = b.status === 'SETTLED' || b.status === 'CLOSED' || b.outstandingBalance <= 0;
+      if (isSettledA !== isSettledB) return isSettledA ? 1 : -1;
       const dateA = new Date(a.dueDate || 0).getTime();
       const dateB = new Date(b.dueDate || 0).getTime();
       if (dateA !== dateB) return dateB - dateA;
@@ -562,16 +585,6 @@ export const EqubView: React.FC<EqubViewProps> = ({
     if (dateA !== dateB) return dateB - dateA;
     return b.id.localeCompare(a.id);
   });
-
-  // Derived Equb Calculations
-  const activeEqubsList = equbs.filter(e => e.status === 'ACTIVE' && e.currentRound < e.totalRounds);
-  const totalActiveEqubCapital = activeEqubsList.reduce((sum, eq) => {
-    const membersCount = eq.totalRounds || eq.members.length || 1;
-    return sum + (eq.contributionPerRound * membersCount);
-  }, 0);
-  const myTotalRoundObligation = activeEqubsList.reduce((sum, eq) => {
-    return sum + (eq.contributionPerRound * (eq.mySlots || 1));
-  }, 0);
 
   // Derived Receivable Calculations
   const totalOutstandingReceivables = receivables
@@ -836,248 +849,412 @@ export const EqubView: React.FC<EqubViewProps> = ({
             </div>
           </div>
 
-          <div className="space-y-3">
-            {sortedEqubs.length === 0 ? (
+          {/* Equb Filter Bar: ALL vs ACTIVE vs FINISHED */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 bg-slate-200/70 dark:bg-[#131926] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40] w-fit">
+              <button
+                onClick={() => {
+                  triggerHaptic('light');
+                  setEqubStatusFilter('ALL');
+                }}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                  equbStatusFilter === 'ALL'
+                    ? 'bg-white dark:bg-[#1C2333] text-slate-900 dark:text-white shadow-sm border border-slate-200 dark:border-[#1E2D40]'
+                    : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                All Circles ({equbs.length})
+              </button>
+
+              <button
+                onClick={() => {
+                  triggerHaptic('light');
+                  setEqubStatusFilter('ACTIVE');
+                }}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  equbStatusFilter === 'ACTIVE'
+                    ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-200 border border-indigo-300 dark:border-indigo-700 shadow-sm'
+                    : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                <span>Active ({activeEqubsList.length})</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  triggerHaptic('light');
+                  setEqubStatusFilter('COMPLETED');
+                }}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  equbStatusFilter === 'COMPLETED'
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 shadow-sm'
+                    : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Finished ({finishedEqubsList.length})</span>
+              </button>
+            </div>
+
+            {finishedEqubsList.length > 0 && equbStatusFilter === 'ALL' && (
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-[#8899BB] flex items-center gap-1">
+                <span>{activeEqubsList.length} Active</span>
+                <span>•</span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-bold">{finishedEqubsList.length} Finished</span>
+              </span>
+            )}
+          </div>
+
+          {/* Equb Circles List */}
+          <div className="space-y-4">
+            {equbs.length === 0 ? (
               <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-8 text-center space-y-2 shadow-sm">
                 <Users className="w-8 h-8 text-slate-400 dark:text-[#8899BB] mx-auto" />
                 <p className="text-sm font-bold text-slate-900 dark:text-white">No Active Equb Circles</p>
                 <p className="text-xs text-slate-500 dark:text-[#8899BB]">Launch a community savings circle to start rotating partner payouts.</p>
               </div>
             ) : (
-              sortedEqubs.map((eq) => {
-                const mySlots = eq.mySlots || 1;
-                const payoutsClaimed = eq.payoutsClaimed || 0;
-                const totalMembersOrRounds = eq.totalRounds || eq.members.length || 1;
-                const netPool = eq.contributionPerRound * totalMembersOrRounds;
-                const myContributionPerRound = eq.contributionPerRound * mySlots;
-                const isFinished = eq.status === 'COMPLETED' || eq.currentRound >= eq.totalRounds;
-                const progressPercent = Math.min(100, Math.round((eq.currentRound / eq.totalRounds) * 100));
-
-                const startDateFormatted = formatDateByCalendar(eq.startDate || Date.now(), calendarType, true);
-                const endDateFormatted = formatDateByCalendar(eq.computedEndingDate || Date.now(), calendarType, true);
-
-                const isExpanded = expandedEqubId === eq.id;
-
-                return (
-                  <div
-                    key={eq.id}
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setExpandedEqubId(prev => prev === eq.id ? null : eq.id);
-                    }}
-                    className={`bg-white dark:bg-[#131926] border rounded-2xl p-4.5 space-y-3.5 transition-all shadow-sm cursor-pointer ${
-                      isFinished
-                        ? 'border-emerald-300 dark:border-emerald-500/50 bg-emerald-50/20 dark:bg-emerald-950/20'
-                        : isExpanded
-                        ? 'border-indigo-500/80 dark:border-indigo-500/80 ring-2 ring-indigo-500/10'
-                        : 'border-slate-200 dark:border-[#1E2D40] hover:border-indigo-400 dark:hover:border-indigo-500/60'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-extrabold uppercase border ${
-                            isFinished
-                              ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/60 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700'
-                              : 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/60 dark:text-indigo-200 border-indigo-200 dark:border-indigo-700'
-                          }`}>
-                            {isFinished ? 'COMPLETED' : `${eq.interval.replace(/_/g, ' ')} EQUB`}
-                          </span>
-
-                          <span className="text-[10px] bg-slate-100 dark:bg-[#1C2333] text-slate-800 dark:text-slate-200 px-2.5 py-0.5 rounded-full font-extrabold border border-slate-200 dark:border-[#1E2D40]">
-                            {mySlots} {mySlots === 1 ? 'Slot' : 'Slots'}
-                          </span>
-
-                          {isFinished && (
-                            <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-200 px-2.5 py-0.5 rounded-full font-extrabold border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                              <span>FINISHED</span>
-                            </span>
-                          )}
-
-                          {!isFinished && eq.members.some(m => m.isWinner && m.name.includes('Yegeta')) && (
-                            <span className="text-[10px] bg-amber-100 text-amber-950 dark:bg-amber-900/60 dark:text-amber-200 px-2.5 py-0.5 rounded-full font-extrabold border border-amber-300 dark:border-amber-700 flex items-center gap-1">
-                              <Trophy className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                              <span>WON ROUND #{eq.members.find(m => m.isWinner && m.name.includes('Yegeta'))?.wonRound}</span>
-                            </span>
-                          )}
-                        </div>
-                        <h3 className="text-base font-bold text-slate-900 dark:text-white mt-2 flex items-center gap-2">
-                          <span>{eq.name}</span>
-                          {isFinished && (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 inline-block" />
-                          )}
+              <>
+                {/* SECTION 1: ACTIVE EQUB CIRCLES */}
+                {(equbStatusFilter === 'ALL' || equbStatusFilter === 'ACTIVE') && (
+                  <div className="space-y-3">
+                    {equbStatusFilter === 'ALL' && activeEqubsList.length > 0 && (
+                      <div className="flex items-center justify-between pb-1 border-b border-slate-200 dark:border-[#1E2D40]">
+                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-[#F0F4FF] flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                          <span>Active Rotating Circles ({activeEqubsList.length})</span>
                         </h3>
-                      </div>
-
-                      <div className="flex items-start gap-2 sm:gap-3">
-                        <div className="text-right">
-                          <p className="text-[10px] font-bold text-slate-500 dark:text-[#8899BB] uppercase tracking-wider">Net Round Pool</p>
-                          <p className="text-base font-black font-mono text-indigo-600 dark:text-indigo-300">
-                            {hideBalances ? '••••••' : formatETB(netPool)}
-                          </p>
-                        </div>
-                        
-                        {(currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
-                          <div className="flex items-center gap-1 shrink-0 bg-slate-100 dark:bg-[#1C2333] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40]" onClick={e => e.stopPropagation()}>
-                            <button
-                              onClick={() => {
-                                triggerHaptic('light');
-                                startEditEqub(eq);
-                              }}
-                              title="Edit Equb Circle"
-                              className="p-1.5 text-slate-500 dark:text-[#8899BB] hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-[#131926] rounded-lg transition-colors cursor-pointer"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                triggerHaptic('warning');
-                                executeOrConfirmAction('DELETE_EQUB', eq.id, eq.name);
-                              }}
-                              title="Delete Equb Circle (Requires Co-Admin confirmation)"
-                              className="p-1.5 text-slate-500 dark:text-[#8899BB] hover:text-rose-600 dark:hover:text-rose-400 hover:bg-white dark:hover:bg-[#131926] rounded-lg transition-colors cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        )}
-
-                        <div className="p-1.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] text-slate-600 dark:text-[#8899BB] shrink-0 border border-slate-200 dark:border-[#1E2D40]">
-                          {isExpanded ? <ChevronUp className="w-4 h-4 text-indigo-500" /> : <ChevronDown className="w-4 h-4" />}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div>
-                      <div className="flex justify-between text-[11px] font-mono font-bold text-slate-600 dark:text-[#8899BB] mb-1">
-                        <span>Round #{eq.currentRound} of {eq.totalRounds}</span>
-                        <span className={isFinished ? "text-emerald-600 dark:text-emerald-400 font-extrabold" : "text-indigo-600 dark:text-indigo-400 font-extrabold"}>
-                          {isFinished ? "100% Finished" : `${progressPercent}% Completed`}
+                        <span className="text-[10px] text-slate-500 font-mono font-bold">
+                          Per Round: {formatETB(myTotalRoundObligation)}
                         </span>
-                      </div>
-                      <div className="w-full h-2.5 bg-slate-200 dark:bg-[#1C2333] rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${
-                            isFinished
-                              ? 'bg-emerald-500 dark:bg-emerald-400'
-                              : 'bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-500'
-                          }`}
-                          style={{ width: `${progressPercent}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* General Mode Hint when Collapsed */}
-                    {!isExpanded && (
-                      <div className="pt-1 flex items-center justify-between text-xs text-indigo-600 dark:text-indigo-400 font-bold border-t border-slate-100 dark:border-[#1E2D40]/60">
-                        <span>Tap to view details & actions</span>
-                        <ChevronDown className="w-3.5 h-3.5" />
                       </div>
                     )}
 
-                    {/* Detailed Info Grid & Actions (Shown on Click/Expand) */}
-                    {isExpanded && (
-                      <div className="space-y-3.5 pt-2 border-t border-slate-200/80 dark:border-[#1E2D40]" onClick={e => e.stopPropagation()}>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs bg-slate-50 dark:bg-[#1C2333]/90 p-3 rounded-xl border border-slate-200/80 dark:border-[#1E2D40]">
-                          <div>
-                            <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Contribution / Slot</span>
-                            <p className="font-mono font-bold text-slate-900 dark:text-white mt-0.5">{formatETB(eq.contributionPerRound)}</p>
-                            <p className="text-[10px] text-slate-500 font-mono">My Pay: {formatETB(myContributionPerRound)}</p>
-                          </div>
+                    {activeEqubsList.length === 0 && equbStatusFilter === 'ACTIVE' ? (
+                      <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-6 text-center space-y-1 shadow-sm">
+                        <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto" />
+                        <p className="text-xs font-bold text-slate-900 dark:text-white">All Equb circles are currently finished!</p>
+                        <p className="text-[11px] text-slate-500">Start a new Equb circle using the button above.</p>
+                      </div>
+                    ) : (
+                      activeEqubsList.map((eq) => {
+                        const mySlots = eq.mySlots || 1;
+                        const payoutsClaimed = eq.payoutsClaimed || 0;
+                        const totalMembersOrRounds = eq.totalRounds || eq.members.length || 1;
+                        const netPool = eq.contributionPerRound * totalMembersOrRounds;
+                        const myContributionPerRound = eq.contributionPerRound * mySlots;
+                        const isFinished = false;
+                        const progressPercent = Math.min(100, Math.round((eq.currentRound / eq.totalRounds) * 100));
 
-                          <div>
-                            <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Share / Slot</span>
-                            <p className="font-mono font-bold text-indigo-600 dark:text-indigo-300 mt-0.5">{mySlots} {mySlots === 1 ? 'Slot' : 'Slots'}</p>
-                            <p className="text-[10px] text-slate-500 font-mono">Payouts: {payoutsClaimed}/{mySlots}</p>
-                          </div>
+                        const startDateFormatted = formatDateByCalendar(eq.startDate || Date.now(), calendarType, true);
+                        const endDateFormatted = formatDateByCalendar(eq.computedEndingDate || Date.now(), calendarType, true);
 
-                          <div>
-                            <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Starting Date</span>
-                            <p className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mt-0.5">
-                              <Calendar className="w-3.5 h-3.5 text-indigo-500" />
-                              <span>{startDateFormatted}</span>
-                            </p>
-                          </div>
+                        const isExpanded = expandedEqubId === eq.id;
 
-                          <div>
-                            <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Finished Date</span>
-                            <p className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mt-0.5">
-                              <Calendar className="w-3.5 h-3.5 text-emerald-500" />
-                              <span>{endDateFormatted}</span>
-                            </p>
+                        return (
+                          <div
+                            key={eq.id}
+                            onClick={() => {
+                              triggerHaptic('light');
+                              setExpandedEqubId(prev => prev === eq.id ? null : eq.id);
+                            }}
+                            className={`bg-white dark:bg-[#131926] border rounded-2xl p-4.5 space-y-3.5 transition-all shadow-sm cursor-pointer ${
+                              isExpanded
+                                ? 'border-indigo-500/80 dark:border-indigo-500/80 ring-2 ring-indigo-500/10'
+                                : 'border-slate-200 dark:border-[#1E2D40] hover:border-indigo-400 dark:hover:border-indigo-500/60'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[10px] px-2.5 py-0.5 rounded-full font-extrabold uppercase border bg-indigo-100 text-indigo-900 dark:bg-indigo-900/60 dark:text-indigo-200 border-indigo-200 dark:border-indigo-700">
+                                    {eq.interval.replace(/_/g, ' ')} EQUB
+                                  </span>
+
+                                  <span className="text-[10px] bg-slate-100 dark:bg-[#1C2333] text-slate-800 dark:text-slate-200 px-2.5 py-0.5 rounded-full font-extrabold border border-slate-200 dark:border-[#1E2D40]">
+                                    {mySlots} {mySlots === 1 ? 'Slot' : 'Slots'}
+                                  </span>
+
+                                  {eq.members.some(m => m.isWinner && m.name.includes('Yegeta')) && (
+                                    <span className="text-[10px] bg-amber-100 text-amber-950 dark:bg-amber-900/60 dark:text-amber-200 px-2.5 py-0.5 rounded-full font-extrabold border border-amber-300 dark:border-amber-700 flex items-center gap-1">
+                                      <Trophy className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                      <span>WON ROUND #{eq.members.find(m => m.isWinner && m.name.includes('Yegeta'))?.wonRound}</span>
+                                    </span>
+                                  )}
+                                </div>
+                                <h3 className="text-base font-bold text-slate-900 dark:text-white mt-2 flex items-center gap-2">
+                                  <span>{eq.name}</span>
+                                </h3>
+                              </div>
+
+                              <div className="flex items-start gap-2 sm:gap-3">
+                                <div className="text-right">
+                                  <p className="text-[10px] font-bold text-slate-500 dark:text-[#8899BB] uppercase tracking-wider">Net Round Pool</p>
+                                  <p className="text-base font-black font-mono text-indigo-600 dark:text-indigo-300">
+                                    {hideBalances ? '••••••' : formatETB(netPool)}
+                                  </p>
+                                </div>
+                                
+                                {(currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
+                                  <div className="flex items-center gap-1 shrink-0 bg-slate-100 dark:bg-[#1C2333] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40]" onClick={e => e.stopPropagation()}>
+                                    <button
+                                      onClick={() => {
+                                        triggerHaptic('light');
+                                        startEditEqub(eq);
+                                      }}
+                                      title="Edit Equb Circle"
+                                      className="p-1.5 text-slate-500 dark:text-[#8899BB] hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-[#131926] rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      <Edit className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        triggerHaptic('warning');
+                                        executeOrConfirmAction('DELETE_EQUB', eq.id, eq.name);
+                                      }}
+                                      title="Delete Equb Circle (Requires Co-Admin confirmation)"
+                                      className="p-1.5 text-slate-500 dark:text-[#8899BB] hover:text-rose-600 dark:hover:text-rose-400 hover:bg-white dark:hover:bg-[#131926] rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                )}
+
+                                <div className="p-1.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] text-slate-600 dark:text-[#8899BB] shrink-0 border border-slate-200 dark:border-[#1E2D40]">
+                                  {isExpanded ? <ChevronUp className="w-4 h-4 text-indigo-500" /> : <ChevronDown className="w-4 h-4" />}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div>
+                              <div className="flex justify-between text-[11px] font-mono font-bold text-slate-600 dark:text-[#8899BB] mb-1">
+                                <span>Round #{eq.currentRound} of {eq.totalRounds}</span>
+                                <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">
+                                  {progressPercent}% Completed
+                                </span>
+                              </div>
+                              <div className="w-full h-2.5 bg-slate-200 dark:bg-[#1C2333] rounded-full overflow-hidden">
+                                <div
+                                  className="h-full rounded-full transition-all bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-500"
+                                  style={{ width: `${progressPercent}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* General Mode Hint when Collapsed */}
+                            {!isExpanded && (
+                              <div className="pt-1 flex items-center justify-between text-xs text-indigo-600 dark:text-indigo-400 font-bold border-t border-slate-100 dark:border-[#1E2D40]/60">
+                                <span>Tap to view details & actions</span>
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              </div>
+                            )}
+
+                            {/* Detailed Info Grid & Actions (Shown on Click/Expand) */}
+                            {isExpanded && (
+                              <div className="space-y-3.5 pt-2 border-t border-slate-200/80 dark:border-[#1E2D40]" onClick={e => e.stopPropagation()}>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs bg-slate-50 dark:bg-[#1C2333]/90 p-3 rounded-xl border border-slate-200/80 dark:border-[#1E2D40]">
+                                  <div>
+                                    <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Contribution / Slot</span>
+                                    <p className="font-mono font-bold text-slate-900 dark:text-white mt-0.5">{formatETB(eq.contributionPerRound)}</p>
+                                    <p className="text-[10px] text-slate-500 font-mono">My Pay: {formatETB(myContributionPerRound)}</p>
+                                  </div>
+
+                                  <div>
+                                    <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Share / Slot</span>
+                                    <p className="font-mono font-bold text-indigo-600 dark:text-indigo-300 mt-0.5">{mySlots} {mySlots === 1 ? 'Slot' : 'Slots'}</p>
+                                    <p className="text-[10px] text-slate-500 font-mono">Payouts: {payoutsClaimed}/{mySlots}</p>
+                                  </div>
+
+                                  <div>
+                                    <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Starting Date</span>
+                                    <p className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mt-0.5">
+                                      <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                                      <span>{startDateFormatted}</span>
+                                    </p>
+                                  </div>
+
+                                  <div>
+                                    <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Finished Date</span>
+                                    <p className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mt-0.5">
+                                      <Calendar className="w-3.5 h-3.5 text-emerald-500" />
+                                      <span>{endDateFormatted}</span>
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {/* Agerye specific July payments timeline */}
+                                {eq.id === 'eq-agerye' && (
+                                  <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 rounded-xl text-xs space-y-1.5">
+                                    <div className="flex items-center justify-between text-[11px] font-bold text-indigo-950 dark:text-indigo-200">
+                                      <span className="flex items-center gap-1.5">
+                                        <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                        <span>Last 3 July Payments Paid:</span>
+                                      </span>
+                                      <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400">3 × 5,000 ETB</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-[10px] font-mono text-indigo-900 dark:text-indigo-200 pt-0.5">
+                                      <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/60 rounded border border-indigo-200 dark:border-indigo-700 font-bold">July 08</span>
+                                      <span className="text-indigo-400">→</span>
+                                      <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/60 rounded border border-indigo-200 dark:border-indigo-700 font-bold">July 17</span>
+                                      <span className="text-indigo-400">→</span>
+                                      <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/60 rounded border border-indigo-200 dark:border-indigo-700 font-bold">July 29</span>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Action CTAs */}
+                                <div className="flex items-center gap-2 pt-1">
+                                  <button
+                                    onClick={() => {
+                                      triggerHaptic('medium');
+                                      openPayRoundModal(eq);
+                                    }}
+                                    className="flex-1 py-2.5 rounded-xl bg-indigo-600 dark:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer hover:bg-indigo-700 dark:hover:bg-indigo-600 active:scale-[0.99] transition-all"
+                                  >
+                                    <DollarSign className="w-4 h-4" />
+                                    <span>Pay Round #{eq.currentRound} ({formatETB(myContributionPerRound)})</span>
+                                  </button>
+
+                                  {payoutsClaimed < mySlots ? (
+                                    <button
+                                      onClick={() => {
+                                        triggerHaptic('heavy');
+                                        setShowPayoutModal(eq);
+                                      }}
+                                      className="py-2.5 px-3.5 rounded-xl bg-emerald-600 dark:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer hover:bg-emerald-700 dark:hover:bg-emerald-600 active:scale-[0.99] shadow-md transition-all"
+                                    >
+                                      <Trophy className="w-4 h-4" />
+                                      <span>Claim Payout ({payoutsClaimed + 1}/{mySlots})</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      disabled
+                                      className="py-2.5 px-3.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-500 dark:text-slate-400 font-bold text-xs flex items-center gap-1.5 opacity-80"
+                                    >
+                                      <Trophy className="w-4 h-4 text-slate-400" />
+                                      <span>Payouts Claimed ({payoutsClaimed}/{mySlots})</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+
+                {/* SECTION 2: FINISHED / COMPLETED EQUB CIRCLES (Clean Grouped Accordion) */}
+                {finishedEqubsList.length > 0 && (equbStatusFilter === 'ALL' || equbStatusFilter === 'COMPLETED') && (
+                  <div className="bg-slate-100/80 dark:bg-[#0F172A] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-3.5 space-y-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setIsFinishedEqubExpanded(prev => !prev);
+                      }}
+                      className="w-full flex items-center justify-between text-left cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 flex items-center justify-center text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle2 className="w-4 h-4" />
                         </div>
+                        <div>
+                          <h4 className="text-xs font-black text-slate-900 dark:text-[#F0F4FF] flex items-center gap-2">
+                            <span>Finished Equb Circles</span>
+                            <span className="text-[10px] font-mono px-2 py-0.2 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700">
+                              {finishedEqubsList.length} Completed
+                            </span>
+                          </h4>
+                          <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">
+                            Archived rotating circles where all rounds were concluded
+                          </p>
+                        </div>
+                      </div>
 
-                        {/* Agerye specific July payments timeline */}
-                        {eq.id === 'eq-agerye' && (
-                          <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 rounded-xl text-xs space-y-1.5">
-                            <div className="flex items-center justify-between text-[11px] font-bold text-indigo-950 dark:text-indigo-200">
-                              <span className="flex items-center gap-1.5">
-                                <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                                <span>Last 3 July Payments Paid:</span>
-                              </span>
-                              <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400">3 × 5,000 ETB</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-[10px] font-mono text-indigo-900 dark:text-indigo-200 pt-0.5">
-                              <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/60 rounded border border-indigo-200 dark:border-indigo-700 font-bold">July 08</span>
-                              <span className="text-indigo-400">→</span>
-                              <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/60 rounded border border-indigo-200 dark:border-indigo-700 font-bold">July 17</span>
-                              <span className="text-indigo-400">→</span>
-                              <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/60 rounded border border-indigo-200 dark:border-indigo-700 font-bold">July 29</span>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Action CTAs */}
-                        <div className="flex items-center gap-2 pt-1">
-                          {!isFinished ? (
-                            <>
-                              <button
-                                onClick={() => {
-                                  triggerHaptic('medium');
-                                  openPayRoundModal(eq);
-                                }}
-                                className="flex-1 py-2.5 rounded-xl bg-indigo-600 dark:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer hover:bg-indigo-700 dark:hover:bg-indigo-600 active:scale-[0.99] transition-all"
-                              >
-                                <DollarSign className="w-4 h-4" />
-                                <span>Pay Round #{eq.currentRound} ({formatETB(myContributionPerRound)})</span>
-                              </button>
-
-                              {payoutsClaimed < mySlots ? (
-                                <button
-                                  onClick={() => {
-                                    triggerHaptic('heavy');
-                                    setShowPayoutModal(eq);
-                                  }}
-                                  className="py-2.5 px-3.5 rounded-xl bg-emerald-600 dark:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer hover:bg-emerald-700 dark:hover:bg-emerald-600 active:scale-[0.99] shadow-md transition-all"
-                                >
-                                  <Trophy className="w-4 h-4" />
-                                  <span>Claim Payout ({payoutsClaimed + 1}/{mySlots})</span>
-                                </button>
-                              ) : (
-                                <button
-                                  disabled
-                                  className="py-2.5 px-3.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-500 dark:text-slate-400 font-bold text-xs flex items-center gap-1.5 opacity-80"
-                                >
-                                  <Trophy className="w-4 h-4 text-slate-400" />
-                                  <span>Payouts Claimed ({payoutsClaimed}/{mySlots})</span>
-                                </button>
-                              )}
-                            </>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 group-hover:underline">
+                          {isFinishedEqubExpanded || equbStatusFilter === 'COMPLETED' ? 'Hide' : 'Show All'}
+                        </span>
+                        <div className="p-1 rounded-lg bg-white dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-600 dark:text-[#8899BB]">
+                          {isFinishedEqubExpanded || equbStatusFilter === 'COMPLETED' ? (
+                            <ChevronUp className="w-4 h-4" />
                           ) : (
-                            <div className="w-full py-2.5 bg-emerald-100 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700/60 text-emerald-900 dark:text-emerald-200 font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                              <span>Equb Circle Finished & Completed</span>
-                            </div>
+                            <ChevronDown className="w-4 h-4" />
                           )}
                         </div>
+                      </div>
+                    </button>
+
+                    {/* Grouped Finished Items List */}
+                    {(isFinishedEqubExpanded || equbStatusFilter === 'COMPLETED') && (
+                      <div className="space-y-2.5 pt-2 border-t border-slate-200 dark:border-[#1E2D40]/60">
+                        {finishedEqubsList.map((eq) => {
+                          const mySlots = eq.mySlots || 1;
+                          const totalMembersOrRounds = eq.totalRounds || eq.members.length || 1;
+                          const netPool = eq.contributionPerRound * totalMembersOrRounds;
+                          const startDateFormatted = formatDateByCalendar(eq.startDate || Date.now(), calendarType, true);
+                          const endDateFormatted = formatDateByCalendar(eq.computedEndingDate || Date.now(), calendarType, true);
+
+                          return (
+                            <div
+                              key={eq.id}
+                              className="bg-white dark:bg-[#131926] border border-emerald-200/80 dark:border-emerald-900/50 rounded-xl p-3.5 space-y-2.5 shadow-2xs hover:border-emerald-400 transition-all"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-[9px] px-2 py-0.5 rounded font-extrabold uppercase bg-emerald-100 text-emerald-900 dark:bg-emerald-900/60 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                      <span>FINISHED & ARCHIVED</span>
+                                    </span>
+                                    <span className="text-[9px] bg-slate-100 dark:bg-[#1C2333] text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded font-bold border border-slate-200 dark:border-[#1E2D40]">
+                                      {mySlots} {mySlots === 1 ? 'Slot' : 'Slots'}
+                                    </span>
+                                  </div>
+                                  <h4 className="text-sm font-bold text-slate-900 dark:text-white mt-1">{eq.name}</h4>
+                                </div>
+
+                                <div className="text-right">
+                                  <p className="text-[9px] text-slate-500 uppercase font-semibold">Total Pool Paid Out</p>
+                                  <p className="text-sm font-black font-mono text-emerald-600 dark:text-emerald-400">
+                                    {hideBalances ? '••••••' : formatETB(netPool)}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs bg-slate-50 dark:bg-[#1C2333]/60 p-2 rounded-lg border border-slate-100 dark:border-[#1E2D40]/40">
+                                <div>
+                                  <span className="text-[9px] text-slate-500 uppercase font-semibold">Rounds Completed</span>
+                                  <p className="font-mono font-bold text-slate-800 dark:text-slate-200">{eq.totalRounds} of {eq.totalRounds} (100%)</p>
+                                </div>
+                                <div>
+                                  <span className="text-[9px] text-slate-500 uppercase font-semibold">Contribution / Round</span>
+                                  <p className="font-mono font-bold text-slate-800 dark:text-slate-200">{formatETB(eq.contributionPerRound)}</p>
+                                </div>
+                                <div>
+                                  <span className="text-[9px] text-slate-500 uppercase font-semibold">Started</span>
+                                  <p className="font-bold text-slate-800 dark:text-slate-200">{startDateFormatted}</p>
+                                </div>
+                                <div>
+                                  <span className="text-[9px] text-slate-500 uppercase font-semibold">Concluded</span>
+                                  <p className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                    <Check className="w-3 h-3" />
+                                    <span>{endDateFormatted}</span>
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
-                );
-              })
+                )}
+              </>
             )}
           </div>
         </div>
@@ -1132,165 +1309,336 @@ export const EqubView: React.FC<EqubViewProps> = ({
             </div>
           </div>
 
-          {/* Sub-Filter Tabs: ALL vs LENT vs BORROWED */}
-          <div className="flex items-center gap-1.5 bg-slate-200/70 dark:bg-[#131926] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40] w-fit">
-            <button
-              onClick={() => {
-                triggerHaptic('light');
-                setLoanCategoryFilter('ALL');
-              }}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                loanCategoryFilter === 'ALL'
-                  ? 'bg-white dark:bg-[#1C2333] text-slate-900 dark:text-white shadow-sm border border-slate-200 dark:border-[#1E2D40]'
-                  : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              All Contracts ({loans.length})
-            </button>
+          {/* Sub-Filter Tabs: Category & Status */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {/* Category Filter */}
+            <div className="flex items-center gap-1.5 bg-slate-200/70 dark:bg-[#131926] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40] w-fit">
+              <button
+                onClick={() => {
+                  triggerHaptic('light');
+                  setLoanCategoryFilter('ALL');
+                }}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                  loanCategoryFilter === 'ALL'
+                    ? 'bg-white dark:bg-[#1C2333] text-slate-900 dark:text-white shadow-sm border border-slate-200 dark:border-[#1E2D40]'
+                    : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                All ({loans.length})
+              </button>
 
-            <button
-              onClick={() => {
-                triggerHaptic('light');
-                setLoanCategoryFilter('LENT');
-              }}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
-                loanCategoryFilter === 'LENT'
-                  ? 'bg-emerald-100 text-emerald-800 dark:bg-[#00D4AA]/20 dark:text-[#00D4AA] border border-emerald-300 dark:border-[#00D4AA]/40 shadow-sm'
-                  : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <ArrowUpRight className="w-3 h-3" />
-              <span>Lent Out ({loans.filter(l => l.direction === 'LENT' || l.title.toLowerCase().includes('lent') || l.title.toLowerCase().includes('lend')).length})</span>
-            </button>
+              <button
+                onClick={() => {
+                  triggerHaptic('light');
+                  setLoanCategoryFilter('LENT');
+                }}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                  loanCategoryFilter === 'LENT'
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-[#00D4AA]/20 dark:text-[#00D4AA] border border-emerald-300 dark:border-[#00D4AA]/40 shadow-sm'
+                    : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <ArrowUpRight className="w-3 h-3" />
+                <span>Lent Out ({loans.filter(l => l.direction === 'LENT' || l.title.toLowerCase().includes('lent') || l.title.toLowerCase().includes('lend')).length})</span>
+              </button>
 
-            <button
-              onClick={() => {
-                triggerHaptic('light');
-                setLoanCategoryFilter('BORROWED');
-              }}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
-                loanCategoryFilter === 'BORROWED'
-                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-400 border border-amber-300 dark:border-amber-500/40 shadow-sm'
-                  : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <ArrowDownLeft className="w-3 h-3" />
-              <span>Borrowed ({loans.filter(l => l.direction !== 'LENT' && !l.title.toLowerCase().includes('lent') && !l.title.toLowerCase().includes('lend')).length})</span>
-            </button>
+              <button
+                onClick={() => {
+                  triggerHaptic('light');
+                  setLoanCategoryFilter('BORROWED');
+                }}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                  loanCategoryFilter === 'BORROWED'
+                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-400 border border-amber-300 dark:border-amber-500/40 shadow-sm'
+                    : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <ArrowDownLeft className="w-3 h-3" />
+                <span>Borrowed ({loans.filter(l => l.direction !== 'LENT' && !l.title.toLowerCase().includes('lent') && !l.title.toLowerCase().includes('lend')).length})</span>
+              </button>
+            </div>
+
+            {/* Status Filter (Active vs Settled) */}
+            <div className="flex items-center gap-1 bg-slate-200/70 dark:bg-[#131926] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40]">
+              <button
+                onClick={() => {
+                  triggerHaptic('light');
+                  setLoanStatusFilter('ALL');
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                  loanStatusFilter === 'ALL'
+                    ? 'bg-white dark:bg-[#1C2333] text-slate-900 dark:text-white shadow-sm'
+                    : 'text-slate-600 dark:text-[#8899BB]'
+                }`}
+              >
+                All Status
+              </button>
+              <button
+                onClick={() => {
+                  triggerHaptic('light');
+                  setLoanStatusFilter('ACTIVE');
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                  loanStatusFilter === 'ACTIVE'
+                    ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-200 shadow-sm'
+                    : 'text-slate-600 dark:text-[#8899BB]'
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                <span>Active ({activeLoansList.length})</span>
+              </button>
+              <button
+                onClick={() => {
+                  triggerHaptic('light');
+                  setLoanStatusFilter('SETTLED');
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                  loanStatusFilter === 'SETTLED'
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 shadow-sm'
+                    : 'text-slate-600 dark:text-[#8899BB]'
+                }`}
+              >
+                <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                <span>Finished ({finishedLoansList.length})</span>
+              </button>
+            </div>
           </div>
 
-          {/* Loan List */}
-          <div className="space-y-3">
+          {/* Loan List Organized by Active vs Finished */}
+          <div className="space-y-4">
             {filteredLoans.length === 0 ? (
-              <p className="text-xs text-slate-500 dark:text-[#8899BB] py-6 text-center bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl shadow-sm">
-                No loans found matching filter.
+              <p className="text-xs text-slate-500 dark:text-[#8899BB] py-8 text-center bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl shadow-sm">
+                No loans found matching the current filter.
               </p>
             ) : (
-              filteredLoans.map((loan) => {
-                const isLent = loan.direction === 'LENT' || loan.title.toLowerCase().includes('lent') || loan.title.toLowerCase().includes('lend');
+              <>
+                {/* SECTION 1: ACTIVE LOANS */}
+                {(() => {
+                  const currentActiveFilteredLoans = filteredLoans.filter(l => l.status === 'ACTIVE' && l.outstandingBalance > 0);
+                  const currentFinishedFilteredLoans = filteredLoans.filter(l => l.status === 'SETTLED' || l.status === 'CLOSED' || l.outstandingBalance <= 0);
 
-                return (
-                  <div
-                    key={loan.id}
-                    className={`bg-white dark:bg-[#131926] border rounded-2xl p-4 space-y-3 transition-all shadow-sm ${
-                      isLent ? 'border-emerald-200 dark:border-[#00D4AA]/30 hover:border-emerald-500 dark:hover:border-[#00D4AA]' : 'border-amber-200 dark:border-amber-500/30 hover:border-amber-500'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase border ${
-                              isLent
-                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-[#00D4AA]/20 dark:text-[#00D4AA] dark:border-[#00D4AA]/30'
-                                : 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-500/20 dark:text-amber-400 dark:border-amber-500/30'
-                            }`}
-                          >
-                            {isLent ? 'LENT OUT (WE LENT)' : 'BORROWED (DEBT)'}
-                          </span>
-                          <span className="text-[9px] bg-slate-100 dark:bg-[#1C2333] text-slate-600 dark:text-[#8899BB] px-1.5 py-0.2 rounded font-mono">
-                            {loan.type}
-                          </span>
+                  return (
+                    <>
+                      {(loanStatusFilter === 'ALL' || loanStatusFilter === 'ACTIVE') && currentActiveFilteredLoans.length > 0 && (
+                        <div className="space-y-3">
+                          {loanStatusFilter === 'ALL' && (
+                            <div className="flex items-center justify-between pb-1 border-b border-slate-200 dark:border-[#1E2D40]">
+                              <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-[#F0F4FF] flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                                <span>Active Loan Contracts ({currentActiveFilteredLoans.length})</span>
+                              </h3>
+                              <span className="text-[10px] text-slate-500 font-mono font-bold">
+                                {currentActiveFilteredLoans.filter(l => l.direction === 'LENT' || l.title.toLowerCase().includes('lent') || l.title.toLowerCase().includes('lend')).length} Lent • {currentActiveFilteredLoans.filter(l => l.direction !== 'LENT' && !l.title.toLowerCase().includes('lent') && !l.title.toLowerCase().includes('lend')).length} Borrowed
+                              </span>
+                            </div>
+                          )}
+
+                          {currentActiveFilteredLoans.map((loan) => {
+                            const isLent = loan.direction === 'LENT' || loan.title.toLowerCase().includes('lent') || loan.title.toLowerCase().includes('lend');
+
+                            return (
+                              <div
+                                key={loan.id}
+                                className={`bg-white dark:bg-[#131926] border rounded-2xl p-4 space-y-3 transition-all shadow-sm ${
+                                  isLent ? 'border-emerald-200 dark:border-[#00D4AA]/30 hover:border-emerald-500 dark:hover:border-[#00D4AA]' : 'border-amber-200 dark:border-amber-500/30 hover:border-amber-500'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <div className="flex items-center gap-1.5">
+                                      <span
+                                        className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase border ${
+                                          isLent
+                                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-[#00D4AA]/20 dark:text-[#00D4AA] dark:border-[#00D4AA]/30'
+                                            : 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-500/20 dark:text-amber-400 dark:border-amber-500/30'
+                                        }`}
+                                      >
+                                        {isLent ? 'LENT OUT (WE LENT)' : 'BORROWED (DEBT)'}
+                                      </span>
+                                      <span className="text-[9px] bg-slate-100 dark:bg-[#1C2333] text-slate-600 dark:text-[#8899BB] px-1.5 py-0.2 rounded font-mono">
+                                        {loan.type}
+                                      </span>
+                                    </div>
+                                    <h3 className="text-sm font-bold text-slate-900 dark:text-white mt-1">{loan.title}</h3>
+                                    <p className="text-[11px] text-slate-500 dark:text-[#8899BB]">
+                                      {isLent ? 'Borrower' : 'Lender'}: <strong className="text-slate-900 dark:text-white">{loan.counterparty}</strong>
+                                    </p>
+                                  </div>
+
+                                  <div className="flex items-start gap-3">
+                                    <div className="text-right">
+                                      <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">Outstanding Balance</p>
+                                      <p
+                                        className={`text-base font-black font-mono ${
+                                          isLent ? 'text-emerald-600 dark:text-[#00D4AA]' : 'text-amber-600 dark:text-amber-400'
+                                        }`}
+                                      >
+                                        {hideBalances ? '••••••' : formatETB(loan.outstandingBalance)}
+                                      </p>
+                                    </div>
+                                    {(currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
+                                      <div className="flex items-center gap-1 shrink-0 bg-slate-100 dark:bg-[#1C2333] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40]">
+                                        <button
+                                          onClick={() => {
+                                            triggerHaptic('light');
+                                            startEditLoan(loan);
+                                          }}
+                                          title="Edit Loan Contract"
+                                          className="p-1.5 text-slate-500 dark:text-[#8899BB] hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-[#131926] rounded-lg transition-colors cursor-pointer"
+                                        >
+                                          <Edit className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            triggerHaptic('warning');
+                                            executeOrConfirmAction('DELETE_LOAN', loan.id, loan.title);
+                                          }}
+                                          title="Delete Loan Contract (Requires Co-Admin confirmation)"
+                                          className="p-1.5 text-slate-500 dark:text-[#8899BB] hover:text-rose-600 dark:hover:text-rose-400 hover:bg-white dark:hover:bg-[#131926] rounded-lg transition-colors cursor-pointer"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 dark:bg-[#1C2333] p-2.5 rounded-xl border border-slate-100 dark:border-transparent">
+                                  <div>
+                                    <span className="text-[10px] text-slate-500 dark:text-[#8899BB]">Initial Principal</span>
+                                    <p className="font-mono font-bold text-slate-900 dark:text-white">{formatETB(loan.initialAmount)}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-[10px] text-slate-500 dark:text-[#8899BB]">Due Date</span>
+                                    <p className="font-mono font-bold text-slate-900 dark:text-white">{formatDateByCalendar(loan.dueDate, calendarType, true)}</p>
+                                  </div>
+                                </div>
+
+                                {/* Action button */}
+                                {loan.status === 'ACTIVE' && loan.outstandingBalance > 0 && (
+                                  <button
+                                    onClick={() => {
+                                      triggerHaptic('medium');
+                                      setActiveLoanActionModal(loan);
+                                      setLoanActionAmount(loan.monthlyInstallment ? loan.monthlyInstallment.toString() : loan.outstandingBalance.toString());
+                                      setLoanActionWalletId(wallets[0]?.id || '');
+                                    }}
+                                    className={`w-full py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-colors ${
+                                      isLent
+                                        ? 'bg-emerald-600 dark:bg-[#00D4AA] text-white dark:text-[#0A0E1A] hover:bg-emerald-700 dark:hover:bg-[#00B38F]'
+                                        : 'bg-amber-500 text-white dark:text-[#0A0E1A] hover:bg-amber-600 dark:hover:bg-amber-400'
+                                    }`}
+                                  >
+                                    <DollarSign className="w-3.5 h-3.5" />
+                                    <span>
+                                      {isLent ? 'Collect Loan Repayment to Wallet' : 'Pay Loan Installment from Wallet'}
+                                    </span>
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                        <h3 className="text-sm font-bold text-slate-900 dark:text-white mt-1">{loan.title}</h3>
-                        <p className="text-[11px] text-slate-500 dark:text-[#8899BB]">
-                          {isLent ? 'Borrower' : 'Lender'}: <strong className="text-slate-900 dark:text-white">{loan.counterparty}</strong>
-                        </p>
-                      </div>
+                      )}
 
-                      <div className="flex items-start gap-3">
-                        <div className="text-right">
-                          <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">Outstanding Balance</p>
-                          <p
-                            className={`text-base font-black font-mono ${
-                              isLent ? 'text-emerald-600 dark:text-[#00D4AA]' : 'text-amber-600 dark:text-amber-400'
-                            }`}
+                      {/* SECTION 2: FINISHED / SETTLED LOANS (Clean Grouped Accordion) */}
+                      {currentFinishedFilteredLoans.length > 0 && (loanStatusFilter === 'ALL' || loanStatusFilter === 'SETTLED') && (
+                        <div className="bg-slate-100/80 dark:bg-[#0F172A] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-3.5 space-y-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              setIsFinishedLoansExpanded(prev => !prev);
+                            }}
+                            className="w-full flex items-center justify-between text-left cursor-pointer group"
                           >
-                            {hideBalances ? '••••••' : formatETB(loan.outstandingBalance)}
-                          </p>
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 flex items-center justify-center text-emerald-700 dark:text-emerald-400">
+                                <CheckCircle2 className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-black text-slate-900 dark:text-[#F0F4FF] flex items-center gap-2">
+                                  <span>Finished & Settled Loans</span>
+                                  <span className="text-[10px] font-mono px-2 py-0.2 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700">
+                                    {currentFinishedFilteredLoans.length} Settled
+                                  </span>
+                                </h4>
+                                <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">
+                                  Archived contracts that have been fully paid off or collected
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 group-hover:underline">
+                                {isFinishedLoansExpanded || loanStatusFilter === 'SETTLED' ? 'Hide' : 'Show All'}
+                              </span>
+                              <div className="p-1 rounded-lg bg-white dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-600 dark:text-[#8899BB]">
+                                {isFinishedLoansExpanded || loanStatusFilter === 'SETTLED' ? (
+                                  <ChevronUp className="w-4 h-4" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4" />
+                                )}
+                              </div>
+                            </div>
+                          </button>
+
+                          {(isFinishedLoansExpanded || loanStatusFilter === 'SETTLED') && (
+                            <div className="space-y-2.5 pt-2 border-t border-slate-200 dark:border-[#1E2D40]/60">
+                              {currentFinishedFilteredLoans.map((loan) => {
+                                const isLent = loan.direction === 'LENT' || loan.title.toLowerCase().includes('lent') || loan.title.toLowerCase().includes('lend');
+
+                                return (
+                                  <div
+                                    key={loan.id}
+                                    className="bg-white dark:bg-[#131926] border border-emerald-200/70 dark:border-emerald-900/40 rounded-xl p-3.5 space-y-2.5 shadow-2xs hover:border-emerald-400 transition-all"
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="text-[9px] px-2 py-0.5 rounded font-extrabold uppercase bg-emerald-100 text-emerald-900 dark:bg-emerald-900/60 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
+                                            <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                            <span>SETTLED (0 ETB)</span>
+                                          </span>
+                                          <span className="text-[9px] bg-slate-100 dark:bg-[#1C2333] text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded font-bold border border-slate-200 dark:border-[#1E2D40]">
+                                            {isLent ? 'Lent Out' : 'Borrowed'}
+                                          </span>
+                                        </div>
+                                        <h4 className="text-sm font-bold text-slate-900 dark:text-white mt-1">{loan.title}</h4>
+                                        <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">
+                                          {isLent ? 'Borrower' : 'Lender'}: <strong className="text-slate-800 dark:text-slate-200">{loan.counterparty}</strong>
+                                        </p>
+                                      </div>
+
+                                      <div className="text-right">
+                                        <p className="text-[9px] text-slate-500 uppercase font-semibold">Total Settled</p>
+                                        <p className="text-sm font-black font-mono text-emerald-600 dark:text-emerald-400">
+                                          {formatETB(loan.initialAmount)}
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 dark:bg-[#1C2333]/60 p-2 rounded-lg border border-slate-100 dark:border-[#1E2D40]/40">
+                                      <div>
+                                        <span className="text-[9px] text-slate-500 uppercase font-semibold">Initial Principal</span>
+                                        <p className="font-mono font-bold text-slate-800 dark:text-slate-200">{formatETB(loan.initialAmount)}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-[9px] text-slate-500 uppercase font-semibold">Due Date</span>
+                                        <p className="font-bold text-slate-800 dark:text-slate-200">{formatDateByCalendar(loan.dueDate, calendarType, true)}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
-                        {(currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
-                          <div className="flex items-center gap-1 shrink-0 bg-slate-100 dark:bg-[#1C2333] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40]">
-                            <button
-                              onClick={() => {
-                                triggerHaptic('light');
-                                startEditLoan(loan);
-                              }}
-                              title="Edit Loan Contract"
-                              className="p-1.5 text-slate-500 dark:text-[#8899BB] hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-[#131926] rounded-lg transition-colors cursor-pointer"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                triggerHaptic('warning');
-                                executeOrConfirmAction('DELETE_LOAN', loan.id, loan.title);
-                              }}
-                              title="Delete Loan Contract (Requires Co-Admin confirmation)"
-                              className="p-1.5 text-slate-500 dark:text-[#8899BB] hover:text-rose-600 dark:hover:text-rose-400 hover:bg-white dark:hover:bg-[#131926] rounded-lg transition-colors cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 dark:bg-[#1C2333] p-2.5 rounded-xl border border-slate-100 dark:border-transparent">
-                      <div>
-                        <span className="text-[10px] text-slate-500 dark:text-[#8899BB]">Initial Principal</span>
-                        <p className="font-mono font-bold text-slate-900 dark:text-white">{formatETB(loan.initialAmount)}</p>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-500 dark:text-[#8899BB]">Due Date</span>
-                        <p className="font-mono font-bold text-slate-900 dark:text-white">{formatDateByCalendar(loan.dueDate, calendarType, true)}</p>
-                      </div>
-                    </div>
-
-                    {/* Action button */}
-                    {loan.status === 'ACTIVE' && loan.outstandingBalance > 0 && (
-                      <button
-                        onClick={() => {
-                          triggerHaptic('medium');
-                          setActiveLoanActionModal(loan);
-                          setLoanActionAmount(loan.monthlyInstallment ? loan.monthlyInstallment.toString() : loan.outstandingBalance.toString());
-                          setLoanActionWalletId(wallets[0]?.id || '');
-                        }}
-                        className={`w-full py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-colors ${
-                          isLent
-                            ? 'bg-emerald-600 dark:bg-[#00D4AA] text-white dark:text-[#0A0E1A] hover:bg-emerald-700 dark:hover:bg-[#00B38F]'
-                            : 'bg-amber-500 text-white dark:text-[#0A0E1A] hover:bg-amber-600 dark:hover:bg-amber-400'
-                        }`}
-                      >
-                        <DollarSign className="w-3.5 h-3.5" />
-                        <span>
-                          {isLent ? 'Collect Loan Repayment to Wallet' : 'Pay Loan Installment from Wallet'}
-                        </span>
-                      </button>
-                    )}
-                  </div>
-                );
-              })
+                      )}
+                    </>
+                  );
+                })()}
+              </>
             )}
           </div>
         </div>

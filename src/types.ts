@@ -78,9 +78,9 @@ export interface Transaction {
   walletId: string;
   category: string;
   description: string;
-  creatorId: string;
-  creatorName: string;
-  branch: string;
+  creatorId?: string;
+  creatorName?: string;
+  branch?: string;
   notes?: string;
   refType?: 'EQUB' | 'LOAN' | 'ASSET' | 'RECEIVABLE' | 'RECURRING';
   refId?: string;

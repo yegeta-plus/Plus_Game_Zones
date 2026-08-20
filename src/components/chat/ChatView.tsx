@@ -27,6 +27,8 @@ import {
 } from 'lucide-react';
 import { ERPState, ChatMessage, ChatChannel, UserProfile, Transaction, Wallet as WalletType, Equb } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
+import { EmojiPickerPopup } from './EmojiPickerPopup';
+import { QUICK_REACTION_EMOJIS } from './emojiData';
 
 interface ChatViewProps {
   state: ERPState;
@@ -620,24 +622,15 @@ export const ChatView: React.FC<ChatViewProps> = ({
               <Send className="w-4 h-4 stroke-[2.5]" />
             </button>
 
-            {/* Quick Emoji Picker Popover */}
-            {showEmojiPicker && (
-              <div className="absolute bottom-16 left-12 bg-white dark:bg-[#1A2333] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-2.5 shadow-xl grid grid-cols-5 gap-2 z-30">
-                {COMMON_EMOJIS.map(emoji => (
-                  <button
-                    key={emoji}
-                    type="button"
-                    onClick={() => {
-                      setInputText(prev => prev + ' ' + emoji);
-                      setShowEmojiPicker(false);
-                    }}
-                    className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-base transition-transform hover:scale-125 cursor-pointer"
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-            )}
+            {/* Comprehensive Phone Emoji Picker Popover */}
+            <EmojiPickerPopup
+              isOpen={showEmojiPicker}
+              onClose={() => setShowEmojiPicker(false)}
+              onSelectEmoji={(emoji) => {
+                setInputText(prev => prev + (prev && !prev.endsWith(' ') ? ' ' : '') + emoji);
+              }}
+              anchorPosition="bottom-left"
+            />
           </form>
         </div>
 

@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageSquare, X, Send, Hash, Minimize2, Maximize2, Users, DollarSign } from 'lucide-react';
+import { MessageSquare, X, Send, Hash, Minimize2, Maximize2, Users, DollarSign, Smile } from 'lucide-react';
 import { ERPState, ChatMessage, ChatChannel } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 import { UserChatAvatar } from './ChatView';
+import { EmojiPickerPopup } from './EmojiPickerPopup';
 
 interface FloatingChatWidgetProps {
   state: ERPState;
@@ -19,6 +20,7 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [inputText, setInputText] = useState('');
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   const currentUser = state.currentUser;
   const chatMessages = state.chatMessages || [];
@@ -180,7 +182,17 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
           </div>
 
           {/* INPUT FORM */}
-          <form onSubmit={handleSend} className="p-2.5 bg-white dark:bg-[#131926] border-t border-slate-200 dark:border-[#1E2D40] flex items-center gap-2">
+          <form onSubmit={handleSend} className="p-2.5 bg-white dark:bg-[#131926] border-t border-slate-200 dark:border-[#1E2D40] flex items-center gap-1.5 relative">
+            {/* Quick Emojis Dropdown Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#1C2333] transition-colors cursor-pointer"
+              title="Add Emoji"
+            >
+              <Smile className="w-4 h-4" />
+            </button>
+
             <input
               type="text"
               placeholder="Send message..."
@@ -195,6 +207,16 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
             >
               <Send className="w-4 h-4 stroke-[2.5]" />
             </button>
+
+            {/* Comprehensive Phone Emoji Picker Popover */}
+            <EmojiPickerPopup
+              isOpen={showEmojiPicker}
+              onClose={() => setShowEmojiPicker(false)}
+              onSelectEmoji={(emoji) => {
+                setInputText(prev => prev + (prev && !prev.endsWith(' ') ? ' ' : '') + emoji);
+              }}
+              anchorPosition="bottom-left"
+            />
           </form>
         </div>
       )}

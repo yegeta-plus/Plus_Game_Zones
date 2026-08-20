@@ -124,7 +124,7 @@ export function parseBankMessage(rawText: string): ParsedBankMessage | null {
   }
 
   // 8. Auto-Categorize
-  let suggestedCategory = type === 'INCOME' ? 'Sales Revenue' : 'Operational Expenses';
+  let suggestedCategory = type === 'INCOME' ? 'Daily Income' : 'Operational Expenses';
   const textLower = text.toLowerCase();
   if (textLower.includes('merchant') || textLower.includes('store') || textLower.includes('shop')) {
     suggestedCategory = type === 'EXPENSE' ? 'Merchant Supplies' : 'Store Sales';

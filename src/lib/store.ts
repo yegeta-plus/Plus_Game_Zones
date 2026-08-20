@@ -22,10 +22,11 @@ import {
 } from '../types';
 import { triggerHaptic } from './haptics';
 import { DEFAULT_ROLE_PERMISSIONS, getEffectivePermissions } from './auth';
+import { INITIAL_DATASET_JULY_AUG } from '../data/importedDataset';
 
 export type { ERPState } from '../types';
 
-const STORAGE_KEY = 'pluszone_fin_erp_state_v12_daily_only';
+const STORAGE_KEY = 'pluszone_fin_erp_state_v23_daily_income_names';
 
 export const DEFAULT_AUTOMATED_EMAIL_REPORTS: AutomatedEmailReportsSettings = {
   enabled: true,
@@ -102,23 +103,6 @@ const DEFAULT_CHAT_MESSAGES: ChatMessage[] = [
       { emoji: '👋', count: 2, users: ['u-1'] },
       { emoji: '🚀', count: 1, users: ['u-1'] }
     ]
-  },
-  {
-    id: 'msg-welcome-2',
-    channelId: 'financial-approvals',
-    senderId: 'u-1',
-    senderName: 'Yegeta Huawei',
-    senderRole: 'SuperAdmin',
-    text: '📋 **Approval Request Submitted**\n• **Item:** Merkato Equb Round #4 Payout\n• **Action:** EDIT EQUB\n• **Reason:** Adjusting payout date to align with CBE bank clearance holiday schedule.\n• **Requested By:** Yegeta Huawei',
-    timestamp: new Date(Date.now() - 1800000).toISOString(),
-    reference: {
-      type: 'APPROVAL',
-      id: 'req-sample-1',
-      title: 'Merkato Equb Round #4 Payout',
-      subtitle: 'Action: EDIT EQUB',
-      reason: 'Adjusting payout date to align with CBE bank clearance holiday schedule.',
-      status: 'PENDING'
-    }
   }
 ];
 
@@ -204,7 +188,7 @@ const DEFAULT_WALLETS: Wallet[] = [
     name: 'Main Cash Vault',
     type: 'CASH',
     accountNumber: 'CASH-VAULT-01',
-    openingBalance: 0,
+    openingBalance: INITIAL_DATASET_JULY_AUG.openingBalances.cash,
     totalIn: 0,
     totalOut: 0,
     color: '#F97316', // Orange background
@@ -219,7 +203,7 @@ const DEFAULT_WALLETS: Wallet[] = [
     name: 'Commercial Bank of Ethiopia (CBE)',
     type: 'CBE_BANK',
     accountNumber: '1000751694559', // CBE Account requested
-    openingBalance: 0,
+    openingBalance: INITIAL_DATASET_JULY_AUG.openingBalances.cbe,
     totalIn: 0,
     totalOut: 0,
     color: '#8B5CF6', // Purple background
@@ -234,7 +218,7 @@ const DEFAULT_WALLETS: Wallet[] = [
     name: 'Telebirr Merchant Wallet',
     type: 'TELEBIRR',
     accountNumber: '0989367877',
-    openingBalance: 0,
+    openingBalance: INITIAL_DATASET_JULY_AUG.openingBalances.telebirr,
     totalIn: 0,
     totalOut: 0,
     color: '#0EA5E9', // Light Blue background
@@ -249,7 +233,7 @@ const DEFAULT_WALLETS: Wallet[] = [
     name: 'eBirr Digital Wallet',
     type: 'EBIRR',
     accountNumber: 'EB-998877',
-    openingBalance: 0,
+    openingBalance: INITIAL_DATASET_JULY_AUG.openingBalances.ebirr,
     totalIn: 0,
     totalOut: 0,
     color: '#10B981', // Green background
@@ -262,8 +246,11 @@ const DEFAULT_WALLETS: Wallet[] = [
 ];
 
 const DEFAULT_CATEGORIES: Category[] = [
+  { id: 'cat-0', name: 'Daily Income', type: 'INCOME', icon: 'TrendingUp', color: '#10B981', active: true },
   { id: 'cat-1', name: 'Sales Revenue', type: 'INCOME', icon: 'TrendingUp', color: '#22C55E', active: true },
   { id: 'cat-2', name: 'Receivables Collected', type: 'INCOME', icon: 'CheckCircle', color: '#00D4AA', active: true },
+  { id: 'cat-cap', name: 'Capital Injection', type: 'INCOME', icon: 'PlusCircle', color: '#3B82F6', active: true },
+  { id: 'cat-lr', name: 'Loans Received', type: 'INCOME', icon: 'ArrowDownLeft', color: '#8B5CF6', active: true },
   { id: 'cat-3', name: 'Equipment / Asset Purchase', type: 'EXPENSE', icon: 'HardDrive', color: '#64748B', active: true },
   { id: 'cat-4', name: 'Tax & License', type: 'EXPENSE', icon: 'FileText', color: '#EF4444', active: true },
   { id: 'cat-5', name: 'Electricity & Utilities', type: 'EXPENSE', icon: 'Zap', color: '#FB923C', active: true },
@@ -272,77 +259,24 @@ const DEFAULT_CATEGORIES: Category[] = [
   { id: 'cat-8', name: 'Food & Refreshments', type: 'EXPENSE', icon: 'Coffee', color: '#EC4899', active: true },
   { id: 'cat-9', name: 'Cleaning & Supplies', type: 'EXPENSE', icon: 'Package', color: '#14B8A6', active: true },
   { id: 'cat-10', name: 'Other & Home Expenses', type: 'EXPENSE', icon: 'Home', color: '#6B7280', active: true },
-  { id: 'cat-11', name: 'Equb Contribution', type: 'EXPENSE', icon: 'Users', color: '#8B5CF6', active: true }
+  { id: 'cat-ow', name: 'Owner Withdrawal', type: 'EXPENSE', icon: 'UserMinus', color: '#F59E0B', active: true },
+  { id: 'cat-11', name: 'Equb Contribution', type: 'EXPENSE', icon: 'Users', color: '#8B5CF6', active: true },
+  { id: 'cat-12', name: 'Loan Repayments', type: 'EXPENSE', icon: 'ArrowUpRight', color: '#DC2626', active: true },
+  { id: 'cat-bd', name: 'Bad Debt', type: 'EXPENSE', icon: 'AlertTriangle', color: '#DC2626', active: true },
+  { id: 'cat-exp', name: 'Expense', type: 'EXPENSE', icon: 'MinusCircle', color: '#EF4444', active: true },
+  { id: 'cat-rc', name: 'Receivable Created', type: 'INCOME', icon: 'Clock', color: '#6366F1', active: true },
+  { id: 'cat-gen', name: 'Genesis / Setup', type: 'INCOME', icon: 'Settings', color: '#64748B', active: true },
+  { id: 'cat-ob', name: 'Opening Balance', type: 'INCOME', icon: 'Landmark', color: '#3B82F6', active: true }
 ];
 
-const DEFAULT_TRANSACTIONS: Transaction[] = [];
+export const DEFAULT_TRANSACTIONS: Transaction[] = INITIAL_DATASET_JULY_AUG.transactions;
 
-const DEFAULT_EQUBS: Equb[] = [
-  {
-    id: 'eq-agerye',
-    name: 'Agerye Equb',
-    members: [
-      { id: 'm-ag-1', name: 'HabeshaBiz (Yegeta)', isWinner: true, wonRound: 20 },
-      { id: 'm-ag-2', name: 'Agerye Member 2', isWinner: true, wonRound: 1 },
-      { id: 'm-ag-3', name: 'Agerye Member 3', isWinner: true, wonRound: 2 },
-      { id: 'm-ag-4', name: 'Agerye Member 4', isWinner: false }
-    ],
-    contributionPerRound: 5000,
-    mySlots: 1,
-    payoutsClaimed: 1,
-    interval: 'EVERY_10_DAYS',
-    currentRound: 20,
-    totalRounds: 27,
-    startDate: '2026-01-10T00:00:00.000Z',
-    computedEndingDate: '2026-10-06T00:00:00.000Z',
-    status: 'ACTIVE',
-    walletId: 'w-1'
-  },
-  {
-    id: 'eq-leli',
-    name: 'Leli Equb',
-    members: [
-      { id: 'm-le-1', name: 'HabeshaBiz (Yegeta)', isWinner: true, wonRound: 8 },
-      { id: 'm-le-2', name: 'Leli Member 2', isWinner: true, wonRound: 10 }
-    ],
-    contributionPerRound: 3000,
-    mySlots: 1,
-    payoutsClaimed: 1,
-    interval: 'EVERY_10_DAYS',
-    currentRound: 10,
-    totalRounds: 10,
-    startDate: '2026-04-10T00:00:00.000Z',
-    computedEndingDate: '2026-07-20T00:00:00.000Z',
-    status: 'COMPLETED',
-    walletId: 'w-1'
-  }
-];
-const DEFAULT_LOANS: Loan[] = [];
-const DEFAULT_ASSETS: Asset[] = [];
+const DEFAULT_EQUBS: Equb[] = INITIAL_DATASET_JULY_AUG.equbs;
+const DEFAULT_LOANS: Loan[] = INITIAL_DATASET_JULY_AUG.loans;
+const DEFAULT_ASSETS: Asset[] = INITIAL_DATASET_JULY_AUG.assets;
 const DEFAULT_GOALS: Goal[] = [];
 const DEFAULT_RECURRING: RecurringTemplate[] = [];
-const DEFAULT_RECEIVABLES: Receivable[] = [
-  {
-    id: 'rcv-sample-1',
-    customerName: 'Abebe Wholesale Retailers',
-    description: 'Bulk store inventory sale on credit',
-    amountOwed: 25000,
-    amountCollected: 5000,
-    dueDate: new Date(Date.now() - 18 * 86400000).toISOString(),
-    status: 'LATE',
-    createdDate: new Date(Date.now() - 20 * 86400000).toISOString()
-  },
-  {
-    id: 'rcv-sample-2',
-    customerName: 'Tigist Electronics',
-    description: 'Accessories delivery invoice #104',
-    amountOwed: 12000,
-    amountCollected: 0,
-    dueDate: new Date(Date.now() + 5 * 86400000).toISOString(),
-    status: 'OUTSTANDING',
-    createdDate: new Date(Date.now() - 3 * 86400000).toISOString()
-  }
-];
+const DEFAULT_RECEIVABLES: Receivable[] = INITIAL_DATASET_JULY_AUG.receivables;
 
 export function evaluateReceivableStatus(r: Receivable): 'OUTSTANDING' | 'COLLECTED' | 'WRITTEN_OFF' | 'LATE' {
   if (r.status === 'COLLECTED' || r.amountCollected >= r.amountOwed) {
@@ -404,11 +338,11 @@ export function loadInitialState(): ERPState {
           parsed.users = DEFAULT_USERS;
         }
 
-        parsed.equbs = Array.isArray(parsed.equbs) && parsed.equbs.length > 0 ? parsed.equbs : DEFAULT_EQUBS;
-        parsed.loans = Array.isArray(parsed.loans) ? parsed.loans : DEFAULT_LOANS;
-        parsed.assets = Array.isArray(parsed.assets) ? parsed.assets : DEFAULT_ASSETS;
-        parsed.receivables = syncReceivablesLateStatus(Array.isArray(parsed.receivables) && parsed.receivables.length > 0 ? parsed.receivables : DEFAULT_RECEIVABLES);
-        parsed.transactions = Array.isArray(parsed.transactions) ? parsed.transactions : DEFAULT_TRANSACTIONS;
+        parsed.equbs = Array.isArray(parsed.equbs) ? parsed.equbs : [];
+        parsed.loans = Array.isArray(parsed.loans) ? parsed.loans : [];
+        parsed.assets = Array.isArray(parsed.assets) ? parsed.assets : [];
+        parsed.receivables = Array.isArray(parsed.receivables) ? syncReceivablesLateStatus(parsed.receivables) : [];
+        parsed.transactions = Array.isArray(parsed.transactions) ? parsed.transactions : [];
         // Enforce wallet brand colors & CBE account number update
         let currentWallets: Wallet[] = Array.isArray(parsed.wallets) && parsed.wallets.length > 0 ? parsed.wallets : DEFAULT_WALLETS;
         
@@ -496,28 +430,13 @@ export function loadInitialState(): ERPState {
 
         parsed.pendingReviewTransactions = Array.isArray(parsed.pendingReviewTransactions)
           ? parsed.pendingReviewTransactions
-          : [
-              {
-                id: 'pending-sample-1',
-                date: new Date().toISOString(),
-                refCode: 'FT2608099001',
-                amount: 18500,
-                type: 'INCOME',
-                senderOrCounterparty: 'KIBROM TESFAYE (CBE 100088992211)',
-                standingBalance: 168400,
-                rawText: 'Dear Customer, your account 1000751694559 has been credited with ETB 18,500.00 by KIBROM TESFAYE on 09-AUG-2026. Ref: FT2608099001. Available balance ETB 168,400.00. Commercial Bank of Ethiopia.',
-                source: 'SMS',
-                provider: 'CBE',
-                suggestedCategory: 'Sales Revenue',
-                suggestedWalletId: 'w-cbe',
-                createdAt: new Date().toISOString(),
-                status: 'PENDING',
-                notes: 'Auto-detected via CBE Bank SMS'
-              }
-            ];
+          : [];
 
         parsed.chatChannels = Array.isArray(parsed.chatChannels) && parsed.chatChannels.length > 0 ? parsed.chatChannels : DEFAULT_CHAT_CHANNELS;
-        parsed.chatMessages = Array.isArray(parsed.chatMessages) && parsed.chatMessages.length > 0 ? parsed.chatMessages : DEFAULT_CHAT_MESSAGES;
+        let loadedChatMessages = Array.isArray(parsed.chatMessages) && parsed.chatMessages.length > 0 ? parsed.chatMessages : DEFAULT_CHAT_MESSAGES;
+        // Purge legacy sample approval request from chat
+        loadedChatMessages = loadedChatMessages.filter((m: ChatMessage) => m.id !== 'msg-welcome-2' && m.reference?.id !== 'req-sample-1');
+        parsed.chatMessages = loadedChatMessages;
         parsed.automatedEmailReportsSettings = parsed.automatedEmailReportsSettings || DEFAULT_AUTOMATED_EMAIL_REPORTS;
         parsed.sentReportEmailLogs = Array.isArray(parsed.sentReportEmailLogs) && parsed.sentReportEmailLogs.length > 0 ? parsed.sentReportEmailLogs : DEFAULT_SENT_REPORT_LOGS;
 
@@ -556,7 +475,7 @@ function createInitialState(): ERPState {
     users: DEFAULT_USERS,
     wallets: DEFAULT_WALLETS,
     transactions: DEFAULT_TRANSACTIONS,
-    transfers: [],
+    transfers: INITIAL_DATASET_JULY_AUG.transfers,
     equbs: DEFAULT_EQUBS,
     loans: DEFAULT_LOANS,
     assets: DEFAULT_ASSETS,
@@ -574,25 +493,7 @@ function createInitialState(): ERPState {
       autoCategorize: true,
       notifyOnNewPending: true
     },
-    pendingReviewTransactions: [
-      {
-        id: 'pending-sample-1',
-        date: new Date().toISOString(),
-        refCode: 'FT2608099001',
-        amount: 18500,
-        type: 'INCOME',
-        senderOrCounterparty: 'KIBROM TESFAYE (CBE 100088992211)',
-        standingBalance: 168400,
-        rawText: 'Dear Customer, your account 1000751694559 has been credited with ETB 18,500.00 by KIBROM TESFAYE on 09-AUG-2026. Ref: FT2608099001. Available balance ETB 168,400.00. Commercial Bank of Ethiopia.',
-        source: 'SMS',
-        provider: 'CBE',
-        suggestedCategory: 'Sales Revenue',
-        suggestedWalletId: 'w-cbe',
-        createdAt: new Date().toISOString(),
-        status: 'PENDING',
-        notes: 'Auto-detected via CBE Bank SMS'
-      }
-    ],
+    pendingReviewTransactions: [],
     chatChannels: DEFAULT_CHAT_CHANNELS,
     chatMessages: DEFAULT_CHAT_MESSAGES,
     automatedEmailReportsSettings: DEFAULT_AUTOMATED_EMAIL_REPORTS,
@@ -649,30 +550,20 @@ export function calculateWalletBalance(wallet: Wallet, transactions: Transaction
     }
   }
 
-  return balance;
+  // Strict non-negative guarantee for wallets (wallet balances cannot drop below ETB 0)
+  return Math.max(0, balance);
 }
 
 export function calculateTotalBusinessBalance(wallets: Wallet[], transactions: Transaction[], transfers: Transfer[]): number {
-  return wallets.reduce((acc, w) => acc + calculateWalletBalance(w, transactions, transfers), 0);
+  return Math.max(0, wallets.reduce((acc, w) => acc + calculateWalletBalance(w, transactions, transfers), 0));
 }
 
 /**
  * Balance & Wallet Rules:
- * 1. Checks if a wallet allows overdraft (credit/loan account or explicitly flagged).
+ * Wallets strictly do NOT allow negative balances / overdrafts.
  */
-export function isOverdraftAllowed(wallet?: Wallet): boolean {
-  if (!wallet) return false;
-  return (
-    wallet.isCreditAccount === true ||
-    wallet.allowOverdraft === true ||
-    wallet.type === 'CREDIT_LINE' ||
-    wallet.type === 'LOAN' ||
-    (typeof wallet.name === 'string' && (
-      wallet.name.toLowerCase().includes('credit') ||
-      wallet.name.toLowerCase().includes('loan') ||
-      wallet.name.toLowerCase().includes('borrow')
-    ))
-  );
+export function isOverdraftAllowed(_wallet?: Wallet): boolean {
+  return false;
 }
 
 /**
@@ -974,6 +865,8 @@ export function calculateIncomeAverages(transactions: Transaction[]) {
   if (validIncomes.length === 0) {
     return {
       weeklyAvg: 0,
+      weeklyDailyAvg: 0,
+      totalWeeklyAvg: 0,
       monthlyAvg: 0,
       dailyAvg: 0,
       currentWeekIncome: 0,
@@ -995,13 +888,17 @@ export function calculateIncomeAverages(transactions: Transaction[]) {
   const totalIncome = validIncomes.reduce((sum, tx) => sum + tx.amount, 0);
 
   const dailyAvg = totalIncome / daysDiff;
-  const weeklyAvg = totalIncome / weeksDiff;
+  const totalWeeklyAvg = totalIncome / weeksDiff;
   const monthlyAvg = totalIncome / monthsDiff;
 
   const sevenDaysAgo = nowMs - (7 * 24 * 60 * 60 * 1000);
   const currentWeekIncome = validIncomes
     .filter(tx => new Date(tx.date).getTime() >= sevenDaysAgo)
     .reduce((sum, tx) => sum + tx.amount, 0);
+
+  // Weekly daily income average: average daily income calculated over the 7-day week
+  const weeklyDailyAvg = currentWeekIncome / 7;
+  const weeklyAvg = weeklyDailyAvg;
 
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
@@ -1015,6 +912,8 @@ export function calculateIncomeAverages(transactions: Transaction[]) {
   return {
     dailyAvg,
     weeklyAvg,
+    weeklyDailyAvg,
+    totalWeeklyAvg,
     monthlyAvg,
     currentWeekIncome,
     currentMonthIncome,
@@ -1030,6 +929,55 @@ export function isTransactionEditable(txDateString: string): boolean {
   const diffDays = (now - txTime) / (1000 * 60 * 60 * 24);
   // Transaction is editable if it's within the 7-day window (0 to 7 days old)
   return diffDays >= 0 && diffDays <= 7;
+}
+
+export function isCreditSaleCollected(tx: { category?: string; description?: string; refType?: string; isCreditSale?: boolean; type?: string } | null | undefined): boolean {
+  if (!tx) return false;
+  // If explicitly tagged as an EXPENSE (e.g. loan repayment expense paid to others), not an income credit collection
+  if (tx.type === 'EXPENSE' && tx.refType !== 'RECEIVABLE') return false;
+
+  if (tx.refType === 'RECEIVABLE') return true;
+  if (tx.isCreditSale) return true;
+  
+  const cat = (tx.category || '').toLowerCase().trim();
+  const desc = (tx.description || '').toLowerCase().trim();
+
+  // Category matching
+  if (
+    cat.includes('receivable collected') ||
+    cat.includes('receivables collected') ||
+    cat.includes('receivable') ||
+    cat.includes('receivables') ||
+    cat.includes('credit collected') ||
+    cat.includes('credit sale') ||
+    cat.includes('debt collection') ||
+    cat.includes('debt collected') ||
+    cat.includes('credit repayment')
+  ) {
+    return true;
+  }
+
+  // Description matching
+  if (
+    desc.includes('collected customer debt') ||
+    desc.includes('repayment on receivable') ||
+    desc.includes('repayment from') ||
+    desc.includes('credit sale collected') ||
+    desc.includes('credit collected') ||
+    desc.includes('debt payment') ||
+    desc.includes('customer debt') ||
+    desc.includes('debt collected') ||
+    desc.includes('receivable collected') ||
+    desc.includes('receivables collected') ||
+    desc.includes('split repayment on receivable') ||
+    desc.includes('settled credit') ||
+    desc.includes('settled receivable') ||
+    desc.includes('weframu')
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 export function formatETB(amount: number, compact = false): string {

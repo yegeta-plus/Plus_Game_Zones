@@ -79,6 +79,10 @@
 }
 
 /* App Anti-Copy & Anti-Scraping Protection Rules */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", "Android Emoji", emoji;
+}
+
 body.app-protected,
 body.app-protected *:not(input):not(textarea):not([contenteditable="true"]) {
   -webkit-touch-callout: none !important;

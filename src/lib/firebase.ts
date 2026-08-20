@@ -21,21 +21,32 @@ const dbId = config.firestoreDatabaseId || metaEnv.VITE_FIREBASE_DATABASE_ID || 
 export const db = initializeFirestore(
   app,
   {
-    experimentalAutoDetectLongPolling: true,
+    experimentalForceLongPolling: true,
   },
   dbId
 );
 
 export const auth = getAuth(app);
 
-// Skill required connection validation
+// Graceful background connection check without throwing unhandled rejection
 async function testConnection() {
+  if (isQuotaExceeded) return;
   try {
-    const docRef = doc(db, 'test', 'connection');
+    const docRef = doc(db, 'erp_state', 'main');
     await getDoc(docRef);
-  } catch (error) {
-    if (error instanceof Error && (error.message.includes('the client is offline') || error.message.includes('unavailable') || error.message.includes('Could not reach Cloud Firestore'))) {
-      console.info('Firestore operates in offline/local state mode.');
+  } catch (error: any) {
+    if (
+      error?.code === 'resource-exhausted' ||
+      error?.message?.includes('Quota') ||
+      error?.message?.includes('quota') ||
+      error?.message?.includes('resource-exhausted')
+    ) {
+      isQuotaExceeded = true;
+      markQuotaExceeded();
+      disableNetwork(db).catch(() => {});
+      console.info('Firestore free tier daily quota reached. Switched to offline storage.');
+    } else if (error?.code === 'unavailable' || error?.message?.includes('unavailable') || error?.message?.includes('Could not reach Cloud Firestore') || error?.message?.includes('offline')) {
+      console.info('Firestore initialized. Operating smoothly with real-time offline persistence cache.');
     }
   }
 }
@@ -326,7 +337,9 @@ export async function syncStateToFirebase(state: ERPState): Promise<void> {
         handleFirestoreError(err, OperationType.WRITE, 'erp_state/main');
       }
     }
-  }, 150);
+  }, 2000);
 }
 
-
+export function isFirestoreQuotaExceeded(): boolean {
+  return isQuotaExceeded;
+}

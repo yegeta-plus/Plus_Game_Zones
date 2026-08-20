@@ -68,18 +68,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
   // Single mode state
   const [amountStr, setAmountStr] = useState('');
   const [walletId, setWalletId] = useState(defaultWalletId || wallets[0]?.id || '');
-
-  // Keep walletId in sync when modal opens or defaultWalletId / wallets change
-  useEffect(() => {
-    if (isOpen) {
-      if (defaultWalletId && wallets.some(w => w.id === defaultWalletId)) {
-        setWalletId(defaultWalletId);
-      } else if (wallets.length > 0 && (!walletId || !wallets.some(w => w.id === walletId))) {
-        setWalletId(wallets[0].id);
-      }
-    }
-  }, [isOpen, defaultWalletId, wallets]);
-  const [category, setCategory] = useState(categories.find(c => c.type === 'INCOME')?.name || 'Sales Revenue');
+  const [category, setCategory] = useState(categories.find(c => c.type === 'INCOME')?.name || 'Daily Income');
   const [description, setDescription] = useState('');
 
   // Date helper functions
@@ -116,6 +105,35 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
   // Multi-wallet batch state
   const [batchAmounts, setBatchAmounts] = useState<Record<string, string>>({});
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  const resetForm = () => {
+    setAmountStr('');
+    setBatchAmounts({});
+    setDescription('');
+    setCustomerName('');
+    setIsCreditSale(false);
+    setValidationError(null);
+    setPostingDate(getTodayStr());
+    const defaultCat = categories.find(c => c.type === entryMode && c.active);
+    if (defaultCat) setCategory(defaultCat.name);
+  };
+
+  // Reset all input fields whenever the modal opens
+  useEffect(() => {
+    if (isOpen) {
+      resetForm();
+      if (defaultWalletId && wallets.some(w => w.id === defaultWalletId)) {
+        setWalletId(defaultWalletId);
+      } else if (wallets.length > 0) {
+        setWalletId(wallets[0].id);
+      }
+    }
+  }, [isOpen, defaultWalletId]);
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
 
   if (!isOpen) return null;
 
@@ -192,8 +210,8 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
           type: entryMode as TransactionType,
           amount: entry.amount,
           walletId: entry.walletId,
-          category,
-          description: description || `Daily Multi-Wallet ${entryMode === 'INCOME' ? 'Income' : 'Expense'} - ${targetW?.name || 'Wallet'} (${category})`,
+          category: category || (entryMode === 'INCOME' ? 'Daily Income' : 'Daily Expense'),
+          description: description || (entryMode === 'INCOME' ? 'Daily Income' : `${category} - ${targetW?.name || 'Wallet'}`),
           date: txDate
         };
       });
@@ -204,6 +222,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
         batchItems.forEach(item => onSubmitTransaction(item));
       }
 
+      resetForm();
       onClose();
       return;
     }
@@ -247,13 +266,14 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
       amount: parsedAmount,
       walletId,
       category,
-      description: description || (activeCreditSale ? `Credit Sale to ${customerName}` : `${category} record`),
+      description: description || (activeCreditSale ? `Credit Sale to ${customerName}` : (entryMode === 'INCOME' ? 'Daily Income' : `${category} record`)),
       date: txDate,
       isCreditSale: activeCreditSale,
       customerName: activeCreditSale ? customerName.trim() : undefined,
       dueDate: activeCreditSale ? calculatedDueDate : undefined
     });
 
+    resetForm();
     onClose();
   };
 
@@ -304,7 +324,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                <span>{batchMode === 'batch' ? `Multi-Wallet Daily ${entryMode === 'INCOME' ? 'Income' : 'Expense'}` : 'Quick Transaction'}</span>
+                <span>{batchMode === 'batch' ? (entryMode === 'INCOME' ? 'Daily Income' : 'Daily Expense') : 'Quick Transaction'}</span>
                 <span className="text-[10px] bg-slate-100 dark:bg-[#1E2D40] text-slate-600 dark:text-[#8899BB] px-2 py-0.5 rounded-full font-mono font-semibold uppercase">
                   {batchMode === 'batch' ? `BATCH ${entryMode}` : 'DIRECT ENTRY'}
                 </span>
@@ -321,7 +341,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
             type="button"
             onClick={() => {
               triggerHaptic('light');
-              onClose();
+              handleClose();
             }}
             className="p-2 rounded-xl bg-slate-100 dark:bg-[#1C2333] text-slate-500 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-[#1E2D40] transition-colors cursor-pointer"
           >
@@ -406,7 +426,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                 }`}
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Daily Multi-Wallet ({entryMode === 'INCOME' ? 'Income' : 'Expense'})</span>
+                <span>{entryMode === 'INCOME' ? 'Daily Income' : 'Daily Expense'}</span>
               </button>
             </div>
 

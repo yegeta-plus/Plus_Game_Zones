@@ -23,7 +23,7 @@ import {
   FileCheck
 } from 'lucide-react';
 import { Transaction, Transfer, Receivable, Wallet, Category, UserProfile, TransactionType, ERPState, NavTab } from '../../types';
-import { formatETB, isTransactionEditable, parseSummedAmount, computeAllWalletRunningBalances, getRelativeWalletBalancesForTx, getRelativeWalletBalancesForTransfer, getWalletNickname } from '../../lib/store';
+import { formatETB, isTransactionEditable, isCreditSaleCollected, parseSummedAmount, computeAllWalletRunningBalances, getRelativeWalletBalancesForTx, getRelativeWalletBalancesForTransfer, getWalletNickname } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 import { generatePDFReport, generateExcelReport } from '../../lib/exports';
 import { formatDateByCalendar } from '../../lib/ethiopianCalendar';
@@ -78,6 +78,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   const [activeCreditSaleDetail, setActiveCreditSaleDetail] = useState<Receivable | null>(null);
   const [confirmReversalTxId, setConfirmReversalTxId] = useState<string | null>(null);
   const [confirmDeleteTxId, setConfirmDeleteTxId] = useState<string | null>(null);
+  const [showConfirmClearAll, setShowConfirmClearAll] = useState(false);
 
   // Edit modal state
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
@@ -406,6 +407,21 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
             <FileSpreadsheet className="w-3.5 h-3.5" />
             <span>Export xlsx</span>
           </button>
+
+          {onClearAllTransactions && (currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && transactions.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('warning');
+                setShowConfirmClearAll(true);
+              }}
+              className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-[#1A2234] dark:hover:bg-rose-950/40 text-slate-600 dark:text-[#8899BB] hover:text-rose-600 dark:hover:text-rose-400 font-medium text-xs flex items-center gap-1 border border-slate-200 dark:border-[#2A3548] cursor-pointer transition-all active:scale-95"
+              title="Clear all transactions from ledger"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Clear Ledger</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -549,10 +565,18 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                             triggerHaptic('light');
                             setActiveCreditSaleDetail(rcv);
                           }}
-                          className="p-3.5 flex items-center justify-between cursor-pointer bg-blue-50/25 dark:bg-blue-950/10 hover:bg-blue-50/70 dark:hover:bg-blue-950/25 transition-colors border-l-2 border-l-blue-500 dark:border-l-blue-400"
+                          className={`p-3.5 flex items-center justify-between cursor-pointer transition-colors ${
+                            isSettled
+                              ? 'bg-teal-50/30 dark:bg-teal-950/20 hover:bg-teal-50/70 dark:hover:bg-teal-950/35 border-l-4 border-l-teal-500 dark:border-l-teal-400'
+                              : 'bg-blue-50/25 dark:bg-blue-950/10 hover:bg-blue-50/70 dark:hover:bg-blue-950/25 border-l-2 border-l-blue-500 dark:border-l-blue-400'
+                          }`}
                         >
                           <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400 flex items-center justify-center shrink-0">
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                              isSettled
+                                ? 'bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-300'
+                                : 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400'
+                            }`}>
                               <FileCheck className="w-4 h-4" />
                             </div>
 
@@ -561,12 +585,16 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                                 <p className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF] line-clamp-1">
                                   {rcv.customerName}
                                 </p>
-                                <span className="text-[9px] bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300 font-bold px-1.5 py-0.2 rounded border border-blue-200 dark:border-blue-500/30 shrink-0">
+                                <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border shrink-0 ${
+                                  isSettled
+                                    ? 'bg-teal-100 dark:bg-teal-500/20 text-teal-800 dark:text-teal-300 border-teal-200 dark:border-teal-500/30'
+                                    : 'bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-500/30'
+                                }`}>
                                   Sale on Credit
                                 </span>
                                 {isSettled ? (
-                                  <span className="text-[9px] bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300 font-bold px-1.5 py-0.2 rounded border border-emerald-200 dark:border-emerald-500/30 shrink-0">
-                                    Settled
+                                  <span className="text-[9px] bg-teal-600 text-white dark:bg-teal-500/30 dark:text-teal-300 font-extrabold px-1.5 py-0.2 rounded border border-teal-600 dark:border-teal-400/40 shrink-0 flex items-center gap-0.5">
+                                    <CheckCircle2 className="w-2.5 h-2.5" /> Collected
                                   </span>
                                 ) : isOverdue ? (
                                   <span className="text-[9px] bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300 font-bold px-1.5 py-0.2 rounded border border-rose-200 dark:border-rose-500/30 shrink-0">
@@ -587,7 +615,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                                   </>
                                 )}
                                 <span>•</span>
-                                <span className="text-blue-600 dark:text-blue-400 font-medium">
+                                <span className={isSettled ? "text-teal-600 dark:text-teal-400 font-medium" : "text-blue-600 dark:text-blue-400 font-medium"}>
                                   Due: {formatDateByCalendar(rcv.dueDate, calendarType, true)}
                                 </span>
                                 <span>•</span>
@@ -599,13 +627,17 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                           </div>
 
                           <div className="text-right shrink-0 ml-2">
-                            <p className="text-xs font-bold font-mono text-blue-600 dark:text-blue-400">
+                            <p className={`text-xs font-bold font-mono ${
+                              isSettled ? 'text-teal-600 dark:text-teal-400' : 'text-blue-600 dark:text-blue-400'
+                            }`}>
                               {hideBalances ? '••••••' : formatETB(rcv.amountOwed)}
                             </p>
 
                             <div className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono mt-0.5 flex items-center justify-end gap-1">
                               {isSettled ? (
-                                <span className="text-emerald-600 dark:text-[#00D4AA] font-bold text-[9px]">Fully Collected</span>
+                                <span className="text-teal-600 dark:text-teal-400 font-bold text-[9px] flex items-center gap-0.5">
+                                  <CheckCircle2 className="w-2.5 h-2.5" /> Fully Collected
+                                </span>
                               ) : rcv.amountCollected > 0 ? (
                                 <span className="text-amber-600 dark:text-amber-400 text-[9px]">
                                   Rem: {hideBalances ? '••••' : formatETB(remaining)}
@@ -691,6 +723,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                     const tx = item.tx;
                     const wallet = wallets.find(w => w.id === tx.walletId);
                     const isIncome = tx.type === 'INCOME';
+                    const isCreditCollected = isCreditSaleCollected(tx);
                     const relWalletInfos = getRelativeWalletBalancesForTx(
                       tx,
                       wallets,
@@ -704,22 +737,40 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                           triggerHaptic('light');
                           setActiveTxDetail(tx);
                         }}
-                        className={`p-3.5 flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-[#1C2333]/70 transition-colors ${
-                          tx.reversed ? 'opacity-50 line-through' : ''
+                        className={`p-3.5 flex items-center justify-between cursor-pointer transition-colors ${
+                          tx.reversed
+                            ? 'opacity-50 line-through hover:bg-slate-50 dark:hover:bg-[#1C2333]/70'
+                            : isCreditCollected
+                            ? 'bg-teal-50/20 dark:bg-teal-950/15 hover:bg-teal-50/50 dark:hover:bg-teal-950/30 border-l-4 border-l-teal-500 dark:border-l-teal-400'
+                            : 'hover:bg-slate-50 dark:hover:bg-[#1C2333]/70'
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                            isIncome
+                            isCreditCollected
+                              ? 'bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-300'
+                              : isIncome
                               ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400'
                               : 'bg-rose-100 text-rose-700 dark:bg-red-500/15 dark:text-red-400'
                           }`}>
-                            {isIncome ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                            {isCreditCollected ? (
+                              <CheckCircle2 className="w-4 h-4" />
+                            ) : isIncome ? (
+                              <TrendingUp className="w-4 h-4" />
+                            ) : (
+                              <TrendingDown className="w-4 h-4" />
+                            )}
                           </div>
 
                           <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <p className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF] line-clamp-1">{tx.description}</p>
+                              {isCreditCollected && (
+                                <span className="text-[9px] bg-teal-100 text-teal-800 dark:bg-teal-500/20 dark:text-teal-300 border border-teal-200 dark:border-teal-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0 font-bold">
+                                  <CheckCircle2 className="w-2.5 h-2.5" />
+                                  Credit Collected
+                                </span>
+                              )}
                               {!isTransactionEditable(tx.date) && !tx.reversed && (
                                 currentUser.role === 'SuperAdmin' ? (
                                   <span title="SuperAdmin can edit/delete backdated transactions" className="text-[9px] bg-purple-100 text-purple-800 dark:bg-purple-500/15 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0 font-bold">
@@ -734,14 +785,16 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                               )}
                             </div>
                             <p className="text-[10px] text-slate-500 dark:text-[#8899BB] flex items-center gap-1 mt-0.5 flex-wrap">
-                              <span>{tx.category}</span>
+                              <span className={isCreditCollected ? "text-teal-700 dark:text-teal-300 font-medium" : ""}>{tx.category}</span>
                               <span>•</span>
                               {tx.splits && tx.splits.length > 1 ? (
                                 <span className="text-purple-600 dark:text-purple-400 font-bold bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.2 rounded border border-purple-200 dark:border-purple-800/40 text-[9px]">
                                   Split ({tx.splits.length} Wallets)
                                 </span>
                               ) : (
-                                <span className="text-emerald-700 dark:text-[#00D4AA] font-mono font-medium">{getWalletNickname(wallet?.name)}</span>
+                                <span className={isCreditCollected ? "text-teal-700 dark:text-teal-400 font-mono font-medium" : "text-emerald-700 dark:text-[#00D4AA] font-mono font-medium"}>
+                                  {getWalletNickname(wallet?.name)}
+                                </span>
                               )}
                             </p>
                           </div>
@@ -749,7 +802,11 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
                         <div className="text-right shrink-0 ml-2">
                           <p className={`text-xs font-bold font-mono ${
-                            isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-red-400'
+                            isCreditCollected
+                              ? 'text-teal-600 dark:text-teal-400 font-black'
+                              : isIncome
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-rose-600 dark:text-red-400'
                           }`}>
                             {isIncome ? '+' : '-'}{hideBalances ? '••••••' : formatETB(Math.abs(tx.amount))}
                           </p>
@@ -787,6 +844,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
         const hasOtherUsers = activeOtherUsers.length > 0;
         const isWithin7Days = isTransactionEditable(activeTxDetail.date);
         const canDirectEdit = (isWithin7Days || !hasOtherUsers) && !activeTxDetail.reversed;
+        const isDetailCreditCollected = isCreditSaleCollected(activeTxDetail);
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fadeIn">
@@ -813,10 +871,25 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
               </div>
 
               <div className="mt-4 space-y-3">
-                <div className="text-center py-3 bg-slate-50 dark:bg-[#0A0E1A] rounded-2xl border border-slate-200 dark:border-[#1E2D40] relative">
-                  <p className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono uppercase">{activeTxDetail.type}</p>
+                <div className={`text-center py-3 rounded-2xl border relative ${
+                  isDetailCreditCollected
+                    ? 'bg-teal-50/30 dark:bg-teal-950/20 border-teal-200 dark:border-teal-800/50'
+                    : 'bg-slate-50 dark:bg-[#0A0E1A] border-slate-200 dark:border-[#1E2D40]'
+                }`}>
+                  <div className="flex items-center justify-center gap-1.5 mb-0.5">
+                    <p className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono uppercase">{activeTxDetail.type}</p>
+                    {isDetailCreditCollected && (
+                      <span className="text-[9px] bg-teal-100 text-teal-800 dark:bg-teal-500/20 dark:text-teal-300 font-bold px-1.5 py-0.2 rounded border border-teal-200 dark:border-teal-500/30 flex items-center gap-0.5">
+                        <CheckCircle2 className="w-2.5 h-2.5" /> Credit Sale Collected
+                      </span>
+                    )}
+                  </div>
                   <p className={`text-2xl font-black font-mono ${
-                    activeTxDetail.type === 'INCOME' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-red-400'
+                    isDetailCreditCollected
+                      ? 'text-teal-600 dark:text-teal-400'
+                      : activeTxDetail.type === 'INCOME'
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-rose-600 dark:text-red-400'
                   }`}>
                     {activeTxDetail.type === 'INCOME' ? '+' : '-'}{formatETB(Math.abs(activeTxDetail.amount))}
                   </p>
@@ -1202,6 +1275,41 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                 className="flex-1 py-2 rounded-xl bg-rose-600 text-xs font-bold text-white hover:bg-rose-700"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear All Transactions Confirmation Dialog */}
+      {showConfirmClearAll && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 dark:bg-black/85 flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-[#131926] border border-rose-200 dark:border-red-500/40 max-w-sm w-full p-5 rounded-2xl text-center space-y-3 shadow-2xl">
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-700 dark:bg-red-500/20 dark:text-red-400 flex items-center justify-center mx-auto">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <h4 className="text-base font-bold text-slate-900 dark:text-white">Clear All Transactions?</h4>
+            <p className="text-xs text-slate-500 dark:text-[#8899BB] leading-relaxed">
+              This will remove all {transactions.length} transactions from the ledger so you can record your entries cleanly and manually from scratch.
+            </p>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setShowConfirmClearAll(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] text-xs font-bold text-slate-600 dark:text-[#8899BB] hover:bg-slate-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  triggerHaptic('heavy');
+                  if (onClearAllTransactions) {
+                    onClearAllTransactions();
+                  }
+                  setShowConfirmClearAll(false);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 text-xs font-bold text-white hover:bg-rose-700 shadow-md"
+              >
+                Yes, Clear All
               </button>
             </div>
           </div>

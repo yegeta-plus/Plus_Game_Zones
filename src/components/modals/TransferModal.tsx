@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, ArrowRightLeft, AlertTriangle, ShieldCheck, CheckCircle2, Lock } from 'lucide-react';
 import { Wallet } from '../../types';
 import { calculateWalletBalance, formatETB, getWalletNickname, isOverdraftAllowed, isWalletActive, validateTransfer } from '../../lib/store';
@@ -36,6 +36,28 @@ export const TransferModal: React.FC<TransferModalProps> = ({
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  const resetForm = () => {
+    setAmount('');
+    setReason('');
+    setValidationError(null);
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      resetForm();
+      const currentActive = wallets.filter(w => isWalletActive(w));
+      if (currentActive.length > 0) {
+        setFromWalletId(currentActive[0].id);
+        setToWalletId(currentActive.find(w => w.id !== currentActive[0].id)?.id || currentActive[1]?.id || '');
+      }
+    }
+  }, [isOpen, wallets]);
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
 
   if (!isOpen) return null;
 
@@ -86,6 +108,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
       reason: reason.trim() || `Transfer to ${toWallet?.name || 'Wallet'}`
     });
 
+    resetForm();
     onClose();
   };
 
@@ -104,7 +127,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
               <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">Two-sided balanced ledger debit & credit</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1 rounded-lg bg-slate-100 dark:bg-[#1C2333] text-slate-500 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white">
+          <button onClick={handleClose} className="p-1 rounded-lg bg-slate-100 dark:bg-[#1C2333] text-slate-500 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white">
             <X className="w-5 h-5" />
           </button>
         </div>

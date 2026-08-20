@@ -3,6 +3,15 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+import {
+  sendMonthlyFinancialReport,
+  buildMonthlyReportHtml,
+  getDispatchHistory,
+  getLastDispatchedMonth,
+  setCustomSmtpConfig,
+  getEffectiveSmtpConfig,
+  testSmtpConnection
+} from './server/emailReporter';
 
 dotenv.config();
 
@@ -227,17 +236,6 @@ Give a concise, highly professional, actionable response. Format with clear bull
   // =========================================================================
   // Automated Monthly Report Email Service (Dispatches every 2nd of Month for Admin & SuperUser only)
   // =========================================================================
-  const {
-    sendMonthlyFinancialReport,
-    buildMonthlyReportHtml,
-    getDispatchHistory,
-    getLastDispatchedMonth,
-    setCustomSmtpConfig,
-    getEffectiveSmtpConfig,
-    testSmtpConnection
-  } = await import('./server/emailReporter.js').catch(async () => {
-    return await import('./server/emailReporter');
-  });
 
   // Get current SMTP Configuration Status
   app.get('/api/reports/smtp-config', (req, res) => {

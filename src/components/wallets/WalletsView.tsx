@@ -22,7 +22,7 @@ import {
   Lock
 } from 'lucide-react';
 import { Wallet, Transaction, Transfer, UserProfile, TransactionType } from '../../types';
-import { calculateWalletBalance, formatETB, isOverdraftAllowed, isWalletActive } from '../../lib/store';
+import { calculateWalletBalance, formatETB, isOverdraftAllowed, isWalletActive, isCreditSaleCollected } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 import { TelebirrIntegrationModal } from './TelebirrIntegrationModal';
 import { ShegerPayVerificationModal } from './ShegerPayVerificationModal';
@@ -823,20 +823,42 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
             {walletTxs.length === 0 ? (
               <p className="text-xs text-slate-500 dark:text-[#8899BB] py-4 text-center">No transactions recorded for this wallet.</p>
             ) : (
-              walletTxs.map((tx) => (
-                <div
-                  key={tx.id}
-                  className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200/80 dark:border-[#1E2D40] flex items-center justify-between text-xs"
-                >
-                  <div>
-                    <p className="font-bold text-slate-900 dark:text-[#F0F4FF]">{tx.description}</p>
-                    <p className="text-[10px] text-slate-500 dark:text-[#8899BB] mt-0.5">{tx.category} • {new Date(tx.date).toLocaleDateString()}</p>
+              walletTxs.map((tx) => {
+                const isCreditCollected = isCreditSaleCollected(tx);
+                return (
+                  <div
+                    key={tx.id}
+                    className={`p-2.5 rounded-xl border flex items-center justify-between text-xs transition-colors ${
+                      isCreditCollected
+                        ? 'bg-teal-50/30 dark:bg-teal-950/20 border-teal-200 dark:border-teal-800/40'
+                        : 'bg-slate-50 dark:bg-[#1C2333] border-slate-200/80 dark:border-[#1E2D40]'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="font-bold text-slate-900 dark:text-[#F0F4FF]">{tx.description}</p>
+                        {isCreditCollected && (
+                          <span className="text-[8px] bg-teal-100 text-teal-800 dark:bg-teal-500/20 dark:text-teal-300 font-bold px-1.5 py-0.2 rounded border border-teal-200 dark:border-teal-500/30 shrink-0">
+                            Credit Collected
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-[#8899BB] mt-0.5">
+                        <span className={isCreditCollected ? "text-teal-700 dark:text-teal-300 font-semibold" : ""}>{tx.category}</span> • {new Date(tx.date).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <span className={`font-mono font-bold ${
+                      isCreditCollected
+                        ? 'text-teal-600 dark:text-teal-400 font-black'
+                        : tx.type === 'INCOME'
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-rose-600 dark:text-red-400'
+                    }`}>
+                      {tx.type === 'INCOME' ? '+' : '-'}{formatETB(Math.abs(tx.amount))}
+                    </span>
                   </div>
-                  <span className={`font-mono font-bold ${tx.type === 'INCOME' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-red-400'}`}>
-                    {tx.type === 'INCOME' ? '+' : '-'}{formatETB(Math.abs(tx.amount))}
-                  </span>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

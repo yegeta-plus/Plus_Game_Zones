@@ -335,11 +335,15 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
             const outstanding = r.amountOwed - r.amountCollected;
             const isLate = r.isLate && r.effectiveStatus !== 'COLLECTED';
 
+            const isCollected = r.effectiveStatus === 'COLLECTED';
+
             return (
               <div
                 key={r.id}
                 className={`bg-white dark:bg-[#131926] border rounded-2xl p-4 space-y-3 shadow-sm transition-all ${
-                  isLate
+                  isCollected
+                    ? 'border-teal-300 dark:border-teal-500/40 bg-teal-500/[0.02]'
+                    : isLate
                     ? 'border-rose-300 dark:border-rose-500/40 bg-rose-500/[0.02]'
                     : 'border-slate-200 dark:border-[#1E2D40]'
                 }`}
@@ -348,8 +352,8 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
                   <div className="space-y-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase flex items-center gap-1 ${
-                        r.effectiveStatus === 'COLLECTED'
-                          ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                        isCollected
+                          ? 'bg-teal-500/20 text-teal-700 dark:text-teal-300 border border-teal-500/30'
                           : isLate
                           ? 'bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30'
                           : 'bg-amber-500/20 text-amber-700 dark:text-amber-400'
@@ -642,7 +646,16 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
                   required
                   placeholder="e.g. Abebe Bikila"
                   value={createCustomerName}
-                  onChange={(e) => setCreateCustomerName(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCreateCustomerName(val);
+                    if (val.toLowerCase().includes('weframu')) {
+                      const telebirrWallet = wallets.find(w => w.type === 'TELEBIRR' || w.id === 'w-telebirr' || w.name.toLowerCase().includes('telebirr'));
+                      if (telebirrWallet) {
+                        setCreateWalletId(telebirrWallet.id);
+                      }
+                    }
+                  }}
                   className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
                 />
               </div>

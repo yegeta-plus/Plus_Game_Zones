@@ -69,7 +69,8 @@ import {
   calculateMonthlyStats,
   calculateIncomeAverages,
   formatETB,
-  getWalletNickname
+  getWalletNickname,
+  isCreditSaleCollected
 } from '../../lib/store';
 import {
   formatEthiopianDate,
@@ -590,11 +591,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         {/* Compact 4-KPI Metrics Grid */}
         <div className="md:col-span-2 lg:col-span-4 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          {/* KPI 1: Weekly Avg Income */}
+          {/* KPI 1: Weekly Daily Avg Income */}
           <div className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-xl p-3 flex flex-col justify-between shadow-2xs hover:border-emerald-500/50 transition-all group">
             <div className="flex items-center justify-between gap-1">
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-[#8899BB] truncate">
-                Weekly Avg
+                Weekly Daily Avg
               </span>
               <div className="w-5 h-5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-[#00D4AA] flex items-center justify-center shrink-0">
                 <TrendingUp className="w-3 h-3" />
@@ -602,11 +603,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
             <div className="my-1">
               <p className="text-sm sm:text-base font-black font-mono text-emerald-700 dark:text-[#00D4AA] truncate">
-                {hideBalances ? '••••••' : formatETB(incomeAverages.weeklyAvg, true)}
+                {hideBalances ? '••••••' : formatETB(incomeAverages.weeklyDailyAvg, true)}
               </p>
             </div>
             <div className="text-[10px] text-slate-500 dark:text-[#8899BB] flex items-center justify-between border-t border-slate-100 dark:border-[#1E2D40] pt-1 mt-0.5 font-mono">
-              <span className="truncate">7-Day:</span>
+              <span className="truncate">7-Day Total:</span>
               <span className="font-bold text-emerald-600 dark:text-emerald-400 truncate">
                 {hideBalances ? '•••' : formatETB(incomeAverages.currentWeekIncome, true)}
               </span>
@@ -951,41 +952,67 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             <div className="space-y-2">
-              {recentTxList.map((tx) => (
-                <div
-                  key={tx.id}
-                  onClick={() => onNavigateTab('transactions')}
-                  className="p-3 rounded-xl bg-slate-50 dark:bg-[#151C2A] border border-slate-200/80 dark:border-[#1C2638] hover:border-emerald-500 dark:hover:border-[#00D4AA]/60 transition-all flex items-center justify-between cursor-pointer group"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                      tx.type === 'INCOME'
-                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400'
-                        : 'bg-rose-100 text-rose-700 dark:bg-red-500/15 dark:text-red-400'
-                    }`}>
-                      {tx.type === 'INCOME' ? <ArrowDownLeft className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />}
+              {recentTxList.map((tx) => {
+                const isCreditCollected = isCreditSaleCollected(tx);
+                return (
+                  <div
+                    key={tx.id}
+                    onClick={() => onNavigateTab('transactions')}
+                    className={`p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer group ${
+                      isCreditCollected
+                        ? 'bg-teal-50/30 dark:bg-teal-950/20 border-teal-200 dark:border-teal-800/40 hover:border-teal-500 dark:hover:border-teal-400'
+                        : 'bg-slate-50 dark:bg-[#151C2A] border-slate-200/80 dark:border-[#1C2638] hover:border-emerald-500 dark:hover:border-[#00D4AA]/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                        isCreditCollected
+                          ? 'bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-300'
+                          : tx.type === 'INCOME'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400'
+                          : 'bg-rose-100 text-rose-700 dark:bg-red-500/15 dark:text-red-400'
+                      }`}>
+                        {isCreditCollected ? (
+                          <CheckCircle2 className="w-5 h-5" />
+                        ) : tx.type === 'INCOME' ? (
+                          <ArrowDownLeft className="w-5 h-5" />
+                        ) : (
+                          <ArrowUpRight className="w-5 h-5" />
+                        )}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h5 className="text-xs font-bold text-slate-900 dark:text-white truncate group-hover:text-emerald-600 dark:group-hover:text-[#00D4AA] transition-colors">
+                            {tx.description}
+                          </h5>
+                          {isCreditCollected && (
+                            <span className="text-[9px] bg-teal-100 text-teal-800 dark:bg-teal-500/20 dark:text-teal-300 border border-teal-200 dark:border-teal-500/30 px-1.5 py-0.2 rounded font-bold shrink-0">
+                              Credit Collected
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-500 dark:text-[#8899BB] truncate">
+                          <span className={isCreditCollected ? "text-teal-700 dark:text-teal-300 font-semibold" : ""}>{tx.category}</span> • <span className="text-slate-700 dark:text-slate-300 font-bold">{tx.creatorName}</span>
+                        </p>
+                      </div>
                     </div>
 
-                    <div className="min-w-0">
-                      <h5 className="text-xs font-bold text-slate-900 dark:text-white truncate group-hover:text-emerald-600 dark:group-hover:text-[#00D4AA] transition-colors">
-                        {tx.description}
-                      </h5>
-                      <p className="text-[10px] text-slate-500 dark:text-[#8899BB] truncate">
-                        {tx.category} • <span className="text-slate-700 dark:text-slate-300 font-bold">{tx.creatorName}</span>
+                    <div className="text-right shrink-0 ml-3">
+                      <p className={`text-xs font-mono font-black ${
+                        isCreditCollected
+                          ? 'text-teal-600 dark:text-teal-400'
+                          : tx.type === 'INCOME'
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-rose-600 dark:text-red-400'
+                      }`}>
+                        {tx.type === 'INCOME' ? '+' : '-'}{hideBalances ? '••••' : formatETB(Math.abs(tx.amount))}
                       </p>
+                      <span className="text-[10px] text-slate-400 font-mono font-medium">{formatDateByCalendar(tx.date, calendarType, false)}</span>
                     </div>
                   </div>
-
-                  <div className="text-right shrink-0 ml-3">
-                    <p className={`text-xs font-mono font-black ${
-                      tx.type === 'INCOME' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-red-400'
-                    }`}>
-                      {tx.type === 'INCOME' ? '+' : '-'}{hideBalances ? '••••' : formatETB(Math.abs(tx.amount))}
-                    </p>
-                    <span className="text-[10px] text-slate-400 font-mono font-medium">{formatDateByCalendar(tx.date, calendarType, false)}</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
