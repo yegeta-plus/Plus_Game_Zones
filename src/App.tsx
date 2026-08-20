@@ -31,6 +31,7 @@ import {
   fetchLatestFirebaseState
 } from './lib/firebase';
 import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest, ChatMessage, ChatChannel, AuditLogEntry } from './types';
+import { CANONICAL_PDF_TRANSACTIONS } from './data/canonicalPdfTransactions';
 import { CheckCircle2, Sparkles } from 'lucide-react';
 import { triggerHaptic } from './lib/haptics';
 import { FingerprintModal } from './components/auth/FingerprintModal';
@@ -237,17 +238,21 @@ export default function App() {
     const remoteState = await fetchLatestFirebaseState();
     if (remoteState && typeof remoteState === 'object') {
       setState(prev => {
-        const mergedUsers = mergeListById(prev.users, remoteState.users);
-        const mergedWallets = mergeListById(prev.wallets, remoteState.wallets);
-        const mergedTransactions = mergeListById(prev.transactions, remoteState.transactions);
-        const mergedTransfers = mergeListById(prev.transfers, remoteState.transfers);
-        const mergedEqubs = mergeListById(prev.equbs, remoteState.equbs);
-        const mergedLoans = mergeListById(prev.loans, remoteState.loans);
-        const mergedAssets = mergeListById(prev.assets, remoteState.assets);
-        const mergedGoals = mergeListById(prev.goals, remoteState.goals);
-        const mergedRecurring = mergeListById(prev.recurring, remoteState.recurring);
-        const mergedReceivables = syncReceivablesLateStatus(mergeListById(prev.receivables, remoteState.receivables));
-        const mergedCategories = mergeListById(prev.categories, remoteState.categories);
+        const deletedIds = Array.from(new Set([
+          ...(prev.deletedEntityIds || []),
+          ...(remoteState.deletedEntityIds || [])
+        ]));
+        const mergedUsers = mergeListById(prev.users, remoteState.users, deletedIds);
+        const mergedWallets = mergeListById(prev.wallets, remoteState.wallets, deletedIds);
+        const mergedTransactions = mergeListById(prev.transactions, remoteState.transactions, deletedIds);
+        const mergedTransfers = mergeListById(prev.transfers, remoteState.transfers, deletedIds);
+        const mergedEqubs = mergeListById(prev.equbs, remoteState.equbs, deletedIds);
+        const mergedLoans = mergeListById(prev.loans, remoteState.loans, deletedIds);
+        const mergedAssets = mergeListById(prev.assets, remoteState.assets, deletedIds);
+        const mergedGoals = mergeListById(prev.goals, remoteState.goals, deletedIds);
+        const mergedRecurring = mergeListById(prev.recurring, remoteState.recurring, deletedIds);
+        const mergedReceivables = syncReceivablesLateStatus(mergeListById(prev.receivables, remoteState.receivables, deletedIds));
+        const mergedCategories = mergeListById(prev.categories, remoteState.categories, deletedIds);
         const mergedAuditLogs = mergeListById(prev.auditLogs, remoteState.auditLogs);
         const mergedPending = mergeListById(prev.pendingReviewTransactions, remoteState.pendingReviewTransactions);
 
@@ -261,6 +266,7 @@ export default function App() {
         const updated = {
           ...prev,
           ...remoteState,
+          deletedEntityIds: deletedIds,
           users: mergedUsers,
           wallets: mergedWallets,
           transactions: mergedTransactions,
@@ -670,39 +676,43 @@ export default function App() {
     performRefresh(true);
   };
 
-  // 3.2 Delete Transaction (CRUD Delete allowed only within 1 week of date)
+  // 3.2 Delete Transaction (CRUD Delete allowed for SuperAdmin, Admin, or creator)
   const handleDeleteTransaction = (txId: string) => {
-    const existingTx = state.transactions.find(t => t.id === txId);
+    const existingTx = (state.transactions || []).find(t => t.id === txId);
     if (!existingTx) return;
 
-    if (!isTransactionEditable(existingTx.date) && state.currentUser.role !== 'SuperAdmin') {
+    if (!isTransactionEditable(existingTx.date) && state.currentUser.role !== 'SuperAdmin' && state.currentUser.role !== 'Admin') {
       triggerToast(`⚠️ Can't be deleted: transaction is older than 1 week!`);
       return;
     }
 
     setState(prev => {
-      const updatedTxs = prev.transactions.filter(t => t.id !== txId);
+      const updatedDeleted = Array.from(new Set([...(prev.deletedEntityIds || []), txId]));
+      const updatedTxs = (prev.transactions || []).filter(t => t.id !== txId);
       const newAuditLog = {
         id: `aud-${Date.now()}`,
         timestamp: new Date().toISOString(),
         actorId: prev.currentUser.id,
         actorName: prev.currentUser.name,
-        action: 'DELETE_TRANSACTION',
-        entity: 'Transaction',
+        action: 'DELETE_TRANSACTION' as const,
+        entity: 'Transaction' as const,
         entityId: txId,
         diffAfter: { deleted: true, description: existingTx.description },
         branch: prev.currentUser.branch
       };
 
-      return {
+      const updated = {
         ...prev,
+        deletedEntityIds: updatedDeleted,
         transactions: updatedTxs,
-        auditLogs: [newAuditLog, ...prev.auditLogs]
+        auditLogs: [newAuditLog, ...(prev.auditLogs || [])]
       };
+      saveStateToStorage(updated);
+      syncStateToFirebaseNow(updated);
+      return updated;
     });
 
-    triggerToast(`Transaction deleted from ledger.`);
-    performRefresh(true);
+    triggerToast(`🗑️ Transaction deleted from ledger.`);
   };
 
   // 3.3 Clear All Transactions
@@ -726,6 +736,45 @@ export default function App() {
       };
     });
     triggerToast(`🗑️ All transactions cleared! You can now add entries manually.`);
+    performRefresh(true);
+  };
+
+  // 3.4 Restore Canonical Transactions
+  const handleRestoreTransactions = () => {
+    setState(prev => {
+      const canonicalIds = new Set(CANONICAL_PDF_TRANSACTIONS.map(t => t.id));
+      const updatedDeleted = (prev.deletedEntityIds || []).filter(id => !canonicalIds.has(id));
+
+      const mergedTransactions = mergeListById(
+        prev.transactions || [],
+        CANONICAL_PDF_TRANSACTIONS,
+        updatedDeleted
+      );
+
+      const newAuditLog = {
+        id: `aud-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        actorId: prev.currentUser.id,
+        actorName: prev.currentUser.name,
+        action: 'RESTORE_TRANSACTIONS',
+        entity: 'Transaction',
+        entityId: 'all',
+        diffAfter: { totalTransactions: mergedTransactions.length },
+        branch: prev.currentUser.branch
+      };
+
+      const updated = {
+        ...prev,
+        deletedEntityIds: updatedDeleted,
+        transactions: mergedTransactions,
+        auditLogs: [newAuditLog, ...(prev.auditLogs || [])]
+      };
+      saveStateToStorage(updated);
+      syncStateToFirebaseNow(updated);
+      return updated;
+    });
+
+    triggerToast(`✨ Restored ${CANONICAL_PDF_TRANSACTIONS.length} canonical transactions to ledger!`);
     performRefresh(true);
   };
 
@@ -899,16 +948,18 @@ export default function App() {
       timestamp: new Date().toISOString(),
       actorId: state.currentUser.id,
       actorName: state.currentUser.name,
-      action: 'DELETE_WALLET',
-      entity: 'Wallet',
+      action: 'DELETE_WALLET' as const,
+      entity: 'Wallet' as const,
       entityId: walletId,
       diffAfter: { deleted: true, name: targetWallet.name },
       branch: state.currentUser.branch
     };
 
     setState(prev => {
+      const updatedDeleted = Array.from(new Set([...(prev.deletedEntityIds || []), walletId]));
       const updated = {
         ...prev,
+        deletedEntityIds: updatedDeleted,
         wallets: prev.wallets.filter(w => w.id !== walletId),
         auditLogs: [newAuditLog, ...(prev.auditLogs || [])]
       };
@@ -918,7 +969,6 @@ export default function App() {
     });
 
     triggerToast(`🗑️ Wallet "${targetWallet.name}" removed.`);
-    performRefresh(true);
   };
 
   // 7. Add Equb
@@ -1184,27 +1234,33 @@ export default function App() {
     const targetEqub = state.equbs.find(e => e.id === equbId);
     if (!targetEqub) return;
 
-    setState(prev => ({
-      ...prev,
-      equbs: prev.equbs.filter(e => e.id !== equbId),
-      auditLogs: [
-        {
-          id: `aud-${Date.now()}`,
-          timestamp: new Date().toISOString(),
-          actorId: prev.currentUser.id,
-          actorName: prev.currentUser.name,
-          action: 'DELETE_EQUB',
-          entity: 'Equb',
-          entityId: equbId,
-          diffAfter: { deleted: true, name: targetEqub.name },
-          branch: prev.currentUser.branch
-        },
-        ...prev.auditLogs
-      ]
-    }));
+    setState(prev => {
+      const updatedDeleted = Array.from(new Set([...(prev.deletedEntityIds || []), equbId]));
+      const updated = {
+        ...prev,
+        deletedEntityIds: updatedDeleted,
+        equbs: prev.equbs.filter(e => e.id !== equbId),
+        auditLogs: [
+          {
+            id: `aud-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            actorId: prev.currentUser.id,
+            actorName: prev.currentUser.name,
+            action: 'DELETE_EQUB' as const,
+            entity: 'Equb' as const,
+            entityId: equbId,
+            diffAfter: { deleted: true, name: targetEqub.name },
+            branch: prev.currentUser.branch
+          },
+          ...(prev.auditLogs || [])
+        ]
+      };
+      saveStateToStorage(updated);
+      syncStateToFirebaseNow(updated);
+      return updated;
+    });
 
     triggerToast(`🗑️ Equb circle "${targetEqub.name}" deleted.`);
-    performRefresh(true);
   };
 
   // 13. Update & Delete Loan
@@ -1239,27 +1295,33 @@ export default function App() {
     const targetLoan = state.loans.find(l => l.id === loanId);
     if (!targetLoan) return;
 
-    setState(prev => ({
-      ...prev,
-      loans: prev.loans.filter(l => l.id !== loanId),
-      auditLogs: [
-        {
-          id: `aud-${Date.now()}`,
-          timestamp: new Date().toISOString(),
-          actorId: prev.currentUser.id,
-          actorName: prev.currentUser.name,
-          action: 'DELETE_LOAN',
-          entity: 'Loan',
-          entityId: loanId,
-          diffAfter: { deleted: true, title: targetLoan.title },
-          branch: prev.currentUser.branch
-        },
-        ...prev.auditLogs
-      ]
-    }));
+    setState(prev => {
+      const updatedDeleted = Array.from(new Set([...(prev.deletedEntityIds || []), loanId]));
+      const updated = {
+        ...prev,
+        deletedEntityIds: updatedDeleted,
+        loans: prev.loans.filter(l => l.id !== loanId),
+        auditLogs: [
+          {
+            id: `aud-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            actorId: prev.currentUser.id,
+            actorName: prev.currentUser.name,
+            action: 'DELETE_LOAN' as const,
+            entity: 'Loan' as const,
+            entityId: loanId,
+            diffAfter: { deleted: true, title: targetLoan.title },
+            branch: prev.currentUser.branch
+          },
+          ...(prev.auditLogs || [])
+        ]
+      };
+      saveStateToStorage(updated);
+      syncStateToFirebaseNow(updated);
+      return updated;
+    });
 
     triggerToast(`🗑️ Loan contract "${targetLoan.title}" deleted.`);
-    performRefresh(true);
   };
 
   const handleUpdateReceivable = (receivableId: string, updates: Partial<Receivable>) => {
@@ -1303,17 +1365,20 @@ export default function App() {
     if (!targetRcv) return;
 
     setState(prev => {
+      const updatedDeleted = Array.from(new Set([...(prev.deletedEntityIds || []), receivableId]));
+      const updatedReceivables = (prev.receivables || []).filter(r => r.id !== receivableId);
       const updatedState = {
         ...prev,
-        receivables: (prev.receivables || []).filter(r => r.id !== receivableId),
+        deletedEntityIds: updatedDeleted,
+        receivables: updatedReceivables,
         auditLogs: [
           {
             id: `aud-${Date.now()}`,
             timestamp: new Date().toISOString(),
             actorId: prev.currentUser.id,
             actorName: prev.currentUser.name,
-            action: 'DELETE_RECEIVABLE',
-            entity: 'Receivable',
+            action: 'DELETE_RECEIVABLE' as const,
+            entity: 'Receivable' as const,
             entityId: receivableId,
             diffAfter: { deleted: true, customerName: targetRcv.customerName },
             branch: prev.currentUser.branch
@@ -1327,7 +1392,6 @@ export default function App() {
     });
 
     triggerToast(`🗑️ Customer receivable for "${targetRcv.customerName}" deleted.`);
-    performRefresh(true);
   };
 
   // 14. Approval Request Handlers
@@ -2123,6 +2187,7 @@ export default function App() {
             onUpdateTransaction={handleUpdateTransaction}
             onDeleteTransaction={handleDeleteTransaction}
             onClearAllTransactions={handleClearAllTransactions}
+            onRestoreTransactions={handleRestoreTransactions}
             onRequestApproval={handleCreateApprovalRequest}
             onNavigateTab={(tab, subView) => handleNavigateTab(tab, subView)}
           />

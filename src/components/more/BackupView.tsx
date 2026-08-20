@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Database, Download, Upload, RefreshCw, Calendar, CheckCircle2, ShieldCheck, AlertTriangle, Users, Clock, Check, X, Trash2 } from 'lucide-react';
 import { ERPState, UserProfile } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
+import { CANONICAL_PDF_TRANSACTIONS } from '../../data/canonicalPdfTransactions';
+import { mergeListById, createInitialState, STORAGE_KEY } from '../../lib/store';
 
 interface BackupViewProps {
   state: ERPState;
@@ -98,9 +100,25 @@ export const BackupView: React.FC<BackupViewProps> = ({ state, onRestore }) => {
 
   const [showResetModal, setShowResetModal] = useState(false);
 
+  const handleRestoreOfficialTransactions = () => {
+    triggerHaptic('success');
+    const canonicalIds = new Set(CANONICAL_PDF_TRANSACTIONS.map(t => t.id));
+    const updatedDeleted = (state.deletedEntityIds || []).filter(id => !canonicalIds.has(id));
+    const mergedTxs = mergeListById(state.transactions || [], CANONICAL_PDF_TRANSACTIONS, updatedDeleted);
+    
+    onRestore({
+      ...state,
+      deletedEntityIds: updatedDeleted,
+      transactions: mergedTxs
+    });
+    setRestoreSuccessMsg(`✨ Restored all ${CANONICAL_PDF_TRANSACTIONS.length} canonical PDF transactions into active ledger!`);
+    setTimeout(() => setRestoreSuccessMsg(''), 5000);
+  };
+
   const confirmResetDemo = () => {
     triggerHaptic('warning');
-    localStorage.clear();
+    const fresh = createInitialState();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
     window.location.reload();
   };
 
@@ -213,6 +231,28 @@ export const BackupView: React.FC<BackupViewProps> = ({ state, onRestore }) => {
               className="hidden"
             />
           </label>
+        </div>
+
+        {/* Restore Canonical PDF Transactions */}
+        <div className="pt-3 border-t border-[#1E2D40] flex items-center justify-between">
+          <div>
+            <h4 className="text-xs font-bold text-[#00D4AA] flex items-center gap-1.5">
+              <span>Restore Canonical Transactions</span>
+              <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.2 rounded font-mono font-bold">
+                {CANONICAL_PDF_TRANSACTIONS.length} ENTRIES
+              </span>
+            </h4>
+            <p className="text-[10px] text-[#8899BB] mt-0.5">
+              Re-inject official PDF transactions (July & Aug) without wiping your other custom data
+            </p>
+          </div>
+          <button
+            onClick={handleRestoreOfficialTransactions}
+            className="px-3 py-1.5 rounded-xl bg-teal-500/15 border border-teal-500/30 text-teal-400 font-bold text-xs flex items-center gap-1.5 cursor-pointer hover:bg-teal-500/25 transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Restore Ledger</span>
+          </button>
         </div>
 
         {/* Reset Demo */}

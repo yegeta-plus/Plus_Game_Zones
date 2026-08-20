@@ -960,14 +960,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     onClick={() => onNavigateTab('transactions')}
                     className={`p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer group ${
                       isCreditCollected
-                        ? 'bg-teal-50/30 dark:bg-teal-950/20 border-teal-200 dark:border-teal-800/40 hover:border-teal-500 dark:hover:border-teal-400'
+                        ? 'bg-purple-50/30 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800/40 hover:border-purple-500 dark:hover:border-purple-400'
                         : 'bg-slate-50 dark:bg-[#151C2A] border-slate-200/80 dark:border-[#1C2638] hover:border-emerald-500 dark:hover:border-[#00D4AA]/60'
                     }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                         isCreditCollected
-                          ? 'bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-300'
+                          ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300'
                           : tx.type === 'INCOME'
                           ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400'
                           : 'bg-rose-100 text-rose-700 dark:bg-red-500/15 dark:text-red-400'
@@ -987,13 +987,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             {tx.description}
                           </h5>
                           {isCreditCollected && (
-                            <span className="text-[9px] bg-teal-100 text-teal-800 dark:bg-teal-500/20 dark:text-teal-300 border border-teal-200 dark:border-teal-500/30 px-1.5 py-0.2 rounded font-bold shrink-0">
+                            <span className="text-[9px] bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 px-1.5 py-0.2 rounded font-bold shrink-0">
                               Credit Collected
                             </span>
                           )}
                         </div>
                         <p className="text-[10px] text-slate-500 dark:text-[#8899BB] truncate">
-                          <span className={isCreditCollected ? "text-teal-700 dark:text-teal-300 font-semibold" : ""}>{tx.category}</span> • <span className="text-slate-700 dark:text-slate-300 font-bold">{tx.creatorName}</span>
+                          <span className={isCreditCollected ? "text-purple-700 dark:text-purple-300 font-semibold" : ""}>{tx.category}</span> • <span className="text-slate-700 dark:text-slate-300 font-bold">{tx.creatorName}</span>
                         </p>
                       </div>
                     </div>
@@ -1001,7 +1001,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div className="text-right shrink-0 ml-3">
                       <p className={`text-xs font-mono font-black ${
                         isCreditCollected
-                          ? 'text-teal-600 dark:text-teal-400'
+                          ? 'text-purple-600 dark:text-purple-400'
                           : tx.type === 'INCOME'
                           ? 'text-emerald-600 dark:text-emerald-400'
                           : 'text-rose-600 dark:text-red-400'

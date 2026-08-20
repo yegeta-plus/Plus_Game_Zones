@@ -419,4 +419,5 @@ export interface ERPState {
   theme: 'dark' | 'light';
   hideBalances: boolean;
   calendarType?: 'ETHIOPIAN' | 'GREGORIAN';
+  deletedEntityIds?: string[];
 }

@@ -342,7 +342,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
                 key={r.id}
                 className={`bg-white dark:bg-[#131926] border rounded-2xl p-4 space-y-3 shadow-sm transition-all ${
                   isCollected
-                    ? 'border-teal-300 dark:border-teal-500/40 bg-teal-500/[0.02]'
+                    ? 'border-purple-300 dark:border-purple-500/40 bg-purple-500/[0.03]'
                     : isLate
                     ? 'border-rose-300 dark:border-rose-500/40 bg-rose-500/[0.02]'
                     : 'border-slate-200 dark:border-[#1E2D40]'
@@ -353,7 +353,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase flex items-center gap-1 ${
                         isCollected
-                          ? 'bg-teal-500/20 text-teal-700 dark:text-teal-300 border border-teal-500/30'
+                          ? 'bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30'
                           : isLate
                           ? 'bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30'
                           : 'bg-amber-500/20 text-amber-700 dark:text-amber-400'

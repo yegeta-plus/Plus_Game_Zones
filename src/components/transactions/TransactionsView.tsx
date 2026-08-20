@@ -48,6 +48,7 @@ interface TransactionsViewProps {
   }) => void;
   onDeleteTransaction?: (txId: string) => void;
   onClearAllTransactions?: () => void;
+  onRestoreTransactions?: () => void;
   users?: UserProfile[];
   onRequestApproval?: (req: Omit<import('../../types').AdminApprovalRequest, 'id' | 'createdAt' | 'requestedBy' | 'requestedByName' | 'status'>) => void;
   onNavigateTab?: (tab: NavTab, subView?: string) => void;
@@ -67,6 +68,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   onUpdateTransaction,
   onDeleteTransaction,
   onClearAllTransactions,
+  onRestoreTransactions,
   onRequestApproval,
   onNavigateTab
 }) => {
@@ -171,32 +173,33 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   const handleConfirmDelete = () => {
     if (confirmDeleteTxId) {
       triggerHaptic('warning');
-    const targetTx = transactions.find(t => t.id === confirmDeleteTxId);
-    const isOld = targetTx ? !isTransactionEditable(targetTx.date) : false;
-    const activeOtherUsers = (users || []).filter(u => u.id !== currentUser.id && u.active !== false);
-    const hasOtherUsers = activeOtherUsers.length > 0;
+      const targetTx = transactions.find(t => t.id === confirmDeleteTxId);
+      const isOld = targetTx ? !isTransactionEditable(targetTx.date) : false;
+      const activeOtherUsers = (users || []).filter(u => u.id !== currentUser.id && u.active !== false);
+      const hasOtherUsers = activeOtherUsers.length > 0;
 
-    if ((isOld || currentUser.role === 'Partner' || currentUser.role === 'Viewer') && hasOtherUsers && onRequestApproval) {
-      onRequestApproval({
-        actionType: 'DELETE_TRANSACTION',
-        targetId: confirmDeleteTxId,
-        targetTitle: targetTx ? `${targetTx.description || targetTx.category} (ETB ${targetTx.amount.toLocaleString()})` : 'Transaction Deletion',
-        reason: targetTx
-          ? `Transaction deletion requested (${isOld ? 'older than 7 days' : 'authorization required'}): ${targetTx.category} - ${targetTx.description || 'No notes'}`
-          : 'Transaction deletion authorization requested'
-      });
+      // SuperAdmin and Admin can delete directly; other roles with old transactions request approval
+      if (currentUser.role !== 'SuperAdmin' && currentUser.role !== 'Admin' && isOld && hasOtherUsers && onRequestApproval) {
+        onRequestApproval({
+          actionType: 'DELETE_TRANSACTION',
+          targetId: confirmDeleteTxId,
+          targetTitle: targetTx ? `${targetTx.description || targetTx.category} (ETB ${targetTx.amount.toLocaleString()})` : 'Transaction Deletion',
+          reason: targetTx
+            ? `Transaction deletion requested (${isOld ? 'older than 7 days' : 'authorization required'}): ${targetTx.category} - ${targetTx.description || 'No notes'}`
+            : 'Transaction deletion authorization requested'
+        });
+        setConfirmDeleteTxId(null);
+        setActiveTxDetail(null);
+        return;
+      }
+
+      if (onDeleteTransaction) {
+        onDeleteTransaction(confirmDeleteTxId);
+      }
       setConfirmDeleteTxId(null);
       setActiveTxDetail(null);
-      return;
     }
-
-    if (onDeleteTransaction) {
-      onDeleteTransaction(confirmDeleteTxId);
-    }
-    setConfirmDeleteTxId(null);
-    setActiveTxDetail(null);
-  }
-};
+  };
 
   type LedgerItem =
     | { kind: 'TX'; id: string; date: string; time: number; tx: Transaction }
@@ -408,6 +411,21 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
             <span>Export xlsx</span>
           </button>
 
+          {onRestoreTransactions && (currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('medium');
+                onRestoreTransactions();
+              }}
+              className="px-2.5 py-1.5 rounded-xl bg-teal-50 hover:bg-teal-100 dark:bg-[#00D4AA]/10 dark:hover:bg-[#00D4AA]/20 text-teal-700 dark:text-[#00D4AA] font-bold text-xs flex items-center gap-1 border border-teal-200 dark:border-[#00D4AA]/30 cursor-pointer transition-all active:scale-95"
+              title="Restore canonical official PDF ledger transactions"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Restore Ledger</span>
+            </button>
+          )}
+
           {onClearAllTransactions && (currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && transactions.length > 0 && (
             <button
               type="button"
@@ -502,10 +520,27 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
       {/* Grouped Transactions List */}
       {Object.keys(grouped).length === 0 ? (
-        <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-8 text-center text-slate-500 dark:text-[#8899BB] space-y-2 shadow-sm">
+        <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-8 text-center text-slate-500 dark:text-[#8899BB] space-y-3 shadow-sm">
           <AlertCircle className="w-8 h-8 mx-auto text-slate-300 dark:text-[#8899BB]/50" />
-          <p className="text-xs font-bold text-slate-800 dark:text-[#F0F4FF]">No matching ledger entries</p>
-          <p className="text-[11px]">Try clearing search or filters to see all transactions.</p>
+          <div>
+            <p className="text-xs font-bold text-slate-800 dark:text-[#F0F4FF]">No matching ledger entries</p>
+            <p className="text-[11px] mt-0.5">Try clearing search or filters, or restore the canonical official transactions ledger.</p>
+          </div>
+          {onRestoreTransactions && (
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('success');
+                  onRestoreTransactions();
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 dark:bg-[#00D4AA] text-white dark:text-[#0A0E1A] text-xs font-bold rounded-xl shadow-md hover:brightness-110 active:scale-95 transition-all cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Restore Canonical Transactions</span>
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         Object.entries(grouped)
@@ -567,14 +602,14 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                           }}
                           className={`p-3.5 flex items-center justify-between cursor-pointer transition-colors ${
                             isSettled
-                              ? 'bg-teal-50/30 dark:bg-teal-950/20 hover:bg-teal-50/70 dark:hover:bg-teal-950/35 border-l-4 border-l-teal-500 dark:border-l-teal-400'
+                              ? 'bg-purple-50/30 dark:bg-purple-950/20 hover:bg-purple-50/70 dark:hover:bg-purple-950/35 border-l-4 border-l-purple-500 dark:border-l-purple-400'
                               : 'bg-blue-50/25 dark:bg-blue-950/10 hover:bg-blue-50/70 dark:hover:bg-blue-950/25 border-l-2 border-l-blue-500 dark:border-l-blue-400'
                           }`}
                         >
                           <div className="flex items-center gap-3 min-w-0">
                             <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                               isSettled
-                                ? 'bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-300'
+                                ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300'
                                 : 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400'
                             }`}>
                               <FileCheck className="w-4 h-4" />
@@ -587,13 +622,13 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                                 </p>
                                 <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border shrink-0 ${
                                   isSettled
-                                    ? 'bg-teal-100 dark:bg-teal-500/20 text-teal-800 dark:text-teal-300 border-teal-200 dark:border-teal-500/30'
+                                    ? 'bg-purple-100 dark:bg-purple-500/20 text-purple-800 dark:text-purple-300 border-purple-200 dark:border-purple-500/30'
                                     : 'bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-500/30'
                                 }`}>
                                   Sale on Credit
                                 </span>
                                 {isSettled ? (
-                                  <span className="text-[9px] bg-teal-600 text-white dark:bg-teal-500/30 dark:text-teal-300 font-extrabold px-1.5 py-0.2 rounded border border-teal-600 dark:border-teal-400/40 shrink-0 flex items-center gap-0.5">
+                                  <span className="text-[9px] bg-purple-600 text-white dark:bg-purple-500/30 dark:text-purple-300 font-extrabold px-1.5 py-0.2 rounded border border-purple-600 dark:border-purple-400/40 shrink-0 flex items-center gap-0.5">
                                     <CheckCircle2 className="w-2.5 h-2.5" /> Collected
                                   </span>
                                 ) : isOverdue ? (
@@ -615,7 +650,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                                   </>
                                 )}
                                 <span>•</span>
-                                <span className={isSettled ? "text-teal-600 dark:text-teal-400 font-medium" : "text-blue-600 dark:text-blue-400 font-medium"}>
+                                <span className={isSettled ? "text-purple-600 dark:text-purple-400 font-medium" : "text-blue-600 dark:text-blue-400 font-medium"}>
                                   Due: {formatDateByCalendar(rcv.dueDate, calendarType, true)}
                                 </span>
                                 <span>•</span>
@@ -628,14 +663,14 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
                           <div className="text-right shrink-0 ml-2">
                             <p className={`text-xs font-bold font-mono ${
-                              isSettled ? 'text-teal-600 dark:text-teal-400' : 'text-blue-600 dark:text-blue-400'
+                              isSettled ? 'text-purple-600 dark:text-purple-400' : 'text-blue-600 dark:text-blue-400'
                             }`}>
                               {hideBalances ? '••••••' : formatETB(rcv.amountOwed)}
                             </p>
 
                             <div className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono mt-0.5 flex items-center justify-end gap-1">
                               {isSettled ? (
-                                <span className="text-teal-600 dark:text-teal-400 font-bold text-[9px] flex items-center gap-0.5">
+                                <span className="text-purple-600 dark:text-purple-400 font-bold text-[9px] flex items-center gap-0.5">
                                   <CheckCircle2 className="w-2.5 h-2.5" /> Fully Collected
                                 </span>
                               ) : rcv.amountCollected > 0 ? (
@@ -741,14 +776,14 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                           tx.reversed
                             ? 'opacity-50 line-through hover:bg-slate-50 dark:hover:bg-[#1C2333]/70'
                             : isCreditCollected
-                            ? 'bg-teal-50/20 dark:bg-teal-950/15 hover:bg-teal-50/50 dark:hover:bg-teal-950/30 border-l-4 border-l-teal-500 dark:border-l-teal-400'
+                            ? 'bg-purple-50/20 dark:bg-purple-950/15 hover:bg-purple-50/50 dark:hover:bg-purple-950/30 border-l-4 border-l-purple-500 dark:border-l-purple-400'
                             : 'hover:bg-slate-50 dark:hover:bg-[#1C2333]/70'
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                             isCreditCollected
-                              ? 'bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-300'
+                              ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300'
                               : isIncome
                               ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400'
                               : 'bg-rose-100 text-rose-700 dark:bg-red-500/15 dark:text-red-400'
@@ -766,7 +801,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <p className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF] line-clamp-1">{tx.description}</p>
                               {isCreditCollected && (
-                                <span className="text-[9px] bg-teal-100 text-teal-800 dark:bg-teal-500/20 dark:text-teal-300 border border-teal-200 dark:border-teal-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0 font-bold">
+                                <span className="text-[9px] bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0 font-bold">
                                   <CheckCircle2 className="w-2.5 h-2.5" />
                                   Credit Collected
                                 </span>
@@ -785,14 +820,14 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                               )}
                             </div>
                             <p className="text-[10px] text-slate-500 dark:text-[#8899BB] flex items-center gap-1 mt-0.5 flex-wrap">
-                              <span className={isCreditCollected ? "text-teal-700 dark:text-teal-300 font-medium" : ""}>{tx.category}</span>
+                              <span className={isCreditCollected ? "text-purple-700 dark:text-purple-300 font-semibold" : ""}>{tx.category}</span>
                               <span>•</span>
                               {tx.splits && tx.splits.length > 1 ? (
                                 <span className="text-purple-600 dark:text-purple-400 font-bold bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.2 rounded border border-purple-200 dark:border-purple-800/40 text-[9px]">
                                   Split ({tx.splits.length} Wallets)
                                 </span>
                               ) : (
-                                <span className={isCreditCollected ? "text-teal-700 dark:text-teal-400 font-mono font-medium" : "text-emerald-700 dark:text-[#00D4AA] font-mono font-medium"}>
+                                <span className={isCreditCollected ? "text-purple-700 dark:text-purple-400 font-mono font-medium" : "text-emerald-700 dark:text-[#00D4AA] font-mono font-medium"}>
                                   {getWalletNickname(wallet?.name)}
                                 </span>
                               )}
@@ -803,7 +838,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                         <div className="text-right shrink-0 ml-2">
                           <p className={`text-xs font-bold font-mono ${
                             isCreditCollected
-                              ? 'text-teal-600 dark:text-teal-400 font-black'
+                              ? 'text-purple-600 dark:text-purple-400 font-black'
                               : isIncome
                               ? 'text-emerald-600 dark:text-emerald-400'
                               : 'text-rose-600 dark:text-red-400'
@@ -873,20 +908,20 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
               <div className="mt-4 space-y-3">
                 <div className={`text-center py-3 rounded-2xl border relative ${
                   isDetailCreditCollected
-                    ? 'bg-teal-50/30 dark:bg-teal-950/20 border-teal-200 dark:border-teal-800/50'
+                    ? 'bg-purple-50/30 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800/50'
                     : 'bg-slate-50 dark:bg-[#0A0E1A] border-slate-200 dark:border-[#1E2D40]'
                 }`}>
                   <div className="flex items-center justify-center gap-1.5 mb-0.5">
                     <p className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono uppercase">{activeTxDetail.type}</p>
                     {isDetailCreditCollected && (
-                      <span className="text-[9px] bg-teal-100 text-teal-800 dark:bg-teal-500/20 dark:text-teal-300 font-bold px-1.5 py-0.2 rounded border border-teal-200 dark:border-teal-500/30 flex items-center gap-0.5">
+                      <span className="text-[9px] bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300 font-bold px-1.5 py-0.2 rounded border border-purple-200 dark:border-purple-500/30 flex items-center gap-0.5">
                         <CheckCircle2 className="w-2.5 h-2.5" /> Credit Sale Collected
                       </span>
                     )}
                   </div>
                   <p className={`text-2xl font-black font-mono ${
                     isDetailCreditCollected
-                      ? 'text-teal-600 dark:text-teal-400'
+                      ? 'text-purple-600 dark:text-purple-400 font-black'
                       : activeTxDetail.type === 'INCOME'
                       ? 'text-emerald-600 dark:text-emerald-400'
                       : 'text-rose-600 dark:text-red-400'

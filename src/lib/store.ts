@@ -23,10 +23,11 @@ import {
 import { triggerHaptic } from './haptics';
 import { DEFAULT_ROLE_PERMISSIONS, getEffectivePermissions } from './auth';
 import { INITIAL_DATASET_JULY_AUG } from '../data/importedDataset';
+import { CANONICAL_PDF_TRANSACTIONS } from '../data/canonicalPdfTransactions';
 
 export type { ERPState } from '../types';
 
-const STORAGE_KEY = 'pluszone_fin_erp_state_v23_daily_income_names';
+export const STORAGE_KEY = 'pluszone_fin_erp_state_v23_daily_income_names';
 
 export const DEFAULT_AUTOMATED_EMAIL_REPORTS: AutomatedEmailReportsSettings = {
   enabled: true,
@@ -338,11 +339,16 @@ export function loadInitialState(): ERPState {
           parsed.users = DEFAULT_USERS;
         }
 
-        parsed.equbs = Array.isArray(parsed.equbs) ? parsed.equbs : [];
-        parsed.loans = Array.isArray(parsed.loans) ? parsed.loans : [];
-        parsed.assets = Array.isArray(parsed.assets) ? parsed.assets : [];
-        parsed.receivables = Array.isArray(parsed.receivables) ? syncReceivablesLateStatus(parsed.receivables) : [];
-        parsed.transactions = Array.isArray(parsed.transactions) ? parsed.transactions : [];
+        parsed.deletedEntityIds = Array.isArray(parsed.deletedEntityIds) ? parsed.deletedEntityIds : [];
+        const deletedSet = new Set(parsed.deletedEntityIds);
+
+        parsed.equbs = Array.isArray(parsed.equbs) ? parsed.equbs.filter((e: any) => !deletedSet.has(e.id)) : [];
+        parsed.loans = Array.isArray(parsed.loans) ? parsed.loans.filter((l: any) => !deletedSet.has(l.id)) : [];
+        parsed.assets = Array.isArray(parsed.assets) ? parsed.assets.filter((a: any) => !deletedSet.has(a.id)) : [];
+        parsed.receivables = Array.isArray(parsed.receivables) ? syncReceivablesLateStatus(parsed.receivables.filter((r: any) => !deletedSet.has(r.id))) : [];
+        
+        const loadedTxs = Array.isArray(parsed.transactions) ? parsed.transactions.filter((t: any) => !deletedSet.has(t.id)) : [];
+        parsed.transactions = loadedTxs.length > 0 ? mergeListById(loadedTxs, CANONICAL_PDF_TRANSACTIONS, parsed.deletedEntityIds) : CANONICAL_PDF_TRANSACTIONS;
         // Enforce wallet brand colors & CBE account number update
         let currentWallets: Wallet[] = Array.isArray(parsed.wallets) && parsed.wallets.length > 0 ? parsed.wallets : DEFAULT_WALLETS;
         
@@ -469,7 +475,7 @@ export function loadInitialState(): ERPState {
   return state;
 }
 
-function createInitialState(): ERPState {
+export function createInitialState(): ERPState {
   return {
     currentUser: DEFAULT_USERS[0],
     users: DEFAULT_USERS,
@@ -1072,23 +1078,29 @@ export function parseSummedAmount(inputStr: string): SummedAmountResult {
 
 /**
  * Safely merges a local list and remote list by unique item ID.
- * Ensures that newly created local transactions, users, wallets, etc. are never lost during sync.
+ * Ensures that newly created local transactions, users, wallets, etc. are never lost during sync,
+ * while preventing deleted items from being resurrected.
  */
-export function mergeListById<T extends { id: string }>(localList: T[] = [], remoteList: T[] = []): T[] {
+export function mergeListById<T extends { id: string }>(
+  localList: T[] = [],
+  remoteList: T[] = [],
+  deletedIds: string[] = []
+): T[] {
   if (!Array.isArray(localList)) localList = [];
   if (!Array.isArray(remoteList)) remoteList = [];
+  const deletedSet = new Set(deletedIds || []);
   const map = new Map<string, T>();
 
-  // 1. Populate remote items first
+  // 1. Populate remote items first (skip if deleted)
   remoteList.forEach(item => {
-    if (item && typeof item === 'object' && item.id) {
+    if (item && typeof item === 'object' && item.id && !deletedSet.has(item.id)) {
       map.set(item.id, item);
     }
   });
 
-  // 2. Local items overwrite remote items with the same ID, preserving local state and active session details
+  // 2. Local items overwrite remote items with the same ID (skip if deleted)
   localList.forEach(item => {
-    if (item && typeof item === 'object' && item.id) {
+    if (item && typeof item === 'object' && item.id && !deletedSet.has(item.id)) {
       map.set(item.id, item);
     }
   });
