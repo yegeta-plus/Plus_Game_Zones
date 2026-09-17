@@ -57,22 +57,19 @@ export const AppSplashScreen: React.FC<AppSplashScreenProps> = ({
       {/* Main Fullscreen Brand Logo Container */}
       <div className="relative z-10 flex flex-col items-center text-center px-6 animate-in zoom-in-95 duration-500">
         
-        {/* Glowing Logo Frame */}
-        <div className="relative mb-6 group">
-          {/* Animated Glow Halo */}
-          <div className="absolute -inset-2 bg-gradient-to-tr from-[#00D4AA] via-[#3B82F6] to-[#8B5CF6] rounded-3xl blur-md opacity-75 group-hover:opacity-100 transition-opacity animate-pulse" />
-          
-          <div className="relative w-28 h-28 sm:w-36 sm:h-36 rounded-3xl overflow-hidden bg-[#0A0E1A] border-2 border-[#00D4AA]/60 shadow-2xl flex items-center justify-center p-1">
+        {/* Clean Logo Frame */}
+        <div className="relative mb-6">
+          <div className="relative w-28 h-28 sm:w-36 sm:h-36 rounded-2xl overflow-hidden shadow-2xl flex items-center justify-center bg-[#070B14]">
             {!imgError ? (
               <img
                 src={imgSrc}
                 alt="Plus Game Zone Logo"
                 onError={handleImgError}
                 referrerPolicy="no-referrer"
-                className="w-full h-full object-cover rounded-2xl"
+                className="w-full h-full object-cover"
               />
             ) : (
-              <div className="w-full h-full bg-gradient-to-br from-[#00D4AA]/20 to-[#3B82F6]/20 flex flex-col items-center justify-center text-[#00D4AA]">
+              <div className="w-full h-full bg-[#0A0E1A] flex flex-col items-center justify-center text-[#00D4AA]">
                 <Gamepad2 className="w-14 h-14" />
                 <span className="text-xs font-black tracking-widest mt-1 text-amber-400">PLUS ZONE</span>
               </div>

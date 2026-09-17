@@ -23,11 +23,17 @@ import {
 import { triggerHaptic } from './haptics';
 import { DEFAULT_ROLE_PERMISSIONS, getEffectivePermissions } from './auth';
 import { INITIAL_DATASET_JULY_AUG } from '../data/importedDataset';
-import { CANONICAL_PDF_TRANSACTIONS } from '../data/canonicalPdfTransactions';
+import {
+  NEW_AUGUST_SEPTEMBER_TRANSACTIONS,
+  NEW_SEPTEMBER_TRANSFERS,
+  NEW_SEPTEMBER_RECEIVABLES
+} from '../data/newAugustSeptemberTransactions';
+import { normalizeTransactionScopes, isPersonalExpense, resolveExpenseScope } from './expenseClassifier';
 
 export type { ERPState } from '../types';
+export { isPersonalExpense, resolveExpenseScope, normalizeTransactionScopes };
 
-export const STORAGE_KEY = 'pluszone_fin_erp_state_v23_daily_income_names';
+const STORAGE_KEY = 'pluszone_fin_erp_state_v26_cash_available';
 
 export const DEFAULT_AUTOMATED_EMAIL_REPORTS: AutomatedEmailReportsSettings = {
   enabled: true,
@@ -185,38 +191,8 @@ const DEFAULT_USERS: UserProfile[] = [
 
 const DEFAULT_WALLETS: Wallet[] = [
   {
-    id: 'w-cash',
-    name: 'Main Cash Vault',
-    type: 'CASH',
-    accountNumber: 'CASH-VAULT-01',
-    openingBalance: INITIAL_DATASET_JULY_AUG.openingBalances.cash,
-    totalIn: 0,
-    totalOut: 0,
-    color: '#F97316', // Orange background
-    iconName: 'Banknote',
-    isDefault: true,
-    status: 'ACTIVE',
-    isCreditAccount: false,
-    allowOverdraft: false
-  },
-  {
-    id: 'w-cbe',
-    name: 'Commercial Bank of Ethiopia (CBE)',
-    type: 'CBE_BANK',
-    accountNumber: '1000751694559', // CBE Account requested
-    openingBalance: INITIAL_DATASET_JULY_AUG.openingBalances.cbe,
-    totalIn: 0,
-    totalOut: 0,
-    color: '#8B5CF6', // Purple background
-    iconName: 'Building2',
-    isDefault: false,
-    status: 'ACTIVE',
-    isCreditAccount: false,
-    allowOverdraft: false
-  },
-  {
     id: 'w-telebirr',
-    name: 'Telebirr Merchant Wallet',
+    name: 'Telebirr',
     type: 'TELEBIRR',
     accountNumber: '0989367877',
     openingBalance: INITIAL_DATASET_JULY_AUG.openingBalances.telebirr,
@@ -230,8 +206,23 @@ const DEFAULT_WALLETS: Wallet[] = [
     allowOverdraft: false
   },
   {
+    id: 'w-cbe',
+    name: 'CBE',
+    type: 'CBE_BANK',
+    accountNumber: '1000751694559', // CBE Account requested
+    openingBalance: INITIAL_DATASET_JULY_AUG.openingBalances.cbe,
+    totalIn: 0,
+    totalOut: 0,
+    color: '#8B5CF6', // Purple background
+    iconName: 'Building2',
+    isDefault: false,
+    status: 'ACTIVE',
+    isCreditAccount: false,
+    allowOverdraft: false
+  },
+  {
     id: 'w-ebirr',
-    name: 'eBirr Digital Wallet',
+    name: 'eBirr',
     type: 'EBIRR',
     accountNumber: 'EB-998877',
     openingBalance: INITIAL_DATASET_JULY_AUG.openingBalances.ebirr,
@@ -243,13 +234,43 @@ const DEFAULT_WALLETS: Wallet[] = [
     status: 'ACTIVE',
     isCreditAccount: false,
     allowOverdraft: false
+  },
+  {
+    id: 'w-cash',
+    name: 'Cash',
+    type: 'CASH',
+    accountNumber: 'CASH-VAULT-01',
+    openingBalance: INITIAL_DATASET_JULY_AUG.openingBalances.cash,
+    totalIn: 0,
+    totalOut: 0,
+    color: '#F97316', // Orange background
+    iconName: 'Banknote',
+    isDefault: true,
+    status: 'ACTIVE',
+    isCreditAccount: false,
+    allowOverdraft: false
+  },
+  {
+    id: 'w-savings',
+    name: 'Saving wallet',
+    type: 'SAVINGS',
+    accountNumber: 'SAVING-01',
+    openingBalance: 0,
+    totalIn: 0,
+    totalOut: 0,
+    color: '#3B82F6', // Blue background
+    iconName: 'Vault',
+    isDefault: false,
+    status: 'ACTIVE',
+    isCreditAccount: false,
+    allowOverdraft: false
   }
 ];
 
 const DEFAULT_CATEGORIES: Category[] = [
   { id: 'cat-0', name: 'Daily Income', type: 'INCOME', icon: 'TrendingUp', color: '#10B981', active: true },
   { id: 'cat-1', name: 'Sales Revenue', type: 'INCOME', icon: 'TrendingUp', color: '#22C55E', active: true },
-  { id: 'cat-2', name: 'Receivables Collected', type: 'INCOME', icon: 'CheckCircle', color: '#00D4AA', active: true },
+  { id: 'cat-2', name: 'Daily Income / Collected', type: 'INCOME', icon: 'CheckCircle', color: '#8B5CF6', active: true },
   { id: 'cat-cap', name: 'Capital Injection', type: 'INCOME', icon: 'PlusCircle', color: '#3B82F6', active: true },
   { id: 'cat-lr', name: 'Loans Received', type: 'INCOME', icon: 'ArrowDownLeft', color: '#8B5CF6', active: true },
   { id: 'cat-3', name: 'Equipment / Asset Purchase', type: 'EXPENSE', icon: 'HardDrive', color: '#64748B', active: true },
@@ -264,6 +285,7 @@ const DEFAULT_CATEGORIES: Category[] = [
   { id: 'cat-11', name: 'Equb Contribution', type: 'EXPENSE', icon: 'Users', color: '#8B5CF6', active: true },
   { id: 'cat-12', name: 'Loan Repayments', type: 'EXPENSE', icon: 'ArrowUpRight', color: '#DC2626', active: true },
   { id: 'cat-bd', name: 'Bad Debt', type: 'EXPENSE', icon: 'AlertTriangle', color: '#DC2626', active: true },
+  { id: 'cat-sec', name: 'Community & Security', type: 'EXPENSE', icon: 'Shield', color: '#3B82F6', active: true },
   { id: 'cat-exp', name: 'Expense', type: 'EXPENSE', icon: 'MinusCircle', color: '#EF4444', active: true },
   { id: 'cat-rc', name: 'Receivable Created', type: 'INCOME', icon: 'Clock', color: '#6366F1', active: true },
   { id: 'cat-gen', name: 'Genesis / Setup', type: 'INCOME', icon: 'Settings', color: '#64748B', active: true },
@@ -276,7 +298,102 @@ const DEFAULT_EQUBS: Equb[] = INITIAL_DATASET_JULY_AUG.equbs;
 const DEFAULT_LOANS: Loan[] = INITIAL_DATASET_JULY_AUG.loans;
 const DEFAULT_ASSETS: Asset[] = INITIAL_DATASET_JULY_AUG.assets;
 const DEFAULT_GOALS: Goal[] = [];
-const DEFAULT_RECURRING: RecurringTemplate[] = [];
+export const DEFAULT_RECURRING: RecurringTemplate[] = [
+  {
+    id: 'rec-internet-monthly',
+    title: 'Internet & Fiber Subscription',
+    amount: 1010,
+    type: 'EXPENSE',
+    category: 'Utilities & Internet',
+    walletId: 'w-telebirr',
+    frequency: 'MONTHLY',
+    nextDueDate: '2026-09-01T00:00:00.000Z',
+    autoProcess: false,
+    status: 'ACTIVE',
+    notes: 'ETB 1,010 monthly internet fee. Manual confirmation required.'
+  },
+  {
+    id: 'rec-electricity-3w',
+    title: 'Electricity Prepaid Units (3-4 Weeks)',
+    amount: 2050,
+    type: 'EXPENSE',
+    category: 'Utilities & Internet',
+    walletId: 'w-telebirr',
+    frequency: 'EVERY_3_WEEKS',
+    nextDueDate: '2026-09-07T00:00:00.000Z',
+    autoProcess: false,
+    status: 'ACTIVE',
+    notes: 'ETB 2,050 electricity unit refill every 3 to 4 weeks. Manual confirmation required.'
+  },
+  {
+    id: 'rec-water-2m',
+    title: 'Municipal Water Utility (Bi-Monthly)',
+    amount: 450,
+    type: 'EXPENSE',
+    category: 'Utilities & Internet',
+    walletId: 'w-telebirr',
+    frequency: 'EVERY_2_MONTHS',
+    nextDueDate: '2026-09-15T00:00:00.000Z',
+    autoProcess: false,
+    status: 'ACTIVE',
+    notes: 'Municipal water bill payable every 2 months. Manual confirmation required.'
+  },
+  {
+    id: 'rec-police-2m',
+    title: 'Community Police & Security Dues (Bi-Monthly)',
+    amount: 500,
+    type: 'EXPENSE',
+    category: 'Rent & Lease',
+    walletId: 'w-cash',
+    frequency: 'EVERY_2_MONTHS',
+    nextDueDate: '2026-09-20T00:00:00.000Z',
+    autoProcess: false,
+    status: 'ACTIVE',
+    notes: 'Community security & police contribution every 2 months. Manual confirmation required.'
+  },
+  {
+    id: 'rec-transport-p1',
+    title: 'Staff Transport - Person 1 (Early Month)',
+    amount: 1000,
+    type: 'EXPENSE',
+    category: 'Payroll & Wages',
+    walletId: 'w-telebirr',
+    frequency: 'MONTHLY',
+    nextDueDate: '2026-09-05T00:00:00.000Z',
+    autoProcess: false,
+    status: 'ACTIVE',
+    beneficiary: 'Person 1',
+    notes: 'Staff transport allowance for Person 1 (ETB 1,000 on 5th of month). Manual confirmation required.'
+  },
+  {
+    id: 'rec-transport-p2',
+    title: 'Staff Transport - Person 2 (Mid Month)',
+    amount: 1000,
+    type: 'EXPENSE',
+    category: 'Payroll & Wages',
+    walletId: 'w-telebirr',
+    frequency: 'MONTHLY',
+    nextDueDate: '2026-09-15T00:00:00.000Z',
+    autoProcess: false,
+    status: 'ACTIVE',
+    beneficiary: 'Person 2',
+    notes: 'Staff transport allowance for Person 2 (ETB 1,000 on 15th of month). Manual confirmation required.'
+  },
+  {
+    id: 'rec-transport-p3',
+    title: 'Staff Transport - Person 3 (End Month)',
+    amount: 1000,
+    type: 'EXPENSE',
+    category: 'Payroll & Wages',
+    walletId: 'w-telebirr',
+    frequency: 'MONTHLY',
+    nextDueDate: '2026-09-25T00:00:00.000Z',
+    autoProcess: false,
+    status: 'ACTIVE',
+    beneficiary: 'Person 3',
+    notes: 'Staff transport allowance for Person 3 (ETB 1,000 on 25th of month). Manual confirmation required.'
+  }
+];
 const DEFAULT_RECEIVABLES: Receivable[] = INITIAL_DATASET_JULY_AUG.receivables;
 
 export function evaluateReceivableStatus(r: Receivable): 'OUTSTANDING' | 'COLLECTED' | 'WRITTEN_OFF' | 'LATE' {
@@ -339,16 +456,151 @@ export function loadInitialState(): ERPState {
           parsed.users = DEFAULT_USERS;
         }
 
-        parsed.deletedEntityIds = Array.isArray(parsed.deletedEntityIds) ? parsed.deletedEntityIds : [];
-        const deletedSet = new Set(parsed.deletedEntityIds);
+        // Synchronize canonical equbs with verified rounds, obligations, and statuses
+        const canonicalEqubs = INITIAL_DATASET_JULY_AUG.equbs;
+        const canonicalEqubMap = new Map(canonicalEqubs.map(e => [e.id, e]));
+        if (!Array.isArray(parsed.equbs) || parsed.equbs.length === 0) {
+          parsed.equbs = canonicalEqubs;
+        } else {
+          parsed.equbs = parsed.equbs.map((existingEqub: Equb) => {
+            const canonical = canonicalEqubMap.get(existingEqub.id);
+            if (canonical) {
+              return {
+                ...existingEqub,
+                currentRound: canonical.currentRound,
+                completedRounds: canonical.completedRounds,
+                totalRounds: canonical.totalRounds,
+                contributionPerRound: canonical.contributionPerRound,
+                status: canonical.status,
+                isOverdue: canonical.isOverdue,
+                members: canonical.members,
+                payoutsClaimed: canonical.payoutsClaimed
+              };
+            }
+            return existingEqub;
+          });
+          const existingEqubIds = new Set(parsed.equbs.map((e: Equb) => e.id));
+          for (const canonical of canonicalEqubs) {
+            if (!existingEqubIds.has(canonical.id)) {
+              parsed.equbs.push(canonical);
+              existingEqubIds.add(canonical.id);
+            }
+          }
+        }
 
-        parsed.equbs = Array.isArray(parsed.equbs) ? parsed.equbs.filter((e: any) => !deletedSet.has(e.id)) : [];
-        parsed.loans = Array.isArray(parsed.loans) ? parsed.loans.filter((l: any) => !deletedSet.has(l.id)) : [];
-        parsed.assets = Array.isArray(parsed.assets) ? parsed.assets.filter((a: any) => !deletedSet.has(a.id)) : [];
-        parsed.receivables = Array.isArray(parsed.receivables) ? syncReceivablesLateStatus(parsed.receivables.filter((r: any) => !deletedSet.has(r.id))) : [];
-        
-        const loadedTxs = Array.isArray(parsed.transactions) ? parsed.transactions.filter((t: any) => !deletedSet.has(t.id)) : [];
-        parsed.transactions = loadedTxs.length > 0 ? mergeListById(loadedTxs, CANONICAL_PDF_TRANSACTIONS, parsed.deletedEntityIds) : CANONICAL_PDF_TRANSACTIONS;
+        parsed.assets = Array.isArray(parsed.assets) ? parsed.assets : [];
+        parsed.receivables = Array.isArray(parsed.receivables) ? syncReceivablesLateStatus(parsed.receivables) : [];
+        parsed.transactions = Array.isArray(parsed.transactions) ? parsed.transactions : [];
+
+        // Synchronize canonical loans with verified debt balances, repayment types, and statuses
+        const canonicalLoans = INITIAL_DATASET_JULY_AUG.loans;
+        const canonicalLoanMap = new Map(canonicalLoans.map(l => [l.id, l]));
+        if (!Array.isArray(parsed.loans) || parsed.loans.length === 0) {
+          parsed.loans = canonicalLoans;
+        } else {
+          parsed.loans = parsed.loans.map((existingLoan: Loan) => {
+            const canonical = canonicalLoanMap.get(existingLoan.id);
+            if (canonical) {
+              return {
+                ...existingLoan,
+                repaymentType: canonical.repaymentType || existingLoan.repaymentType,
+                dueDate: canonical.dueDate,
+                initialAmount: canonical.initialAmount,
+                outstandingBalance: canonical.outstandingBalance,
+                status: canonical.status,
+                monthlyInstallment: canonical.monthlyInstallment,
+                payments: canonical.payments.length > 0 ? canonical.payments : existingLoan.payments
+              };
+            }
+            return existingLoan;
+          });
+          // Add any missing canonical loans
+          const existingLoanIds = new Set(parsed.loans.map((l: Loan) => l.id));
+          for (const canonical of canonicalLoans) {
+            if (!existingLoanIds.has(canonical.id)) {
+              parsed.loans.push(canonical);
+              existingLoanIds.add(canonical.id);
+            }
+          }
+        }
+        // Ensure new Aug 18 - Sep 16 transactions are always seamlessly merged in and updated with canonical timestamps
+        const existingTxIds = new Set(parsed.transactions.map((t: Transaction) => t.id));
+        const canonicalTxMap = new Map(NEW_AUGUST_SEPTEMBER_TRANSACTIONS.map(t => [t.id, t]));
+        parsed.transactions = parsed.transactions.map((t: Transaction) => {
+          const canonical = canonicalTxMap.get(t.id);
+          if (canonical) {
+            return {
+              ...t,
+              date: canonical.date,
+              amount: canonical.amount,
+              walletId: canonical.walletId,
+              description: canonical.description,
+              type: canonical.type,
+              category: canonical.category,
+              expenseScope: canonical.expenseScope || t.expenseScope
+            };
+          }
+          return t;
+        });
+        for (const newTx of NEW_AUGUST_SEPTEMBER_TRANSACTIONS) {
+          if (!existingTxIds.has(newTx.id)) {
+            parsed.transactions.push(newTx);
+            existingTxIds.add(newTx.id);
+          }
+        }
+        if (!existingTxIds.has('tx-20260831-police-support')) {
+          parsed.transactions.push({
+            id: 'tx-20260831-police-support',
+            date: '2026-08-31T14:00:00.000Z',
+            type: 'EXPENSE',
+            category: 'Community & Security',
+            amount: 200,
+            walletId: 'w-cash',
+            description: 'Police support',
+            creatorName: 'Yegeta Huawei'
+          });
+        }
+
+        // Ensure new transfers are seamlessly merged in if missing
+        parsed.transfers = Array.isArray(parsed.transfers) ? parsed.transfers : [];
+        const existingTrIds = new Set(parsed.transfers.map((t: Transfer) => t.id));
+        for (const tr of NEW_SEPTEMBER_TRANSFERS) {
+          if (!existingTrIds.has(tr.id)) {
+            parsed.transfers.push(tr);
+            existingTrIds.add(tr.id);
+          }
+        }
+
+        // Ensure new receivables are seamlessly merged in if missing
+        const existingRcvIds = new Set((parsed.receivables || []).map((r: Receivable) => r.id));
+        for (const rcv of NEW_SEPTEMBER_RECEIVABLES) {
+          if (!existingRcvIds.has(rcv.id)) {
+            parsed.receivables.push(rcv);
+            existingRcvIds.add(rcv.id);
+          }
+        }
+        // Preserve existing classified transaction scopes without re-applying the automated keyword rule
+        parsed.transactions = (parsed.transactions || []).map((t: Transaction) => ({
+          ...t,
+          expenseScope: t.type === 'EXPENSE' ? (t.expenseScope || 'BUSINESS') : undefined
+        }));
+
+        // Deduplicate any accidental duplicate receivable collection transactions created within seconds of each other
+        const seenRcvKeys = new Set<string>();
+        parsed.transactions = parsed.transactions.filter((t: Transaction) => {
+          if (t.refType === 'RECEIVABLE' && t.refId) {
+            const timeBucket = Math.floor(new Date(t.date).getTime() / 10000);
+            const key = `${t.refId}_${t.amount}_${timeBucket}`;
+            if (seenRcvKeys.has(key)) {
+              return false;
+            }
+            seenRcvKeys.add(key);
+          }
+          return true;
+        });
+
+        // Consolidate any sibling split Equb transactions into single unified entries with total amount and split breakdowns
+        parsed.transactions = consolidateEqubSplitTransactions(parsed.transactions, parsed.wallets);
         // Enforce wallet brand colors & CBE account number update
         let currentWallets: Wallet[] = Array.isArray(parsed.wallets) && parsed.wallets.length > 0 ? parsed.wallets : DEFAULT_WALLETS;
         
@@ -361,6 +613,7 @@ export function loadInitialState(): ERPState {
           if (w.type === 'CBE_BANK') {
             return {
               ...w,
+              name: 'CBE',
               accountNumber: w.accountNumber && w.accountNumber !== '1000123456789' ? w.accountNumber : '1000751694559',
               color: '#8B5CF6', // Purple
               status,
@@ -371,6 +624,7 @@ export function loadInitialState(): ERPState {
           if (w.type === 'CASH') {
             return {
               ...w,
+              name: 'Cash',
               color: '#F97316',
               status,
               isCreditAccount: isCredit,
@@ -380,6 +634,7 @@ export function loadInitialState(): ERPState {
           if (w.type === 'TELEBIRR') {
             return {
               ...w,
+              name: 'Telebirr',
               accountNumber: w.accountNumber && w.accountNumber !== '0911002233' ? w.accountNumber : '0989367877',
               color: '#0EA5E9',
               status,
@@ -390,7 +645,18 @@ export function loadInitialState(): ERPState {
           if (w.type === 'EBIRR') {
             return {
               ...w,
+              name: 'eBirr',
               color: '#10B981',
+              status,
+              isCreditAccount: isCredit,
+              allowOverdraft: w.allowOverdraft ?? isCredit
+            };
+          }
+          if (w.type === 'SAVINGS' || w.id === 'w-savings') {
+            return {
+              ...w,
+              name: 'Saving wallet',
+              color: '#3B82F6',
               status,
               isCreditAccount: isCredit,
               allowOverdraft: w.allowOverdraft ?? isCredit
@@ -406,14 +672,31 @@ export function loadInitialState(): ERPState {
 
         // Add missing default types if not present
         DEFAULT_WALLETS.forEach(def => {
-          if (!currentWallets.some(w => w.type === def.type)) {
+          if (!currentWallets.some(w => w.id === def.id || w.type === def.type)) {
             currentWallets.push(def);
           }
         });
 
         parsed.wallets = currentWallets;
         parsed.categories = Array.isArray(parsed.categories) && parsed.categories.length > 0 ? parsed.categories : DEFAULT_CATEGORIES;
-        parsed.recurring = Array.isArray(parsed.recurring) ? parsed.recurring : DEFAULT_RECURRING;
+        if (!parsed.categories.some((c: Category) => c.name === 'Community & Security')) {
+          parsed.categories.push({ id: 'cat-sec', name: 'Community & Security', type: 'EXPENSE', icon: 'Shield', color: '#3B82F6', active: true });
+        }
+        
+        // Ensure default recurring schedules exist if empty or missing, filtering out removed rent
+        let currentRecurring: RecurringTemplate[] = Array.isArray(parsed.recurring) ? parsed.recurring : [];
+        currentRecurring = currentRecurring.filter(r => r.id !== 'rec-rent-quarterly' && !r.title.toLowerCase().includes('commercial lounge rent'));
+        if (currentRecurring.length === 0) {
+          currentRecurring = [...DEFAULT_RECURRING];
+        } else {
+          const deletedIds = Array.isArray(parsed.deletedEntityIds) ? parsed.deletedEntityIds : [];
+          DEFAULT_RECURRING.forEach(def => {
+            if (!currentRecurring.some(r => r.id === def.id) && !deletedIds.includes(def.id)) {
+              currentRecurring.push(def);
+            }
+          });
+        }
+        parsed.recurring = currentRecurring;
         parsed.transfers = Array.isArray(parsed.transfers) ? parsed.transfers : [];
         parsed.goals = Array.isArray(parsed.goals) ? parsed.goals : DEFAULT_GOALS;
         parsed.auditLogs = Array.isArray(parsed.auditLogs) ? parsed.auditLogs : DEFAULT_AUDIT_LOGS;
@@ -445,6 +728,7 @@ export function loadInitialState(): ERPState {
         parsed.chatMessages = loadedChatMessages;
         parsed.automatedEmailReportsSettings = parsed.automatedEmailReportsSettings || DEFAULT_AUTOMATED_EMAIL_REPORTS;
         parsed.sentReportEmailLogs = Array.isArray(parsed.sentReportEmailLogs) && parsed.sentReportEmailLogs.length > 0 ? parsed.sentReportEmailLogs : DEFAULT_SENT_REPORT_LOGS;
+        parsed.deletedEntityIds = Array.isArray(parsed.deletedEntityIds) ? parsed.deletedEntityIds : [];
 
         // Ensure users list is populated with multi-user accounts
         if (Array.isArray(parsed.users)) {
@@ -463,7 +747,8 @@ export function loadInitialState(): ERPState {
         } else {
           parsed.currentUser = parsed.users?.[0] || DEFAULT_USERS[0];
         }
-        parsed.calendarType = parsed.calendarType || 'ETHIOPIAN';
+        const userExplicitCal = typeof window !== 'undefined' ? (localStorage.getItem('pluszone_calendar_user_choice') as 'ETHIOPIAN' | 'GREGORIAN' | null) : null;
+        parsed.calendarType = userExplicitCal || (parsed.calendarType === 'ETHIOPIAN' && !userExplicitCal ? 'GREGORIAN' : parsed.calendarType) || 'GREGORIAN';
         return parsed;
       }
     }
@@ -475,12 +760,12 @@ export function loadInitialState(): ERPState {
   return state;
 }
 
-export function createInitialState(): ERPState {
+function createInitialState(): ERPState {
   return {
     currentUser: DEFAULT_USERS[0],
     users: DEFAULT_USERS,
     wallets: DEFAULT_WALLETS,
-    transactions: DEFAULT_TRANSACTIONS,
+    transactions: consolidateEqubSplitTransactions(DEFAULT_TRANSACTIONS, DEFAULT_WALLETS),
     transfers: INITIAL_DATASET_JULY_AUG.transfers,
     equbs: DEFAULT_EQUBS,
     loans: DEFAULT_LOANS,
@@ -504,16 +789,21 @@ export function createInitialState(): ERPState {
     chatMessages: DEFAULT_CHAT_MESSAGES,
     automatedEmailReportsSettings: DEFAULT_AUTOMATED_EMAIL_REPORTS,
     sentReportEmailLogs: DEFAULT_SENT_REPORT_LOGS,
+    deletedEntityIds: [],
     theme: 'dark',
     hideBalances: false,
-    calendarType: 'ETHIOPIAN'
+    calendarType: 'GREGORIAN'
   };
 }
 
 export function saveStateToStorage(state: ERPState) {
   if (typeof window !== 'undefined') {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      const stateToPersist = {
+        ...state,
+        transactions: consolidateEqubSplitTransactions(state.transactions, state.wallets)
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToPersist));
     } catch (e) {
       console.error('Failed to save ERP state:', e);
     }
@@ -643,7 +933,8 @@ export function validateTransfer(
   toWallet: Wallet | undefined,
   amount: number,
   transactions: Transaction[],
-  transfers: Transfer[]
+  transfers: Transfer[],
+  excludeTransferId?: string
 ): WalletValidationResult {
   if (!fromWallet) {
     return { valid: false, error: 'Source wallet does not exist.' };
@@ -675,7 +966,10 @@ export function validateTransfer(
     return { valid: false, error: 'Transfer amount must be greater than ETB 0.' };
   }
 
-  const currentFromBalance = calculateWalletBalance(fromWallet, transactions, transfers);
+  const effectiveTransfers = excludeTransferId
+    ? transfers.filter(t => t.id !== excludeTransferId)
+    : transfers;
+  const currentFromBalance = calculateWalletBalance(fromWallet, transactions, effectiveTransfers);
   if (!isOverdraftAllowed(fromWallet) && currentFromBalance - absAmount < 0) {
     return {
       valid: false,
@@ -774,8 +1068,9 @@ export function computeAllWalletRunningBalances(
 export function getWalletNickname(name?: string): string {
   if (!name) return 'Wallet';
   const lower = name.toLowerCase();
-  if (lower.includes('telebirr') || lower.includes('tele')) return 'Tele';
-  if (lower.includes('cbe birr') || lower.includes('cbebirr') || lower.includes('ebirr') || lower.includes('e-birr')) return 'Ebirr';
+  if (lower.includes('saving')) return 'Saving wallet';
+  if (lower.includes('telebirr') || lower.includes('tele')) return 'Telebirr';
+  if (lower.includes('cbe birr') || lower.includes('cbebirr') || lower.includes('ebirr') || lower.includes('e-birr')) return 'eBirr';
   if (lower.includes('cbe') || lower.includes('commercial bank') || lower.includes('bank of ethiopia')) return 'CBE';
   if (lower.includes('cash') || lower.includes('vault') || lower.includes('drawer')) return 'Cash';
   return name.length > 14 ? name.slice(0, 12) + '...' : name;
@@ -898,9 +1193,19 @@ export function calculateIncomeAverages(transactions: Transaction[]) {
   const monthlyAvg = totalIncome / monthsDiff;
 
   const sevenDaysAgo = nowMs - (7 * 24 * 60 * 60 * 1000);
-  const currentWeekIncome = validIncomes
-    .filter(tx => new Date(tx.date).getTime() >= sevenDaysAgo)
-    .reduce((sum, tx) => sum + tx.amount, 0);
+  let currentWeekTxs = validIncomes.filter(tx => new Date(tx.date).getTime() >= sevenDaysAgo);
+
+  // If no transactions in the last 7 calendar days from today (e.g. historical ledger), anchor to the most recent 7-day active transaction window
+  if (currentWeekTxs.length === 0 && validIncomes.length > 0) {
+    const latestTxTime = Math.max(...validIncomes.map(tx => new Date(tx.date).getTime()));
+    const anchorSevenDaysAgo = latestTxTime - (7 * 24 * 60 * 60 * 1000);
+    currentWeekTxs = validIncomes.filter(tx => {
+      const t = new Date(tx.date).getTime();
+      return t >= anchorSevenDaysAgo && t <= latestTxTime;
+    });
+  }
+
+  const currentWeekIncome = currentWeekTxs.reduce((sum, tx) => sum + tx.amount, 0);
 
   // Weekly daily income average: average daily income calculated over the 7-day week
   const weeklyDailyAvg = currentWeekIncome / 7;
@@ -950,6 +1255,9 @@ export function isCreditSaleCollected(tx: { category?: string; description?: str
 
   // Category matching
   if (
+    cat.includes('daily income / collected') ||
+    cat.includes('daily income/collected') ||
+    cat.includes('daily income/ collected') ||
     cat.includes('receivable collected') ||
     cat.includes('receivables collected') ||
     cat.includes('receivable') ||
@@ -965,6 +1273,9 @@ export function isCreditSaleCollected(tx: { category?: string; description?: str
 
   // Description matching
   if (
+    desc.includes('daily income / collected') ||
+    desc.includes('daily income/collected') ||
+    desc.includes('daily income/ collected') ||
     desc.includes('collected customer debt') ||
     desc.includes('repayment on receivable') ||
     desc.includes('repayment from') ||
@@ -1079,32 +1390,329 @@ export function parseSummedAmount(inputStr: string): SummedAmountResult {
 /**
  * Safely merges a local list and remote list by unique item ID.
  * Ensures that newly created local transactions, users, wallets, etc. are never lost during sync,
- * while preventing deleted items from being resurrected.
+ * while strictly filtering out any IDs recorded in deletedEntityIds to prevent resurrected items.
  */
 export function mergeListById<T extends { id: string }>(
   localList: T[] = [],
   remoteList: T[] = [],
-  deletedIds: string[] = []
+  deletedEntityIds: string[] = []
 ): T[] {
   if (!Array.isArray(localList)) localList = [];
   if (!Array.isArray(remoteList)) remoteList = [];
-  const deletedSet = new Set(deletedIds || []);
+  const deletedSet = new Set(Array.isArray(deletedEntityIds) ? deletedEntityIds : []);
   const map = new Map<string, T>();
 
-  // 1. Populate remote items first (skip if deleted)
+  // 1. Populate remote items first (skipping deleted entities)
   remoteList.forEach(item => {
     if (item && typeof item === 'object' && item.id && !deletedSet.has(item.id)) {
       map.set(item.id, item);
     }
   });
 
-  // 2. Local items overwrite remote items with the same ID (skip if deleted)
+  // 2. Local items overwrite remote items with the same ID (skipping deleted entities)
   localList.forEach(item => {
     if (item && typeof item === 'object' && item.id && !deletedSet.has(item.id)) {
       map.set(item.id, item);
     }
   });
 
-  return Array.from(map.values());
+  const merged = Array.from(map.values());
+
+  // Additional safety check: If items are transactions with refType === 'RECEIVABLE', deduplicate accidental multi-posts
+  if (merged.length > 0 && (merged[0] as any)?.refType !== undefined) {
+    const seenRcv = new Set<string>();
+    const deduplicated = merged.filter((item: any) => {
+      if (item.refType === 'RECEIVABLE' && item.refId) {
+        const timeBucket = Math.floor(new Date(item.date || 0).getTime() / 10000);
+        const key = `${item.refId}_${item.amount}_${timeBucket}`;
+        if (seenRcv.has(key)) {
+          return false;
+        }
+        seenRcv.add(key);
+      }
+      return true;
+    });
+    return consolidateEqubSplitTransactions(deduplicated as any) as any;
+  }
+
+  return merged;
 }
+
+/**
+ * Automatically consolidates sibling split transactions generated for the same Equb round payment
+ * into a single unified transaction showing the total payment, with itemized wallet splits.
+ * Also ensures any transaction that contains `splits` has its `amount` equal to the total sum of the splits.
+ */
+export function consolidateEqubSplitTransactions(
+  transactions: Transaction[],
+  wallets?: Wallet[]
+): Transaction[] {
+  if (!Array.isArray(transactions) || transactions.length === 0) return [];
+
+  // Helper to extract round number from string
+  const extractRound = (str?: string): string | null => {
+    if (!str) return null;
+    const match = str.match(/round\s*#?\s*(\d+)/i);
+    return match ? match[1] : null;
+  };
+
+  const getGroupKey = (tx: Transaction): string | null => {
+    // 1. tx-eq-<timestamp>-<index> (multi-transaction generation from previous logic)
+    const eqBatchMatch = tx.id.match(/^tx-eq-(\d+)-\d+$/);
+    if (eqBatchMatch) {
+      return `batch_${eqBatchMatch[1]}`;
+    }
+
+    const isEqub =
+      tx.refType === 'EQUB' ||
+      tx.category?.toLowerCase() === 'equb contribution' ||
+      tx.category?.toLowerCase() === 'ekub' ||
+      tx.category?.toLowerCase() === 'equb' ||
+      tx.description?.toLowerCase().includes('round 21') ||
+      tx.description?.toLowerCase().includes('round #21') ||
+      (tx.description?.toLowerCase().includes('agerye') && tx.description?.toLowerCase().includes('round'));
+
+    if (!isEqub || tx.type !== 'EXPENSE') return null;
+
+    const roundNum = extractRound(tx.description);
+    const datePrefix = (tx.date || '').slice(0, 10); // YYYY-MM-DD
+
+    // Specifically handle Aug 17 Round 21 transactions
+    if (
+      (datePrefix === '2026-08-17' || tx.description?.includes('2026-08-17')) &&
+      (roundNum === '21' || !roundNum || tx.description?.toLowerCase().includes('agerye'))
+    ) {
+      return 'equb_2026-08-17_round21';
+    }
+
+    // Handle any round with date
+    if (roundNum && datePrefix) {
+      return `equb_${datePrefix}_round${roundNum}`;
+    }
+
+    // Handle by refId & date
+    if (tx.refId && datePrefix) {
+      return `equb_${datePrefix}_${tx.refId}${roundNum ? `_r${roundNum}` : ''}`;
+    }
+
+    return null;
+  };
+
+  const groups: Record<string, Transaction[]> = {};
+  const standalone: Transaction[] = [];
+
+  for (const tx of transactions) {
+    const key = getGroupKey(tx);
+    if (key) {
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(tx);
+    } else {
+      standalone.push(tx);
+    }
+  }
+
+  const result: Transaction[] = [];
+
+  // First process standalone transactions: ensure if any has splits, its amount is the sum of splits
+  for (const tx of standalone) {
+    if (tx.splits && tx.splits.length > 1) {
+      const splitsTotal = tx.splits.reduce((sum, s) => sum + Math.abs(s.amount), 0);
+      result.push({
+        ...tx,
+        amount: splitsTotal > 0 ? splitsTotal : tx.amount
+      });
+    } else {
+      result.push(tx);
+    }
+  }
+
+  // Next process groups
+  for (const [key, groupTxs] of Object.entries(groups)) {
+    if (groupTxs.length === 1) {
+      const tx = groupTxs[0];
+      if (tx.splits && tx.splits.length > 1) {
+        const splitsTotal = tx.splits.reduce((sum, s) => sum + Math.abs(s.amount), 0);
+        result.push({
+          ...tx,
+          amount: splitsTotal > 0 ? splitsTotal : tx.amount
+        });
+      } else {
+        result.push(tx);
+      }
+      continue;
+    }
+
+    // Multiple transactions for the same Equb payment! Consolidate them into ONE.
+    groupTxs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const baseTx = groupTxs[0];
+
+    // Check if one of them already has the complete splits array
+    const existingSplitsTx = groupTxs.find(t => t.splits && t.splits.length > 1);
+    
+    let consolidatedSplits: Array<{ walletId: string; amount: number }> = [];
+    if (existingSplitsTx && existingSplitsTx.splits) {
+      consolidatedSplits = existingSplitsTx.splits.map(s => ({
+        walletId: s.walletId,
+        amount: Math.abs(s.amount)
+      }));
+    } else {
+      const walletMap = new Map<string, number>();
+      for (const t of groupTxs) {
+        if (t.splits && t.splits.length > 0) {
+          for (const s of t.splits) {
+            walletMap.set(s.walletId, (walletMap.get(s.walletId) || 0) + Math.abs(s.amount));
+          }
+        } else if (t.walletId) {
+          walletMap.set(t.walletId, (walletMap.get(t.walletId) || 0) + Math.abs(t.amount));
+        }
+      }
+      for (const [walletId, amount] of walletMap.entries()) {
+        consolidatedSplits.push({ walletId, amount });
+      }
+    }
+
+    const totalPaid = consolidatedSplits.reduce((sum, s) => sum + s.amount, 0) ||
+      groupTxs.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+    const primaryWalletId = consolidatedSplits[0]?.walletId || baseTx.walletId || 'w-cash';
+
+    // Build clear description
+    const roundNum = extractRound(baseTx.description) || (key.includes('round21') ? '21' : '');
+    const equbName = baseTx.description?.toLowerCase().includes('agerye') ? 'Agerye' : 'Equb';
+
+    const splitSummary = consolidatedSplits.map(s => {
+      const w = wallets?.find(wal => wal.id === s.walletId);
+      const name = w ? getWalletNickname(w.name) : s.walletId;
+      return `${name}: ${formatETB(s.amount)}`;
+    }).join(', ');
+
+    const cleanDesc = roundNum
+      ? `${equbName} Round #${roundNum} payment (Split: ${splitSummary})`
+      : `${equbName} payment (Split: ${splitSummary})`;
+
+    const consolidatedTx: Transaction = {
+      ...baseTx,
+      id: baseTx.id.replace(/-\d+$/, ''),
+      amount: totalPaid,
+      walletId: primaryWalletId,
+      category: 'Equb Contribution',
+      description: cleanDesc,
+      splits: consolidatedSplits.length > 1 ? consolidatedSplits : undefined,
+      refType: 'EQUB',
+      refId: baseTx.refId || 'eq-agerye'
+    };
+
+    result.push(consolidatedTx);
+  }
+
+  // Sort descending by date
+  return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+}
+
+/**
+ * Checks whether a transaction is an Equb contribution payment (expense).
+ */
+export function isEqubContributionTransaction(tx: Transaction): boolean {
+  if (!tx) return false;
+  if (tx.refType === 'EQUB' && tx.type === 'EXPENSE') return true;
+  const cat = (tx.category || '').toLowerCase().trim();
+  if (cat === 'equb contribution' || cat === 'ekub' || cat === 'equb') return true;
+  const desc = (tx.description || '').toLowerCase();
+  if (
+    (desc.includes('equb') || desc.includes('ekub') || desc.includes('agerye')) &&
+    (desc.includes('round') || desc.includes('contribution') || desc.includes('payment'))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Checks whether a transaction is an Equb payout winning receipt (income).
+ */
+export function isEqubPayoutTransaction(tx: Transaction): boolean {
+  if (!tx) return false;
+  if (tx.refType === 'EQUB' && tx.type === 'INCOME') return true;
+  const cat = (tx.category || '').toLowerCase().trim();
+  if (cat === 'equb payout') return true;
+  const desc = (tx.description || '').toLowerCase();
+  return desc.includes('equb') && (desc.includes('payout') || desc.includes('winnings'));
+}
+
+/**
+ * Finds the corresponding Equb circle for a transaction.
+ */
+export function findMatchingEqub(tx: Transaction, equbs: Equb[]): Equb | undefined {
+  if (!equbs || equbs.length === 0 || !tx) return undefined;
+  
+  // 1. By refId
+  if (tx.refId) {
+    const found = equbs.find(e => e.id === tx.refId);
+    if (found) return found;
+  }
+  
+  // 2. By matching equb name in description
+  const desc = (tx.description || '').toLowerCase();
+  const byName = equbs.find(e => desc.includes(e.name.toLowerCase()));
+  if (byName) return byName;
+  
+  // 3. If there is only one Equb registered
+  if (equbs.length === 1) return equbs[0];
+  
+  // 4. Return matching active equb if amount matches contribution
+  const byAmt = equbs.find(e => Math.abs(tx.amount) % e.contributionPerRound === 0);
+  if (byAmt) return byAmt;
+
+  return undefined;
+}
+
+/**
+ * Reverts the Equb state when a contribution transaction is deleted or reversed.
+ * Directly restores the previous round and sets status back to 'ACTIVE'.
+ */
+export function revertEqubForDeletedContribution(equb: Equb, tx: Transaction): {
+  updatedEqub: Equb;
+  restoredRound: number;
+  previousRound: number;
+} {
+  const match = tx.description?.match(/round\s*#?\s*(\d+)/i);
+  const roundInTx = match ? parseInt(match[1], 10) : null;
+
+  let newRound = equb.currentRound;
+  if (roundInTx !== null) {
+    if (equb.currentRound > roundInTx) {
+      // The equb had progressed past this round; restore back to this round so it can be re-paid
+      newRound = roundInTx;
+    } else if (equb.currentRound === roundInTx) {
+      newRound = Math.max(1, roundInTx - 1);
+    } else {
+      newRound = Math.max(1, equb.currentRound - 1);
+    }
+  } else {
+    newRound = Math.max(1, equb.currentRound - 1);
+  }
+
+  const updatedEqub: Equb = {
+    ...equb,
+    currentRound: newRound,
+    status: 'ACTIVE'
+  };
+
+  return {
+    updatedEqub,
+    restoredRound: newRound,
+    previousRound: equb.currentRound
+  };
+}
+
+/**
+ * Reverts the Equb state when a payout transaction is deleted or reversed.
+ */
+export function revertEqubForDeletedPayout(equb: Equb): Equb {
+  return {
+    ...equb,
+    payoutsClaimed: Math.max(0, (equb.payoutsClaimed || 1) - 1)
+  };
+}
+
 

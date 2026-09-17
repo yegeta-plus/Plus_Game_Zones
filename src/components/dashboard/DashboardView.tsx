@@ -46,14 +46,6 @@ import {
   BarChart3
 } from 'lucide-react';
 import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer
-} from 'recharts';
-import {
   Wallet,
   Transaction,
   Transfer,
@@ -70,7 +62,8 @@ import {
   calculateIncomeAverages,
   formatETB,
   getWalletNickname,
-  isCreditSaleCollected
+  isCreditSaleCollected,
+  consolidateEqubSplitTransactions
 } from '../../lib/store';
 import {
   formatEthiopianDate,
@@ -82,6 +75,7 @@ import {
 import { triggerHaptic } from '../../lib/haptics';
 import { formatRelativeNotifTime } from '../../lib/notifications';
 import { BrandLogo } from '../common/BrandLogo';
+import { FutureCashflowForecast } from './FutureCashflowForecast';
 
 interface DashboardViewProps {
   currentUser: UserProfile;
@@ -102,6 +96,7 @@ interface DashboardViewProps {
   onOpenTransferModal: () => void;
   onNavigateTab: (tab: any, subView?: any) => void;
   onAddIncome?: (amount: number, category: string, description: string) => void;
+  onOpenAiAssistant?: (prompt?: string, initialMode?: 'chat' | 'simulator') => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -114,7 +109,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   recurring,
   receivables = [],
   hideBalances,
-  calendarType = 'ETHIOPIAN',
+  calendarType = 'GREGORIAN',
   dismissedNotifIds = [],
   onDismissNotification,
   onClearAllNotifications,
@@ -122,7 +117,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenQuickEntry,
   onOpenTransferModal,
   onNavigateTab,
-  onAddIncome
+  onAddIncome,
+  onOpenAiAssistant
 }) => {
   const totalBalance = calculateTotalBusinessBalance(wallets, transactions, transfers);
   const { income, expense, profit } = calculateMonthlyStats(transactions);
@@ -215,55 +211,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const activeLoansTotal = useMemo(() => {
     return loans
       .filter(l => l.status === 'ACTIVE')
-      .reduce((sum, l) => sum + (l.remainingBalance ?? l.outstandingBalance ?? 0), 0);
+      .reduce((sum, l) => sum + (l.outstandingBalance || 0), 0);
   }, [loans]);
-
-  // Dynamic 7-Day Cash Flow Data calculated directly from posted transactions
-  const chartData = useMemo(() => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const result: Array<{ day: string; income: number; expense: number; net: number }> = [];
-
-    const now = new Date();
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(now.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
-      const dayName = days[d.getDay()];
-
-      let dayIncome = 0;
-      let dayExpense = 0;
-
-      transactions.forEach(t => {
-        if (t.date && t.date.startsWith(dateStr)) {
-          if (t.type === 'INCOME') dayIncome += t.amount;
-          if (t.type === 'EXPENSE') dayExpense += t.amount;
-        }
-      });
-
-      result.push({
-        day: dayName,
-        income: dayIncome,
-        expense: dayExpense,
-        net: dayIncome - dayExpense
-      });
-    }
-
-    // If no transactions recorded yet for the week, provide default sample curve so chart renders cleanly
-    const totalWeekActivity = result.reduce((s, r) => s + r.income + r.expense, 0);
-    if (totalWeekActivity === 0) {
-      return [
-        { day: 'Mon', income: 45000, expense: 12000, net: 33000 },
-        { day: 'Tue', income: 38000, expense: 28000, net: 10000 },
-        { day: 'Wed', income: 52000, expense: 15000, net: 37000 },
-        { day: 'Thu', income: 29000, expense: 21000, net: 8000 },
-        { day: 'Fri', income: 68000, expense: 34000, net: 34000 },
-        { day: 'Sat', income: 84000, expense: 42000, net: 42000 },
-        { day: 'Sun', income: 34500, expense: 18000, net: 16500 }
-      ];
-    }
-
-    return result;
-  }, [transactions]);
 
   // Highest wallet balance for relative progress scaling
   const maxWalletBalance = useMemo(() => {
@@ -332,7 +281,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     });
 
     recurring.forEach(r => {
-      if (r.active) {
+      if (r.status === 'ACTIVE') {
         const d = new Date(r.nextDueDate);
         const pagumeCheck = evaluatePagumeExemption(r.category || r.title, d);
         items.push({
@@ -406,7 +355,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       list.push({
         id: `notif-loan-${l.id}`,
         title: `Loan Repayment Due`,
-        message: `${l.lender} payment of ${formatETB(l.monthlyPayment || l.outstandingBalance)} scheduled.`,
+        message: `${l.counterparty || l.title} payment of ${formatETB(l.monthlyInstallment || l.outstandingBalance)} scheduled.`,
         type: 'HIGH',
         time: 'Upcoming',
         timestamp: loanTime + 200,
@@ -471,9 +420,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return activeList.sort((a, b) => b.timestamp - a.timestamp);
   }, [activeEqubs, activeLoans, uncollectedReceivablesTotal, wallets, transactions, transfers, dismissedNotifIds]);
 
-  const recentTxList = [...transactions]
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 6);
+  const recentTxList = React.useMemo(() => {
+    return consolidateEqubSplitTransactions(transactions, wallets)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 6);
+  }, [transactions, wallets]);
 
   return (
     <div className="space-y-6 pb-24 animate-fadeIn font-sans text-slate-900 dark:text-slate-100">
@@ -689,64 +640,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       </div>
 
-      {/* 3. 7-Day Financial Revenue Flow Chart */}
-      <div className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-5 shadow-xs space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-[#1C2638] pb-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-[#00D4AA] flex items-center justify-center font-bold">
-              <TrendingUp className="w-4 h-4" />
-            </div>
-            <div>
-              <h4 className="text-sm font-black text-slate-900 dark:text-white">7-Day Financial Revenue Flow</h4>
-              <p className="text-[11px] text-slate-500 dark:text-[#8899BB] font-medium">Weekly breakdown of incoming revenue vs operational costs</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 text-[10px] font-extrabold">
-            <span className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-500/20">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Income
-            </span>
-            <span className="flex items-center gap-1.5 text-rose-700 dark:text-red-400 bg-rose-50 dark:bg-red-500/10 px-2.5 py-1 rounded-lg border border-rose-200 dark:border-red-500/20">
-              <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" /> Expense
-            </span>
-          </div>
-        </div>
-
-        <div className="h-56 w-full pt-2">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
-              <defs>
-                <linearGradient id="incomeGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#00D4AA" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#00D4AA" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="expenseGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#EF4444" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#EF4444" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="day" stroke="#64748B" fontSize={11} tickLine={false} />
-              <YAxis stroke="#64748B" fontSize={10} tickLine={false} />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#111622', borderColor: '#243046', borderRadius: '14px', fontSize: '11px', color: '#FFF', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)' }}
-              />
-              <Area type="monotone" dataKey="income" stroke="#00D4AA" strokeWidth={3} fillOpacity={1} fill="url(#incomeGrad)" />
-              <Area type="monotone" dataKey="expense" stroke="#EF4444" strokeWidth={3} fillOpacity={1} fill="url(#expenseGrad)" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* 4. Active Financial Accounts Section (Modern Compact List View) */}
+      {/* 3. Cash Available / Active Financial Accounts Section */}
       <div className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-4 shadow-xs space-y-3">
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#1C2638] pb-2.5">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+            <div className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-[#00D4AA] flex items-center justify-center font-bold">
               <WalletIcon className="w-3.5 h-3.5" />
             </div>
             <div>
-              <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">Active Financial Accounts</h4>
-              <p className="text-[10px] text-slate-500 dark:text-[#8899BB] font-medium hidden sm:block">Live balances across Telebirr, Banks & Cash Vaults</p>
+              <div className="flex items-center gap-2">
+                <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">Cash Available</h4>
+                <span className="text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-700 dark:text-[#00D4AA] px-2 py-0.5 rounded border border-emerald-500/30">
+                  {hideBalances ? '••••••' : formatETB(totalBalance)}
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 dark:text-[#8899BB] font-medium hidden sm:block">Live balances across Telebirr, CBE, eBirr, Cash & Savings</p>
             </div>
           </div>
 
@@ -760,7 +668,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         <div className="divide-y divide-slate-100 dark:divide-[#1C2638] border border-slate-100 dark:border-[#1C2638] rounded-xl overflow-hidden bg-slate-50/50 dark:bg-[#151C2A]">
-          {wallets.map((w) => {
+          {(() => {
+            const canonicalOrder = ['TELEBIRR', 'CBE_BANK', 'EBIRR', 'CASH', 'SAVINGS'];
+            const sortedWallets = [...wallets].sort((a, b) => {
+              const idxA = canonicalOrder.indexOf(a.type);
+              const idxB = canonicalOrder.indexOf(b.type);
+              if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+              if (idxA !== -1) return -1;
+              if (idxB !== -1) return 1;
+              return a.name.localeCompare(b.name);
+            });
+            return sortedWallets;
+          })().map((w) => {
             const bal = calculateWalletBalance(w, transactions, transfers);
             const percent = totalBalance > 0 ? Math.min(100, Math.round((bal / totalBalance) * 100)) : 0;
             const nickname = getWalletNickname(w.name);
@@ -960,7 +879,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     onClick={() => onNavigateTab('transactions')}
                     className={`p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer group ${
                       isCreditCollected
-                        ? 'bg-purple-50/30 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800/40 hover:border-purple-500 dark:hover:border-purple-400'
+                        ? 'bg-purple-50/40 dark:bg-purple-950/25 border-purple-200 dark:border-purple-800/40 hover:border-purple-500 dark:hover:border-purple-400'
                         : 'bg-slate-50 dark:bg-[#151C2A] border-slate-200/80 dark:border-[#1C2638] hover:border-emerald-500 dark:hover:border-[#00D4AA]/60'
                     }`}
                   >
@@ -983,12 +902,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <h5 className="text-xs font-bold text-slate-900 dark:text-white truncate group-hover:text-emerald-600 dark:group-hover:text-[#00D4AA] transition-colors">
+                          <h5 className="text-xs font-bold text-slate-900 dark:text-white truncate group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
                             {tx.description}
                           </h5>
                           {isCreditCollected && (
                             <span className="text-[9px] bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 px-1.5 py-0.2 rounded font-bold shrink-0">
-                              Credit Collected
+                              Daily Income / Collected
+                            </span>
+                          )}
+                          {tx.splits && tx.splits.length > 1 && (
+                            <span className="text-[9px] bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 px-1.5 py-0.2 rounded font-bold shrink-0">
+                              Split ({tx.splits.length} Wallets)
                             </span>
                           )}
                         </div>
@@ -1006,7 +930,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           ? 'text-emerald-600 dark:text-emerald-400'
                           : 'text-rose-600 dark:text-red-400'
                       }`}>
-                        {tx.type === 'INCOME' ? '+' : '-'}{hideBalances ? '••••' : formatETB(Math.abs(tx.amount))}
+                        {tx.type === 'INCOME' ? '+' : '-'}{hideBalances ? '••••' : formatETB(Math.abs(
+                          (tx.splits && tx.splits.length > 1)
+                            ? tx.splits.reduce((sum, s) => sum + Math.abs(s.amount), 0)
+                            : tx.amount
+                        ))}
                       </p>
                       <span className="text-[10px] text-slate-400 font-mono font-medium">{formatDateByCalendar(tx.date, calendarType, false)}</span>
                     </div>
@@ -1377,12 +1305,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   Upcoming Agenda Dues
                 </h4>
               </div>
-              <button
-                onClick={() => onNavigateTab('more', 'CALENDAR')}
-                className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
-              >
-                Calendar →
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => onNavigateTab('more', 'RECURRING')}
+                  className="text-[11px] font-bold text-[#A78BFA] hover:underline cursor-pointer"
+                >
+                  Recurring Bills →
+                </button>
+                <span className="text-slate-300 dark:text-slate-700">•</span>
+                <button
+                  onClick={() => onNavigateTab('more', 'CALENDAR')}
+                  className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                >
+                  Calendar →
+                </button>
+              </div>
             </div>
 
             {upcomingAgendaItems.length === 0 ? (
@@ -1462,6 +1399,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
       </div>
+
+      {/* 7. Future Predictive Cashflow Engine (Current Week Average Grounded) */}
+      <FutureCashflowForecast
+        wallets={wallets}
+        transactions={transactions}
+        transfers={transfers}
+        equbs={equbs}
+        loans={loans}
+        recurring={recurring}
+        hideBalances={hideBalances}
+        calendarType={calendarType}
+        onNavigateTab={onNavigateTab}
+      />
 
     </div>
   );

@@ -291,7 +291,7 @@ export const generatePDFReport = ({
       }
       return [
         (index + 1).toString(),
-        formatDateByCalendar(t.date, state.calendarType || 'ETHIOPIAN', true),
+        formatDateByCalendar(t.date, state.calendarType || 'GREGORIAN', true),
         t.type,
         t.category,
         t.description.length > 55 ? t.description.slice(0, 55) + '...' : t.description,
@@ -335,7 +335,7 @@ export const generatePDFReport = ({
       groupTxs.forEach((t, index) => {
         tableData.push([
           `  ${index + 1}`,
-          formatDateByCalendar(t.date, state.calendarType || 'ETHIOPIAN', true),
+          formatDateByCalendar(t.date, state.calendarType || 'GREGORIAN', true),
           t.type,
           t.category,
           t.description.length > 55 ? t.description.slice(0, 55) + '...' : t.description,
@@ -649,7 +649,7 @@ export const generateExcelReport = ({
   let runningBalance = 0;
   const allLedgerAOA: any[][] = [
     ['PLUS GAMEZONE PLC — ALL TRANSACTIONS AUDIT LEDGER'],
-    [`Report Title: ${reportTitle}`, `Scope: ${dateRangeLabel}`, `Generated: ${formatDateByCalendar(new Date(), state.calendarType || 'ETHIOPIAN', true)}`, `By: ${state.currentUser?.name || 'Admin'}`],
+    [`Report Title: ${reportTitle}`, `Scope: ${dateRangeLabel}`, `Generated: ${formatDateByCalendar(new Date(), state.calendarType || 'GREGORIAN', true)}`, `By: ${state.currentUser?.name || 'Admin'}`],
     [],
     ['#', 'Transaction ID', 'Date & Time', 'Type', 'Category', 'Description', 'Wallet Account', 'Amount (ETB)', 'Running Balance (ETB)', 'Created By', 'Branch', 'Notes / Reference', 'Status'],
     ...transactions.map((t, i) => {
@@ -659,7 +659,7 @@ export const generateExcelReport = ({
       return [
         i + 1,
         t.id,
-        formatDateByCalendar(t.date, state.calendarType || 'ETHIOPIAN', true),
+        formatDateByCalendar(t.date, state.calendarType || 'GREGORIAN', true),
         t.type,
         t.category,
         t.description,
@@ -688,12 +688,12 @@ export const generateExcelReport = ({
   const incomeTransactions = transactions.filter(t => t.type === 'INCOME');
   const incomeAOA: any[][] = [
     ['PLUS GAMEZONE PLC — GROSS REVENUE & INCOME STATEMENT'],
-    [`Total Revenue: ${formatETB(analysis.totalIncome)}`, `Records: ${incomeTransactions.length}`, `Generated: ${formatDateByCalendar(new Date(), state.calendarType || 'ETHIOPIAN', true)}`],
+    [`Total Revenue: ${formatETB(analysis.totalIncome)}`, `Records: ${incomeTransactions.length}`, `Generated: ${formatDateByCalendar(new Date(), state.calendarType || 'GREGORIAN', true)}`],
     [],
     ['#', 'Date & Time', 'Source Category', 'Description', 'Customer', 'Deposit Bank / Wallet', 'Amount (ETB)', 'Created By', 'Branch', 'Status'],
     ...incomeTransactions.map((t, i) => [
       i + 1,
-      formatDateByCalendar(t.date, state.calendarType || 'ETHIOPIAN', true),
+      formatDateByCalendar(t.date, state.calendarType || 'GREGORIAN', true),
       t.category,
       t.description,
       t.notes || 'General Customer',
@@ -719,12 +719,12 @@ export const generateExcelReport = ({
   const expenseTransactions = transactions.filter(t => t.type === 'EXPENSE');
   const expenseAOA: any[][] = [
     ['PLUS GAMEZONE PLC — OPERATING EXPENSES LEDGER'],
-    [`Total Expenses: ${formatETB(analysis.totalExpense)}`, `Records: ${expenseTransactions.length}`, `Generated: ${formatDateByCalendar(new Date(), state.calendarType || 'ETHIOPIAN', true)}`],
+    [`Total Expenses: ${formatETB(analysis.totalExpense)}`, `Records: ${expenseTransactions.length}`, `Generated: ${formatDateByCalendar(new Date(), state.calendarType || 'GREGORIAN', true)}`],
     [],
     ['#', 'Date & Time', 'Expense Category', 'Description / Vendor', 'Payment Method / Wallet', 'Amount (ETB)', 'Approved / Created By', 'Branch', 'Status'],
     ...expenseTransactions.map((t, i) => [
       i + 1,
-      formatDateByCalendar(t.date, state.calendarType || 'ETHIOPIAN', true),
+      formatDateByCalendar(t.date, state.calendarType || 'GREGORIAN', true),
       t.category,
       t.description,
       getWalletName(t.walletId, state),
@@ -750,24 +750,30 @@ export const generateExcelReport = ({
     ['PLUS GAMEZONE PLC — CUSTOMER RECEIVABLES & OUTSTANDING BALANCE LEDGER'],
     [`Total Uncollected Receivables: ${formatETB(state.receivables.reduce((s, r) => s + (r.status === 'OUTSTANDING' ? r.amountOwed - r.amountCollected : 0), 0))}`],
     [],
-    ['#', 'Customer Name', 'Description', 'Amount Owed (ETB)', 'Amount Collected (ETB)', 'Outstanding Balance (ETB)', 'Due Date', 'Status'],
-    ...state.receivables.map((r, i) => [
-      i + 1,
-      r.customerName,
-      r.description,
-      r.amountOwed,
-      r.amountCollected,
-      r.amountOwed - r.amountCollected,
-      r.dueDate,
-      r.status
-    ])
+    ['#', 'Customer Name', 'Description', 'Amount Owed (ETB)', 'Amount Collected (ETB)', 'Outstanding Balance (ETB)', 'Due Date', 'Status', 'Settlement Wallet'],
+    ...state.receivables.map((r, i) => {
+      const targetW = r.walletId ? state.wallets.find(w => w.id === r.walletId) : null;
+      return [
+        i + 1,
+        r.customerName,
+        r.description,
+        r.amountOwed,
+        r.amountCollected,
+        r.amountOwed - r.amountCollected,
+        r.dueDate,
+        r.status,
+        r.status === 'COLLECTED'
+          ? (targetW ? `${targetW.name} (${targetW.type})` : 'Settled')
+          : 'Pending Collection'
+      ];
+    })
   ];
 
   const wsReceivables = XLSX.utils.aoa_to_sheet(receivablesAOA);
   formatWorksheet(wsReceivables, {
     headerRowIdx: 3,
     headerStyle: STYLES.tableHeaderNavy,
-    colWidths: [6, 28, 36, 20, 20, 22, 16, 14]
+    colWidths: [6, 28, 36, 20, 20, 22, 16, 14, 26]
   });
 
   XLSX.utils.book_append_sheet(wb, wsReceivables, 'Receivables');

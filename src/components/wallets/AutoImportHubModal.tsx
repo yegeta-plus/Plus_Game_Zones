@@ -533,7 +533,7 @@ export const AutoImportHubModal: React.FC<AutoImportHubModalProps> = ({
                         {/* Balance Math Equation Verification Audit */}
                         {(() => {
                           const selectedWallet = wallets.find((w) => w.id === item.suggestedWalletId) || wallets[0];
-                          const walletBal = selectedWallet ? selectedWallet.balance : 0;
+                          const walletBal = selectedWallet ? (selectedWallet.openingBalance + selectedWallet.totalIn - selectedWallet.totalOut) : 0;
                           const expectedNewBal = item.type === 'INCOME' ? walletBal + item.amount : walletBal - item.amount;
                           const smsBal = item.standingBalance;
                           const diff = smsBal !== undefined ? smsBal - expectedNewBal : 0;

@@ -37,6 +37,7 @@ import {
   generateExcelReport,
   printFinancialStatement
 } from '../../lib/exports';
+import { ModernDateInput } from '../common/ModernDateInput';
 
 interface ReportsViewProps {
   state: ERPState;
@@ -44,7 +45,9 @@ interface ReportsViewProps {
 }
 
 export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }) => {
-  const [dateRange, setDateRange] = useState<'all' | 'today' | 'month' | 'last_month'>('all');
+  const [dateRange, setDateRange] = useState<'all' | 'today' | 'month' | 'last_month' | 'custom'>('all');
+  const [customStartDate, setCustomStartDate] = useState<string>(new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]);
+  const [customEndDate, setCustomEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [selectedWallet, setSelectedWallet] = useState<string>('all');
   const [selectedType, setSelectedType] = useState<'all' | 'INCOME' | 'EXPENSE'>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -109,12 +112,17 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
         } else if (dateRange === 'last_month') {
           const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
           if (tDate.getMonth() !== lastMonth.getMonth() || tDate.getFullYear() !== lastMonth.getFullYear()) return false;
+        } else if (dateRange === 'custom') {
+          const start = customStartDate ? new Date(`${customStartDate}T00:00:00.000Z`) : null;
+          const end = customEndDate ? new Date(`${customEndDate}T23:59:59.999Z`) : null;
+          if (start && tDate < start) return false;
+          if (end && tDate > end) return false;
         }
       }
 
       return true;
     });
-  }, [state.transactions, selectedType, selectedWallet, selectedCategory, selectedUser, dateRange]);
+  }, [state.transactions, selectedType, selectedWallet, selectedCategory, selectedUser, dateRange, customStartDate, customEndDate]);
 
   const activeFilterCount = (dateRange !== 'all' ? 1 : 0) +
     (selectedWallet !== 'all' ? 1 : 0) +
@@ -191,7 +199,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
     generatePDFReport({
       state,
       transactions: filteredTransactions,
-      dateRangeLabel: dateRange.toUpperCase(),
+      dateRangeLabel: dateRange === 'custom' ? `${customStartDate} to ${customEndDate}` : dateRange.toUpperCase(),
       reportTitle: `Financial Statement & Transaction Audit (${filteredTransactions.length} items)`,
       includeCoverPage,
       orientation,
@@ -204,7 +212,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
     generateExcelReport({
       state,
       transactions: filteredTransactions,
-      dateRangeLabel: dateRange.toUpperCase(),
+      dateRangeLabel: dateRange === 'custom' ? `${customStartDate} to ${customEndDate}` : dateRange.toUpperCase(),
       reportTitle: `Banking & Financial Statement Package (${filteredTransactions.length} items)`,
       groupBy
     });
@@ -233,7 +241,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
       percentage: c.percentage
     }));
 
-    const activeEqubVolume = state.equbs.filter(e => e.status === 'ACTIVE').reduce((s, e) => s + e.contributionAmount * e.membersCount, 0);
+    const activeEqubVolume = state.equbs.filter(e => e.status === 'ACTIVE').reduce((s, e) => s + (e.contributionPerRound * (e.totalRounds || e.members?.length || 1)), 0);
 
     return {
       periodLabel: now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
@@ -630,7 +638,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
           {/* Active Filter Pills */}
           {dateRange !== 'all' && (
             <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] px-2.5 py-1 rounded-lg text-slate-800 dark:text-slate-200">
-              Period: {dateRange.replace('_', ' ').toUpperCase()}
+              Period: {dateRange === 'custom' ? `${customStartDate} → ${customEndDate}` : dateRange.replace('_', ' ').toUpperCase()}
               <button onClick={() => setDateRange('all')} className="text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer ml-0.5">
                 <X className="w-3 h-3" />
               </button>
@@ -884,6 +892,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
                   <option value="today">Today Only</option>
                   <option value="month">Current Month ({new Date().toLocaleDateString('en-US', { month: 'short' })})</option>
                   <option value="last_month">Last Month</option>
+                  <option value="custom">📅 Custom Date Range...</option>
                 </select>
               </div>
 
@@ -937,6 +946,36 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
                 </select>
               </div>
             </div>
+
+            {/* Custom Date Range Picker */}
+            {dateRange === 'custom' && (
+              <div className="p-3 bg-slate-50 dark:bg-[#141C2B] rounded-2xl border border-slate-200 dark:border-[#1E2D40] space-y-2">
+                <div className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                  <span>Custom Date Range Selection</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <ModernDateInput
+                    label="From Date"
+                    value={customStartDate}
+                    onChange={(val) => setCustomStartDate(val)}
+                    accentColor="indigo"
+                    size="sm"
+                    helperText="Click box to pick start date"
+                  />
+                  <ModernDateInput
+                    label="To Date"
+                    value={customEndDate}
+                    onChange={(val) => setCustomEndDate(val)}
+                    accentColor="indigo"
+                    size="sm"
+                    presets={[
+                      { label: 'Today', value: new Date().toISOString().split('T')[0] }
+                    ]}
+                    helperText="Click box to pick end date"
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="pt-3 border-t border-slate-100 dark:border-[#1E2D40] flex items-center justify-between gap-2">
               <button

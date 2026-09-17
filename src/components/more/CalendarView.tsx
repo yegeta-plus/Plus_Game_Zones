@@ -80,7 +80,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   transactions = [],
   defaultView,
   agendaOnly = false,
-  calendarType = 'ETHIOPIAN',
+  calendarType = 'GREGORIAN',
   onToggleCalendarType
 }) => {
   const [viewMode, setViewMode] = useState<CalendarViewMode>(
@@ -143,7 +143,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           color: '#FB923C',
           direction: 'OUT',
           status: `Remaining: ${formatETB(l.outstandingBalance)}`,
-          description: `Scheduled loan payment to ${l.lenderOrBorrower}`,
+          description: `Scheduled loan payment to ${l.counterparty || l.title}`,
           isExemptInPagume: pagumeCheck.isExempt,
           pagumeReason: pagumeCheck.reason
         });
@@ -152,7 +152,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
     // 3. Recurring Bills & Subscriptions
     recurring.forEach(r => {
-      if (r.active) {
+      if (r.status === 'ACTIVE') {
         const d = new Date(r.nextDueDate);
         const pagumeCheck = evaluatePagumeExemption(r.category || r.title, d);
         list.push({
@@ -188,7 +188,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           color: '#00D4AA',
           direction: 'IN',
           status: rcv.status,
-          description: `Receivable collection for ${rcv.notes || 'Sales invoice'}`
+          description: `Receivable collection for ${rcv.description || 'Sales invoice'}`
         });
       }
     });

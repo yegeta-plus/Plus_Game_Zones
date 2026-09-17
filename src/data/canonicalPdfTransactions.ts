@@ -1,6 +1,7 @@
 import { Transaction } from '../types';
+import { normalizeTransactionScopes } from '../lib/expenseClassifier';
 
-export const CANONICAL_PDF_TRANSACTIONS: Transaction[] = [
+const RAW_CANONICAL_PDF_TRANSACTIONS: Transaction[] = [
   // Jul 1
   { id: 'tx-jul-open-cash-equity', date: '2026-07-01T00:00:00.000Z', type: 'INCOME', category: 'Genesis / Setup', amount: 10699, walletId: 'w-cash', description: 'Owner Initial Capital & Cash Reserve Setup', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260701-01', date: '2026-07-01T08:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 130, walletId: 'w-cbe', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
@@ -352,5 +353,10 @@ export const CANONICAL_PDF_TRANSACTIONS: Transaction[] = [
   { id: 'tx-20260817-02', date: '2026-08-17T10:00:00.000Z', type: 'EXPENSE', category: 'Ekub', amount: 5000, walletId: 'w-cash', splits: [{ walletId: 'w-cash', amount: 3500 }, { walletId: 'w-telebirr', amount: 1000 }, { walletId: 'w-cbe', amount: 500 }], description: 'Agerye — Round 21', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260817-03', date: '2026-08-17T11:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 780, walletId: 'w-telebirr', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260817-04', date: '2026-08-17T12:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 105, walletId: 'w-cbe', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
-  { id: 'tx-20260817-05', date: '2026-08-17T13:00:00.000Z', type: 'EXPENSE', category: 'Expense — Tax & License', amount: 249, walletId: 'w-telebirr', description: 'Telebirr merchant service & transfer fees settlement', creatorName: 'Yegeta Huawei' }
+
+  // Aug 31
+  { id: 'tx-20260831-police-support', date: '2026-08-31T14:00:00.000Z', type: 'EXPENSE', category: 'Community & Security', amount: 200, walletId: 'w-cash', description: 'Police support', creatorName: 'Yegeta Huawei' }
 ];
+
+export const CANONICAL_PDF_TRANSACTIONS: Transaction[] = normalizeTransactionScopes(RAW_CANONICAL_PDF_TRANSACTIONS);
+

@@ -190,6 +190,17 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
     0
   );
 
+  // Canonical Cash Available Breakdown (Telebirr, CBE, eBirr, Cash, Saving wallet)
+  const canonicalOrder = ['TELEBIRR', 'CBE_BANK', 'EBIRR', 'CASH', 'SAVINGS'];
+  const cashAvailableWallets = [...wallets].sort((a, b) => {
+    const idxA = canonicalOrder.indexOf(a.type);
+    const idxB = canonicalOrder.indexOf(b.type);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
   // Filter wallets for grid display
   const filteredWallets = wallets.filter(w => {
     if (categoryFilter === 'ACTIVE') return isWalletActive(w);
@@ -384,6 +395,89 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
         </div>
       </div>
 
+      {/* Cash Available Snapshot Table & Card (User Canonical Breakdown) */}
+      <div className="bg-white dark:bg-[#111622] border border-slate-200/90 dark:border-[#1C2638] rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-[#1E2D40] pb-3.5">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-[#00D4AA] shrink-0">
+              <Banknote className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-black text-slate-900 dark:text-white tracking-tight">Cash Available</h3>
+                <span className="text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-700 dark:text-[#00D4AA] px-2 py-0.5 rounded-full border border-emerald-500/30">
+                  RECONCILED
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-[#8899BB] mt-0.5">Live balances across Telebirr, Banks, Cash Vault & Savings</p>
+            </div>
+          </div>
+
+          <div className="flex items-baseline gap-2 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 dark:from-emerald-500/20 dark:to-teal-500/20 border border-emerald-500/30 px-4 py-2 rounded-xl self-start sm:self-auto">
+            <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">Total:</span>
+            <span className="text-xl sm:text-2xl font-black font-mono text-emerald-700 dark:text-[#00D4AA]">
+              {hideBalances ? '••••••••' : formatETB(totalNetBalance)}
+            </span>
+          </div>
+        </div>
+
+        {/* Clean, High-Contrast Wallet Breakdown Table */}
+        <div className="overflow-hidden border border-slate-200/80 dark:border-[#1E2D40] rounded-xl bg-slate-50/40 dark:bg-[#0E131F]">
+          <table className="w-full text-left text-xs sm:text-sm">
+            <thead>
+              <tr className="bg-slate-100/80 dark:bg-[#151C2A] text-slate-600 dark:text-[#8899BB] font-bold border-b border-slate-200/80 dark:border-[#1E2D40]">
+                <th className="py-2.5 px-4">Wallet</th>
+                <th className="py-2.5 px-4 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200/60 dark:divide-[#1A2436]">
+              {cashAvailableWallets.map((w) => {
+                const bal = calculateWalletBalance(w, transactions, transfers);
+                const isSelected = w.id === selectedWalletId;
+                return (
+                  <tr
+                    key={w.id}
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setSelectedWalletId(w.id);
+                    }}
+                    className={`cursor-pointer transition-colors ${
+                      isSelected
+                        ? 'bg-emerald-50/70 dark:bg-emerald-950/25 font-semibold'
+                        : 'hover:bg-slate-100/70 dark:hover:bg-[#151C2A]/70'
+                    }`}
+                  >
+                    <td className="py-2.5 px-4 font-semibold text-slate-800 dark:text-slate-200">
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: w.color }} />
+                        <span className="font-bold text-slate-900 dark:text-white">{w.name}</span>
+                        {w.accountNumber && (
+                          <span className="text-[10px] font-mono text-slate-400 dark:text-[#8899BB] hidden sm:inline">
+                            ({w.accountNumber})
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-2.5 px-4 text-right font-mono font-black text-slate-900 dark:text-white">
+                      {hideBalances ? '••••••' : formatETB(bal)}
+                    </td>
+                  </tr>
+                );
+              })}
+              {/* Total Row */}
+              <tr className="bg-slate-100/90 dark:bg-[#151C2A] border-t-2 border-slate-200 dark:border-[#223046]">
+                <td className="py-3 px-4 font-black text-slate-900 dark:text-white text-xs sm:text-sm">
+                  Total
+                </td>
+                <td className="py-3 px-4 text-right font-mono font-black text-emerald-600 dark:text-[#00D4AA] text-sm sm:text-base">
+                  {hideBalances ? '••••••' : formatETB(totalNetBalance)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* 1. Digital & Cash Capital Summary Bar */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
 
@@ -476,49 +570,6 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
           </div>
         </div>
 
-      </div>
-
-      {/* Balance & Wallet Rules Guidance Banner */}
-      <div className="bg-slate-900/90 dark:bg-[#0A0E1A] border border-slate-700/60 dark:border-[#1E2D40] rounded-2xl p-3.5 text-xs text-slate-200 shadow-md">
-        <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-700/50">
-          <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded-md bg-[#00D4AA]/20 text-[#00D4AA] flex items-center justify-center font-bold text-[10px]">
-              ⚖️
-            </div>
-            <h4 className="font-bold text-slate-100 dark:text-[#F0F4FF] text-xs">
-              ERP Balance & Wallet Governance Rules
-            </h4>
-          </div>
-          <span className="text-[10px] font-mono font-bold bg-[#00D4AA]/20 text-[#00D4AA] px-2 py-0.5 rounded-full border border-[#00D4AA]/30">
-            STRICT ENFORCEMENT
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2.5 text-[11px] text-slate-300">
-          <div className="flex items-start gap-2 bg-slate-800/40 p-2 rounded-xl border border-slate-700/40">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 mt-1 shrink-0" />
-            <div>
-              <strong className="text-white block font-semibold">1. Overdraft Guard</strong>
-              <span>Zero-balance floors strictly enforced unless flagged as Credit / Loan account.</span>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-2 bg-slate-800/40 p-2 rounded-xl border border-slate-700/40">
-            <span className="w-2 h-2 rounded-full bg-blue-400 mt-1 shrink-0" />
-            <div>
-              <strong className="text-white block font-semibold">2. Active Accounts Only</strong>
-              <span>Archived or disabled accounts cannot accept new postings or initiate transfers.</span>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-2 bg-slate-800/40 p-2 rounded-xl border border-slate-700/40">
-            <span className="w-2 h-2 rounded-full bg-purple-400 mt-1 shrink-0" />
-            <div>
-              <strong className="text-white block font-semibold">3. Balanced 2-Sided Transfers</strong>
-              <span>Inter-wallet transfers maintain exact equal debit and credit double-entry legs.</span>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Filter Tabs */}
@@ -830,7 +881,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                     key={tx.id}
                     className={`p-2.5 rounded-xl border flex items-center justify-between text-xs transition-colors ${
                       isCreditCollected
-                        ? 'bg-purple-50/30 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800/40'
+                        ? 'bg-purple-50/40 dark:bg-purple-950/25 border-purple-200 dark:border-purple-800/40'
                         : 'bg-slate-50 dark:bg-[#1C2333] border-slate-200/80 dark:border-[#1E2D40]'
                     }`}
                   >
@@ -839,7 +890,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                         <p className="font-bold text-slate-900 dark:text-[#F0F4FF]">{tx.description}</p>
                         {isCreditCollected && (
                           <span className="text-[8px] bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300 font-bold px-1.5 py-0.2 rounded border border-purple-200 dark:border-purple-500/30 shrink-0">
-                            Credit Collected
+                            Daily Income / Collected
                           </span>
                         )}
                       </div>

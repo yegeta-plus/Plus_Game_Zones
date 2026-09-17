@@ -21,7 +21,14 @@ import {
   isTransactionEditable,
   formatETB,
   mergeListById,
-  syncReceivablesLateStatus
+  syncReceivablesLateStatus,
+  getWalletNickname,
+  consolidateEqubSplitTransactions,
+  isEqubContributionTransaction,
+  isEqubPayoutTransaction,
+  findMatchingEqub,
+  revertEqubForDeletedContribution,
+  revertEqubForDeletedPayout
 } from './lib/store';
 import { calculateNextEthiopianDueDate } from './lib/ethiopianCalendar';
 import {
@@ -31,10 +38,9 @@ import {
   fetchLatestFirebaseState
 } from './lib/firebase';
 import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest, ChatMessage, ChatChannel, AuditLogEntry } from './types';
-import { CANONICAL_PDF_TRANSACTIONS } from './data/canonicalPdfTransactions';
 import { CheckCircle2, Sparkles } from 'lucide-react';
 import { triggerHaptic } from './lib/haptics';
-import { FingerprintModal } from './components/auth/FingerprintModal';
+import { SessionLockModal } from './components/auth/SessionLockModal';
 import { AppSplashScreen } from './components/common/AppSplashScreen';
 import { sendExternalNotification, formatRelativeNotifTime, playNotificationSound } from './lib/notifications';
 
@@ -81,6 +87,17 @@ export default function App() {
   const [quickEntryWalletId, setQuickEntryWalletId] = useState<string | undefined>(undefined);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showAiAssistant, setShowAiAssistant] = useState(false);
+  const [aiAssistantPrompt, setAiAssistantPrompt] = useState<string | undefined>(undefined);
+  const [aiAssistantMode, setAiAssistantMode] = useState<'chat' | 'simulator'>('chat');
+
+  const handleOpenAiAssistant = (
+    prompt?: string,
+    initialMode: 'chat' | 'simulator' = 'chat'
+  ) => {
+    setAiAssistantPrompt(prompt);
+    setAiAssistantMode(initialMode);
+    setShowAiAssistant(true);
+  };
 
   // Auto Refresh State
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(new Date());
@@ -111,6 +128,7 @@ export default function App() {
   });
 
   const lastActivityRef = React.useRef<number>(Date.now());
+  const lastCollectRef = React.useRef<{ id: string; amount: number; time: number } | null>(null);
 
   // Listen for session timeout settings changes
   useEffect(() => {
@@ -171,7 +189,23 @@ export default function App() {
     const unsubscribe = subscribeToFirebaseState((remoteState) => {
       if (remoteState && typeof remoteState === 'object') {
         setState(prev => {
-          const mergedUsers = mergeListById(prev.users, remoteState.users);
+          const remoteDeletedIds = Array.isArray(remoteState.deletedEntityIds) ? remoteState.deletedEntityIds : [];
+          const localDeletedIds = Array.isArray(prev.deletedEntityIds) ? prev.deletedEntityIds : [];
+          const combinedDeletedIds = Array.from(new Set([...localDeletedIds, ...remoteDeletedIds]));
+
+          const mergedUsers = mergeListById(prev.users, remoteState.users, combinedDeletedIds);
+          const mergedWallets = mergeListById(prev.wallets, remoteState.wallets, combinedDeletedIds);
+          const mergedTransactions = mergeListById(prev.transactions, remoteState.transactions, combinedDeletedIds);
+          const mergedTransfers = mergeListById(prev.transfers, remoteState.transfers, combinedDeletedIds);
+          const mergedEqubs = mergeListById(prev.equbs, remoteState.equbs, combinedDeletedIds);
+          const mergedLoans = mergeListById(prev.loans, remoteState.loans, combinedDeletedIds);
+          const mergedAssets = mergeListById(prev.assets, remoteState.assets, combinedDeletedIds);
+          const mergedGoals = mergeListById(prev.goals, remoteState.goals, combinedDeletedIds);
+          const mergedRecurring = mergeListById(prev.recurring, remoteState.recurring, combinedDeletedIds);
+          const mergedReceivables = syncReceivablesLateStatus(mergeListById(prev.receivables, remoteState.receivables, combinedDeletedIds));
+          const mergedCategories = mergeListById(prev.categories, remoteState.categories, combinedDeletedIds);
+          const mergedAuditLogs = mergeListById(prev.auditLogs, remoteState.auditLogs, combinedDeletedIds);
+          const mergedPending = mergeListById(prev.pendingReviewTransactions, remoteState.pendingReviewTransactions, combinedDeletedIds);
 
           const activeUser = (prev.currentUser?.email
             ? mergedUsers.find(u => u.email.toLowerCase() === prev.currentUser.email.toLowerCase())
@@ -179,7 +213,8 @@ export default function App() {
             ? mergedUsers.find(u => u.id === prev.currentUser.id)
             : null) || prev.currentUser;
 
-          const calType = prev.calendarType || remoteState.calendarType || 'ETHIOPIAN';
+          const userCalPref = (typeof window !== 'undefined' ? localStorage.getItem('pluszone_calendar_user_choice') : null) as 'ETHIOPIAN' | 'GREGORIAN' | null;
+          const calType = userCalPref || prev.calendarType || remoteState.calendarType || 'GREGORIAN';
 
           // Check for new chat messages from other team members
           const incomingMsgs = remoteState.chatMessages || [];
@@ -199,6 +234,19 @@ export default function App() {
           return {
             ...prev,
             ...remoteState,
+            deletedEntityIds: combinedDeletedIds,
+            transactions: mergedTransactions,
+            wallets: mergedWallets,
+            receivables: mergedReceivables,
+            equbs: mergedEqubs,
+            loans: mergedLoans,
+            assets: mergedAssets,
+            goals: mergedGoals,
+            recurring: mergedRecurring,
+            categories: mergedCategories,
+            transfers: mergedTransfers,
+            auditLogs: mergedAuditLogs,
+            pendingReviewTransactions: mergedPending,
             calendarType: calType,
             users: mergedUsers,
             currentUser: activeUser
@@ -238,35 +286,36 @@ export default function App() {
     const remoteState = await fetchLatestFirebaseState();
     if (remoteState && typeof remoteState === 'object') {
       setState(prev => {
-        const deletedIds = Array.from(new Set([
-          ...(prev.deletedEntityIds || []),
-          ...(remoteState.deletedEntityIds || [])
-        ]));
-        const mergedUsers = mergeListById(prev.users, remoteState.users, deletedIds);
-        const mergedWallets = mergeListById(prev.wallets, remoteState.wallets, deletedIds);
-        const mergedTransactions = mergeListById(prev.transactions, remoteState.transactions, deletedIds);
-        const mergedTransfers = mergeListById(prev.transfers, remoteState.transfers, deletedIds);
-        const mergedEqubs = mergeListById(prev.equbs, remoteState.equbs, deletedIds);
-        const mergedLoans = mergeListById(prev.loans, remoteState.loans, deletedIds);
-        const mergedAssets = mergeListById(prev.assets, remoteState.assets, deletedIds);
-        const mergedGoals = mergeListById(prev.goals, remoteState.goals, deletedIds);
-        const mergedRecurring = mergeListById(prev.recurring, remoteState.recurring, deletedIds);
-        const mergedReceivables = syncReceivablesLateStatus(mergeListById(prev.receivables, remoteState.receivables, deletedIds));
-        const mergedCategories = mergeListById(prev.categories, remoteState.categories, deletedIds);
-        const mergedAuditLogs = mergeListById(prev.auditLogs, remoteState.auditLogs);
-        const mergedPending = mergeListById(prev.pendingReviewTransactions, remoteState.pendingReviewTransactions);
+        const remoteDeletedIds = Array.isArray(remoteState.deletedEntityIds) ? remoteState.deletedEntityIds : [];
+        const localDeletedIds = Array.isArray(prev.deletedEntityIds) ? prev.deletedEntityIds : [];
+        const combinedDeletedIds = Array.from(new Set([...localDeletedIds, ...remoteDeletedIds]));
+
+        const mergedUsers = mergeListById(prev.users, remoteState.users, combinedDeletedIds);
+        const mergedWallets = mergeListById(prev.wallets, remoteState.wallets, combinedDeletedIds);
+        const mergedTransactions = mergeListById(prev.transactions, remoteState.transactions, combinedDeletedIds);
+        const mergedTransfers = mergeListById(prev.transfers, remoteState.transfers, combinedDeletedIds);
+        const mergedEqubs = mergeListById(prev.equbs, remoteState.equbs, combinedDeletedIds);
+        const mergedLoans = mergeListById(prev.loans, remoteState.loans, combinedDeletedIds);
+        const mergedAssets = mergeListById(prev.assets, remoteState.assets, combinedDeletedIds);
+        const mergedGoals = mergeListById(prev.goals, remoteState.goals, combinedDeletedIds);
+        const mergedRecurring = mergeListById(prev.recurring, remoteState.recurring, combinedDeletedIds);
+        const mergedReceivables = syncReceivablesLateStatus(mergeListById(prev.receivables, remoteState.receivables, combinedDeletedIds));
+        const mergedCategories = mergeListById(prev.categories, remoteState.categories, combinedDeletedIds);
+        const mergedAuditLogs = mergeListById(prev.auditLogs, remoteState.auditLogs, combinedDeletedIds);
+        const mergedPending = mergeListById(prev.pendingReviewTransactions, remoteState.pendingReviewTransactions, combinedDeletedIds);
 
         const activeUser = (prev.currentUser?.email
           ? mergedUsers.find(u => u.email.toLowerCase() === prev.currentUser.email.toLowerCase())
           : null) || (prev.currentUser?.id
           ? mergedUsers.find(u => u.id === prev.currentUser.id)
           : null) || prev.currentUser;
-        const calType = prev.calendarType || remoteState.calendarType || 'ETHIOPIAN';
+        const userCalPref = (typeof window !== 'undefined' ? localStorage.getItem('pluszone_calendar_user_choice') : null) as 'ETHIOPIAN' | 'GREGORIAN' | null;
+        const calType = userCalPref || prev.calendarType || remoteState.calendarType || 'GREGORIAN';
 
         const updated = {
           ...prev,
           ...remoteState,
-          deletedEntityIds: deletedIds,
+          deletedEntityIds: combinedDeletedIds,
           users: mergedUsers,
           wallets: mergedWallets,
           transactions: mergedTransactions,
@@ -365,7 +414,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [autoRefreshEnabled]);
 
-  // 1. Post Transaction (Supports standard Income/Expense & Sale on Credit / Customer Debt)
+  // 1. Post Transaction (Supports standard Income/Expense, Equb Contributions & Sale on Credit / Customer Debt)
   const handlePostTransaction = (data: {
     type: TransactionType;
     amount: number;
@@ -376,6 +425,9 @@ export default function App() {
     isCreditSale?: boolean;
     customerName?: string;
     dueDate?: string;
+    expenseScope?: 'BUSINESS' | 'PERSONAL';
+    refType?: 'LOAN' | 'RECEIVABLE' | 'EQUB' | 'TRANSFER' | 'SPLIT_SUB_ENTRY';
+    refId?: string;
   }) => {
     const targetWallet = state.wallets.find(w => w.id === data.walletId);
 
@@ -390,7 +442,7 @@ export default function App() {
         status: 'OUTSTANDING',
         dueDate: data.dueDate || new Date(Date.now() + 86400000 * 14).toISOString(),
         createdDate: data.date || new Date().toISOString(),
-        walletId: data.walletId
+        walletId: undefined
       };
 
       const newAuditLog = {
@@ -406,9 +458,7 @@ export default function App() {
           amountOwed: data.amount,
           category: data.category,
           dueDate: newReceivable.dueDate,
-          isCreditSale: true,
-          walletId: data.walletId,
-          walletName: targetWallet?.name
+          isCreditSale: true
         },
         branch: state.currentUser.branch
       };
@@ -427,6 +477,10 @@ export default function App() {
       return;
     }
 
+    const determinedScope = data.type === 'EXPENSE'
+      ? (data.expenseScope || 'BUSINESS')
+      : undefined;
+
     const newTx: Transaction = {
       id: `tx-${Date.now()}`,
       date: data.date,
@@ -435,33 +489,106 @@ export default function App() {
       walletId: data.walletId,
       category: data.category,
       description: data.description,
+      expenseScope: determinedScope,
       creatorId: state.currentUser.id,
       creatorName: state.currentUser.name,
-      branch: state.currentUser.branch
+      branch: state.currentUser.branch,
+      refType: data.refType,
+      refId: data.refId
     };
+
+    const targetEqub = data.refType === 'EQUB' && data.refId ? state.equbs.find(e => e.id === data.refId) : undefined;
+    const targetLoan = data.refType === 'LOAN' && data.refId ? state.loans.find(l => l.id === data.refId) : undefined;
 
     const newAuditLog = {
       id: `aud-${Date.now()}`,
       timestamp: new Date().toISOString(),
       actorId: state.currentUser.id,
       actorName: state.currentUser.name,
-      action: 'POST_TRANSACTION',
-      entity: 'Transaction',
-      entityId: newTx.id,
-      diffAfter: { amount: data.amount, category: data.category, wallet: targetWallet?.name, isCreditSale: data.isCreditSale },
+      action: data.refType === 'EQUB' ? 'EQUB_CONTRIBUTION' : data.refType === 'LOAN' ? 'LOAN_REPAYMENT' : 'POST_TRANSACTION',
+      entity: data.refType === 'EQUB' ? 'Equb' : data.refType === 'LOAN' ? 'Loan' : 'Transaction',
+      entityId: data.refId || newTx.id,
+      diffAfter: {
+        amount: data.amount,
+        category: data.category,
+        wallet: targetWallet?.name,
+        isCreditSale: data.isCreditSale,
+        expenseScope: determinedScope,
+        refType: data.refType,
+        refId: data.refId,
+        equbName: targetEqub?.name,
+        loanTitle: targetLoan?.title
+      },
       branch: state.currentUser.branch
     };
 
-    setState(prev => ({
-      ...prev,
-      transactions: [newTx, ...prev.transactions],
-      auditLogs: [newAuditLog, ...prev.auditLogs]
-    }));
+    setState(prev => {
+      const updatedEqubs = data.refType === 'EQUB' && data.refId
+        ? prev.equbs.map(e => {
+            if (e.id !== data.refId) return e;
+            const nextRound = e.currentRound + 1;
+            const isFinished = nextRound > e.totalRounds || e.currentRound >= e.totalRounds;
+            return {
+              ...e,
+              currentRound: Math.min(e.totalRounds, nextRound),
+              status: (isFinished ? 'COMPLETED' : 'ACTIVE') as 'ACTIVE' | 'COMPLETED'
+            };
+          })
+        : prev.equbs;
 
-    triggerToast(`${formatETB(data.amount)} ${(data.type || '').toLowerCase()} logged to ${targetWallet?.name || 'wallet'}`);
-    sendExternalNotification(`PlusZone ERP - ${data.type === 'INCOME' ? 'Income' : 'Expense'} Logged 💰`, {
-      body: `${formatETB(data.amount)} ${data.type.toLowerCase()} logged to ${targetWallet?.name || 'wallet'} (${data.category}).`
+      const updatedLoans = data.refType === 'LOAN' && data.refId
+        ? prev.loans.map(l => {
+            if (l.id !== data.refId) return l;
+            const newBal = Math.max(0, l.outstandingBalance - data.amount);
+            const loanPaymentRecord: LoanPayment = {
+              id: `lp-tx-${Date.now()}`,
+              loanId: data.refId!,
+              date: data.date,
+              amount: data.amount,
+              principal: data.amount,
+              interest: 0,
+              walletId: data.walletId
+            };
+            return {
+              ...l,
+              outstandingBalance: newBal,
+              status: (newBal <= 0 ? 'PAID' : 'ACTIVE') as 'ACTIVE' | 'PAID',
+              payments: [loanPaymentRecord, ...l.payments]
+            };
+          })
+        : prev.loans;
+
+      return {
+        ...prev,
+        transactions: [newTx, ...prev.transactions],
+        equbs: updatedEqubs,
+        loans: updatedLoans,
+        auditLogs: [newAuditLog, ...prev.auditLogs]
+      };
     });
+
+    if (targetEqub) {
+      triggerToast(`🤝 ${formatETB(data.amount)} Equb contribution recorded for ${targetEqub.name} (Round #${targetEqub.currentRound})!`);
+      sendExternalNotification('PlusZone ERP - Equb Contribution 🤝', {
+        body: `Paid ${formatETB(data.amount)} Equb round contribution for ${targetEqub.name}.`
+      });
+    } else if (targetLoan) {
+      const isLent = targetLoan.direction === 'LENT';
+      triggerToast(
+        isLent
+          ? `Collected ${formatETB(data.amount)} loan repayment from ${targetLoan.counterparty}!`
+          : `Paid ${formatETB(data.amount)} loan installment to ${targetLoan.counterparty}!`
+      );
+      sendExternalNotification('PlusZone ERP - Loan Repayment 🏦', {
+        body: `${isLent ? 'Collected' : 'Paid'} ${formatETB(data.amount)} for loan "${targetLoan.title}".`
+      });
+    } else {
+      const scopeLabel = data.type === 'EXPENSE' && determinedScope === 'PERSONAL' ? ' (Personal Expense)' : '';
+      triggerToast(`${formatETB(data.amount)} ${(data.type || '').toLowerCase()}${scopeLabel} logged to ${targetWallet?.name || 'wallet'}`);
+      sendExternalNotification(`PlusZone ERP - ${data.type === 'INCOME' ? 'Income' : (determinedScope === 'PERSONAL' ? 'Personal Expense' : 'Expense')} Logged 💰`, {
+        body: `${formatETB(data.amount)} ${data.type.toLowerCase()}${scopeLabel} logged to ${targetWallet?.name || 'wallet'} (${data.category}).`
+      });
+    }
     performRefresh(true);
   };
 
@@ -490,7 +617,7 @@ export default function App() {
     performRefresh(true);
   };
 
-  // 1b. Batch Post Multiple Transactions (Daily Income across all wallets)
+  // 1b. Batch Post Multiple Transactions (Daily Income / Expense across all wallets)
   const handleBatchPostTransactions = (items: Array<{
     type: TransactionType;
     amount: number;
@@ -498,6 +625,9 @@ export default function App() {
     category: string;
     description: string;
     date: string;
+    expenseScope?: 'BUSINESS' | 'PERSONAL';
+    refType?: 'LOAN' | 'RECEIVABLE' | 'EQUB' | 'TRANSFER' | 'SPLIT_SUB_ENTRY';
+    refId?: string;
   }>) => {
     const timestamp = Date.now();
     const newTxs: Transaction[] = items.map((item, idx) => ({
@@ -508,34 +638,96 @@ export default function App() {
       walletId: item.walletId,
       category: item.category,
       description: item.description,
+      expenseScope: item.type === 'EXPENSE' ? (item.expenseScope || 'BUSINESS') : undefined,
       creatorId: state.currentUser.id,
       creatorName: state.currentUser.name,
-      branch: state.currentUser.branch
+      branch: state.currentUser.branch,
+      refType: item.refType,
+      refId: item.refId
     }));
 
     const totalAmount = items.reduce((acc, i) => acc + i.amount, 0);
+    const equbRef = items.find(i => i.refType === 'EQUB' && i.refId);
+    const targetEqub = equbRef ? state.equbs.find(e => e.id === equbRef.refId) : undefined;
+    const loanRef = items.find(i => i.refType === 'LOAN' && i.refId);
+    const targetLoan = loanRef ? state.loans.find(l => l.id === loanRef.refId) : undefined;
 
     const newAuditLog = {
       id: `aud-${timestamp}`,
       timestamp: new Date().toISOString(),
-      userId: state.currentUser.id,
-      userName: state.currentUser.name,
-      action: 'POST_BATCH_TRANSACTIONS',
-      entity: 'Transaction',
-      entityId: `batch-${timestamp}`,
-      diffAfter: { count: items.length, totalAmount },
+      actorId: state.currentUser.id,
+      actorName: state.currentUser.name,
+      action: equbRef ? 'EQUB_CONTRIBUTION' : loanRef ? 'LOAN_REPAYMENT' : 'POST_BATCH_TRANSACTIONS',
+      entity: equbRef ? 'Equb' : loanRef ? 'Loan' : 'Transaction',
+      entityId: equbRef ? equbRef.refId! : loanRef ? loanRef.refId! : `batch-${timestamp}`,
+      diffAfter: { count: items.length, totalAmount, refType: equbRef?.refType || loanRef?.refType, refId: equbRef?.refId || loanRef?.refId },
       branch: state.currentUser.branch
     };
 
-    setState(prev => ({
-      ...prev,
-      transactions: [...newTxs, ...prev.transactions],
-      auditLogs: [newAuditLog, ...prev.auditLogs]
-    }));
+    setState(prev => {
+      const updatedEqubs = equbRef && equbRef.refId
+        ? prev.equbs.map(e => {
+            if (e.id !== equbRef.refId) return e;
+            const nextRound = e.currentRound + 1;
+            const completed = (e.completedRounds ?? Math.max(0, e.currentRound - 1)) + 1;
+            const isFinished = nextRound > e.totalRounds || completed >= e.totalRounds;
+            return {
+              ...e,
+              currentRound: Math.min(e.totalRounds, nextRound),
+              completedRounds: Math.min(e.totalRounds, completed),
+              isOverdue: false,
+              status: (isFinished ? 'COMPLETED' : 'ACTIVE') as 'ACTIVE' | 'COMPLETED'
+            };
+          })
+        : prev.equbs;
 
-    triggerToast(`✨ Successfully posted ${items.length} daily income entries (${formatETB(totalAmount)}) across wallets!`);
+      const updatedLoans = loanRef && loanRef.refId
+        ? prev.loans.map(l => {
+            if (l.id !== loanRef.refId) return l;
+            const loanSplits = items.filter(i => i.refType === 'LOAN' && i.refId === loanRef.refId);
+            const loanTotalRepaid = loanSplits.reduce((acc, i) => acc + i.amount, 0);
+            const newBal = Math.max(0, l.outstandingBalance - loanTotalRepaid);
+            const newPaymentRecords: LoanPayment[] = loanSplits.map((item, idx) => ({
+              id: `lp-batch-${timestamp}-${idx}`,
+              loanId: loanRef.refId!,
+              date: item.date,
+              amount: item.amount,
+              principal: item.amount,
+              interest: 0,
+              walletId: item.walletId
+            }));
+            return {
+              ...l,
+              outstandingBalance: newBal,
+              status: (newBal <= 0 ? 'PAID' : 'ACTIVE') as 'ACTIVE' | 'PAID',
+              payments: [...newPaymentRecords, ...l.payments]
+            };
+          })
+        : prev.loans;
+
+      return {
+        ...prev,
+        transactions: [...newTxs, ...prev.transactions],
+        equbs: updatedEqubs,
+        loans: updatedLoans,
+        auditLogs: [newAuditLog, ...prev.auditLogs]
+      };
+    });
+
+    if (targetEqub) {
+      triggerToast(`🤝 ${formatETB(totalAmount)} Equb contribution split across ${items.length} wallets for ${targetEqub.name}!`);
+    } else if (targetLoan) {
+      const isLent = targetLoan.direction === 'LENT';
+      triggerToast(
+        isLent
+          ? `Collected ${formatETB(totalAmount)} loan repayment split across ${items.length} wallets for ${targetLoan.counterparty}!`
+          : `Paid ${formatETB(totalAmount)} installment split across ${items.length} wallets to ${targetLoan.counterparty}!`
+      );
+    } else {
+      triggerToast(`✨ Successfully posted ${items.length} entries (${formatETB(totalAmount)}) across wallets!`);
+    }
     sendExternalNotification('PlusZone ERP - Financial Update 💸', {
-      body: `${items.length} income transactions posted totaling ${formatETB(totalAmount)} by ${state.currentUser.name}.`
+      body: `${items.length} transactions posted totaling ${formatETB(totalAmount)} by ${state.currentUser.name}.`
     });
     performRefresh(true);
   };
@@ -586,15 +778,128 @@ export default function App() {
     performRefresh(true);
   };
 
+  // 2.1 Update Transfer (Transfer CRUD)
+  const handleUpdateTransfer = (
+    transferId: string,
+    data: {
+      fromWalletId: string;
+      toWalletId: string;
+      amount: number;
+      reason: string;
+    }
+  ) => {
+    const fromW = state.wallets.find(w => w.id === data.fromWalletId);
+    const toW = state.wallets.find(w => w.id === data.toWalletId);
+    const oldTransfer = state.transfers.find(t => t.id === transferId);
+    if (!oldTransfer) return;
+
+    const newAuditLog = {
+      id: `aud-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      actorId: state.currentUser.id,
+      actorName: state.currentUser.name,
+      action: 'UPDATE_TRANSFER',
+      entity: 'Transfer',
+      entityId: transferId,
+      diffAfter: {
+        amount: data.amount,
+        from: fromW?.name,
+        to: toW?.name,
+        reason: data.reason
+      },
+      branch: state.currentUser.branch
+    };
+
+    setState(prev => ({
+      ...prev,
+      transfers: prev.transfers.map(t =>
+        t.id === transferId
+          ? {
+              ...t,
+              fromWalletId: data.fromWalletId,
+              toWalletId: data.toWalletId,
+              amount: data.amount,
+              reason: data.reason
+            }
+          : t
+      ),
+      auditLogs: [newAuditLog, ...prev.auditLogs]
+    }));
+
+    triggerToast(`Transfer updated: ${formatETB(data.amount)} from ${fromW?.name} to ${toW?.name}`);
+    performRefresh(true);
+  };
+
+  // 2.2 Delete Transfer (Transfer CRUD)
+  const handleDeleteTransfer = (transferId: string) => {
+    const targetTransfer = state.transfers.find(t => t.id === transferId);
+    if (!targetTransfer) return;
+
+    const fromW = state.wallets.find(w => w.id === targetTransfer.fromWalletId);
+    const toW = state.wallets.find(w => w.id === targetTransfer.toWalletId);
+
+    const newAuditLog = {
+      id: `aud-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      actorId: state.currentUser.id,
+      actorName: state.currentUser.name,
+      action: 'DELETE_TRANSFER',
+      entity: 'Transfer',
+      entityId: transferId,
+      diffAfter: { amount: targetTransfer.amount, from: fromW?.name, to: toW?.name },
+      branch: state.currentUser.branch
+    };
+
+    setState(prev => ({
+      ...prev,
+      transfers: prev.transfers.filter(t => t.id !== transferId),
+      auditLogs: [newAuditLog, ...prev.auditLogs]
+    }));
+
+    triggerToast(`Transfer of ${formatETB(targetTransfer.amount)} reversed/deleted successfully.`);
+    performRefresh(true);
+  };
+
   // 3. Reverse Transaction
   const handleReverseTransaction = (txId: string) => {
-    setState(prev => {
-      const updatedTxs = prev.transactions.map(t =>
-        t.id === txId ? { ...t, reversed: true, reversedAt: new Date().toISOString() } : t
-      );
-      const target = prev.transactions.find(t => t.id === txId);
+    let affectedEqubName = '';
+    let restoredRound: number | null = null;
 
-      const newAuditLog = {
+    setState(prev => {
+      const consolidated = consolidateEqubSplitTransactions(prev.transactions, prev.wallets);
+      const target = prev.transactions.find(t => t.id === txId) || consolidated.find(t => t.id === txId);
+
+      const idsToReverse = new Set<string>([txId]);
+      if (target) {
+        idsToReverse.add(target.id);
+        const batchPrefix = target.id.replace(/-\d+$/, '');
+        if (batchPrefix !== target.id) {
+          prev.transactions.forEach(t => {
+            if (t.id.startsWith(batchPrefix)) idsToReverse.add(t.id);
+          });
+        }
+      }
+
+      let updatedEqubs = prev.equbs;
+      const isEqubContribution = target ? isEqubContributionTransaction(target) : false;
+      const isEqubPayout = target ? isEqubPayoutTransaction(target) : false;
+      const targetEqub = target && (isEqubContribution || isEqubPayout) ? findMatchingEqub(target, prev.equbs) : undefined;
+
+      if (targetEqub && target && isEqubContribution) {
+        const { updatedEqub, restoredRound: newR } = revertEqubForDeletedContribution(targetEqub, target);
+        affectedEqubName = targetEqub.name;
+        restoredRound = newR;
+        updatedEqubs = prev.equbs.map(e => e.id === targetEqub.id ? updatedEqub : e);
+      } else if (targetEqub && isEqubPayout) {
+        affectedEqubName = targetEqub.name;
+        updatedEqubs = prev.equbs.map(e => e.id === targetEqub.id ? revertEqubForDeletedPayout(e) : e);
+      }
+
+      const updatedTxs = prev.transactions.map(t =>
+        idsToReverse.has(t.id) ? { ...t, reversed: true, reversedAt: new Date().toISOString() } : t
+      );
+
+      const newAuditLog: AuditLogEntry = {
         id: `aud-${Date.now()}`,
         timestamp: new Date().toISOString(),
         actorId: prev.currentUser.id,
@@ -602,18 +907,47 @@ export default function App() {
         action: 'REVERSE_TRANSACTION',
         entity: 'Transaction',
         entityId: txId,
-        diffAfter: { reversed: true, amount: target?.amount },
+        diffAfter: {
+          reversed: true,
+          amount: target?.amount,
+          equbUpdated: affectedEqubName ? { name: affectedEqubName, newRound: restoredRound } : undefined
+        },
         branch: prev.currentUser.branch
       };
 
-      return {
+      const auditLogs = [newAuditLog, ...prev.auditLogs];
+      if (targetEqub && isEqubContribution && restoredRound !== null) {
+        auditLogs.unshift({
+          id: `aud-eq-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'UPDATE_EQUB',
+          entity: 'Equb',
+          entityId: targetEqub.id,
+          diffBefore: { currentRound: targetEqub.currentRound, status: targetEqub.status },
+          diffAfter: { currentRound: restoredRound, status: 'ACTIVE', reason: `Contribution transaction ${txId} reversed` },
+          branch: prev.currentUser.branch
+        });
+      }
+
+      const updatedState = {
         ...prev,
         transactions: updatedTxs,
-        auditLogs: [newAuditLog, ...prev.auditLogs]
+        equbs: updatedEqubs,
+        auditLogs
       };
+
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
     });
 
-    triggerToast(`Transaction reversed in ledger.`);
+    if (affectedEqubName && restoredRound !== null) {
+      triggerToast(`↩️ Equb contribution reversed. ${affectedEqubName} updated back to Round #${restoredRound}!`);
+    } else {
+      triggerToast(`Transaction reversed in ledger.`);
+    }
     performRefresh(true);
   };
 
@@ -627,6 +961,7 @@ export default function App() {
       category: string;
       description: string;
       walletId: string;
+      expenseScope?: 'BUSINESS' | 'PERSONAL';
     }
   ) => {
     const existingTx = state.transactions.find(t => t.id === txId);
@@ -642,7 +977,10 @@ export default function App() {
         t.id === txId
           ? {
               ...t,
-              ...updatedData
+              ...updatedData,
+              expenseScope: updatedData.type === 'EXPENSE'
+                ? (updatedData.expenseScope || 'BUSINESS')
+                : undefined
             }
           : t
       );
@@ -676,43 +1014,109 @@ export default function App() {
     performRefresh(true);
   };
 
-  // 3.2 Delete Transaction (CRUD Delete allowed for SuperAdmin, Admin, or creator)
+  // 3.2 Delete Transaction (Direct deletion authority for Admin and SuperAdmin)
   const handleDeleteTransaction = (txId: string) => {
-    const existingTx = (state.transactions || []).find(t => t.id === txId);
+    const consolidated = consolidateEqubSplitTransactions(state.transactions, state.wallets);
+    const existingTx = state.transactions.find(t => t.id === txId) || consolidated.find(t => t.id === txId);
     if (!existingTx) return;
 
-    if (!isTransactionEditable(existingTx.date) && state.currentUser.role !== 'SuperAdmin' && state.currentUser.role !== 'Admin') {
-      triggerToast(`⚠️ Can't be deleted: transaction is older than 1 week!`);
-      return;
+    if (state.currentUser.role !== 'SuperAdmin' && state.currentUser.role !== 'Admin') {
+      if (!isTransactionEditable(existingTx.date)) {
+        triggerToast(`⚠️ Admin authorization required: transaction is older than 1 week!`);
+        return;
+      }
     }
 
+    let affectedEqubName = '';
+    let restoredRound: number | null = null;
+
     setState(prev => {
-      const updatedDeleted = Array.from(new Set([...(prev.deletedEntityIds || []), txId]));
-      const updatedTxs = (prev.transactions || []).filter(t => t.id !== txId);
-      const newAuditLog = {
+      // Find all IDs to delete (handle split batches or sibling IDs)
+      const idsToDelete = new Set<string>([txId, existingTx.id]);
+      
+      // If it's a split equb batch or sibling transaction
+      const batchPrefix = existingTx.id.replace(/-\d+$/, '');
+      if (batchPrefix !== existingTx.id) {
+        prev.transactions.forEach(t => {
+          if (t.id.startsWith(batchPrefix)) {
+            idsToDelete.add(t.id);
+          }
+        });
+      }
+
+      // Check if it matches an Equb contribution or payout
+      const isEqubContribution = isEqubContributionTransaction(existingTx);
+      const isEqubPayout = isEqubPayoutTransaction(existingTx);
+      
+      let updatedEqubs = prev.equbs;
+      const targetEqub = (isEqubContribution || isEqubPayout) ? findMatchingEqub(existingTx, prev.equbs) : undefined;
+
+      if (targetEqub && isEqubContribution) {
+        const { updatedEqub, restoredRound: newR } = revertEqubForDeletedContribution(targetEqub, existingTx);
+        affectedEqubName = targetEqub.name;
+        restoredRound = newR;
+
+        updatedEqubs = prev.equbs.map(e => e.id === targetEqub.id ? updatedEqub : e);
+      } else if (targetEqub && isEqubPayout) {
+        affectedEqubName = targetEqub.name;
+        updatedEqubs = prev.equbs.map(e => e.id === targetEqub.id ? revertEqubForDeletedPayout(e) : e);
+      }
+
+      const updatedTxs = prev.transactions.filter(t => !idsToDelete.has(t.id));
+      const newDeletedIds = Array.from(new Set([...(prev.deletedEntityIds || []), ...Array.from(idsToDelete)]));
+
+      const newAuditLog: AuditLogEntry = {
         id: `aud-${Date.now()}`,
         timestamp: new Date().toISOString(),
         actorId: prev.currentUser.id,
         actorName: prev.currentUser.name,
-        action: 'DELETE_TRANSACTION' as const,
-        entity: 'Transaction' as const,
+        action: 'DELETE_TRANSACTION',
+        entity: 'Transaction',
         entityId: txId,
-        diffAfter: { deleted: true, description: existingTx.description },
+        diffBefore: existingTx,
+        diffAfter: {
+          deleted: true,
+          description: existingTx.description,
+          equbUpdated: affectedEqubName ? { name: affectedEqubName, newRound: restoredRound } : undefined
+        },
         branch: prev.currentUser.branch
       };
 
-      const updated = {
+      const auditLogs = [newAuditLog, ...prev.auditLogs];
+      if (targetEqub && isEqubContribution && restoredRound !== null) {
+        auditLogs.unshift({
+          id: `aud-eq-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actorId: prev.currentUser.id,
+          actorName: prev.currentUser.name,
+          action: 'UPDATE_EQUB',
+          entity: 'Equb',
+          entityId: targetEqub.id,
+          diffBefore: { currentRound: targetEqub.currentRound, status: targetEqub.status },
+          diffAfter: { currentRound: restoredRound, status: 'ACTIVE', reason: `Contribution transaction ${txId} deleted` },
+          branch: prev.currentUser.branch
+        });
+      }
+
+      const updatedState = {
         ...prev,
-        deletedEntityIds: updatedDeleted,
         transactions: updatedTxs,
-        auditLogs: [newAuditLog, ...(prev.auditLogs || [])]
+        equbs: updatedEqubs,
+        deletedEntityIds: newDeletedIds,
+        auditLogs
       };
-      saveStateToStorage(updated);
-      syncStateToFirebaseNow(updated);
-      return updated;
+
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
     });
 
-    triggerToast(`🗑️ Transaction deleted from ledger.`);
+    if (affectedEqubName && restoredRound !== null) {
+      triggerToast(`🗑️ Equb contribution deleted. ${affectedEqubName} updated back to Round #${restoredRound}!`);
+    } else {
+      triggerToast(`🗑️ Transaction deleted from ledger.`);
+    }
+    performRefresh(true);
   };
 
   // 3.3 Clear All Transactions
@@ -739,92 +1143,80 @@ export default function App() {
     performRefresh(true);
   };
 
-  // 3.4 Restore Canonical Transactions
-  const handleRestoreTransactions = () => {
-    setState(prev => {
-      const canonicalIds = new Set(CANONICAL_PDF_TRANSACTIONS.map(t => t.id));
-      const updatedDeleted = (prev.deletedEntityIds || []).filter(id => !canonicalIds.has(id));
-
-      const mergedTransactions = mergeListById(
-        prev.transactions || [],
-        CANONICAL_PDF_TRANSACTIONS,
-        updatedDeleted
-      );
-
-      const newAuditLog = {
-        id: `aud-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        actorId: prev.currentUser.id,
-        actorName: prev.currentUser.name,
-        action: 'RESTORE_TRANSACTIONS',
-        entity: 'Transaction',
-        entityId: 'all',
-        diffAfter: { totalTransactions: mergedTransactions.length },
-        branch: prev.currentUser.branch
-      };
-
-      const updated = {
-        ...prev,
-        deletedEntityIds: updatedDeleted,
-        transactions: mergedTransactions,
-        auditLogs: [newAuditLog, ...(prev.auditLogs || [])]
-      };
-      saveStateToStorage(updated);
-      syncStateToFirebaseNow(updated);
-      return updated;
-    });
-
-    triggerToast(`✨ Restored ${CANONICAL_PDF_TRANSACTIONS.length} canonical transactions to ledger!`);
-    performRefresh(true);
-  };
-
   // 4. Pay Equb Round (Supports Single & Split Payments across multiple wallets)
   const handlePayEqubRound = (
     equbId: string,
-    splits: Array<{ walletId: string; amount: number }>
+    splits: Array<{ walletId: string; amount: number }>,
+    customDate?: string
   ) => {
     const targetEqub = state.equbs.find(e => e.id === equbId);
     if (!targetEqub || splits.length === 0) return;
 
-    const newTxs: Transaction[] = splits.map((split, idx) => {
-      const targetWallet = state.wallets.find(w => w.id === split.walletId);
-      return {
-        id: `tx-eq-${Date.now()}-${idx}`,
-        date: new Date().toISOString(),
-        type: 'EXPENSE',
-        amount: split.amount,
-        walletId: split.walletId,
-        category: 'Equb Contribution',
-        description: splits.length > 1
-          ? `${targetEqub.name} Round #${targetEqub.currentRound} Split (${targetWallet?.name || 'Wallet'})`
-          : `${targetEqub.name} Round #${targetEqub.currentRound} payment`,
-        creatorId: state.currentUser.id,
-        creatorName: state.currentUser.name,
-        branch: state.currentUser.branch,
-        refType: 'EQUB',
-        refId: equbId,
-        splits: splits.length > 1 ? splits : undefined
-      };
-    });
-
     const totalPaid = splits.reduce((sum, s) => sum + s.amount, 0);
+    const dateToUse = customDate || new Date().toISOString();
+    const primaryWalletId = splits[0].walletId;
+
+    const splitSummary = splits.map(s => {
+      const w = state.wallets.find(wal => wal.id === s.walletId);
+      return `${getWalletNickname(w?.name)}: ${formatETB(s.amount)}`;
+    }).join(', ');
+
+    const newTx: Transaction = {
+      id: `tx-eq-${Date.now()}`,
+      date: dateToUse,
+      type: 'EXPENSE',
+      amount: totalPaid,
+      walletId: primaryWalletId,
+      category: 'Equb Contribution',
+      description: splits.length > 1
+        ? `${targetEqub.name} Round #${targetEqub.currentRound} payment (Split: ${splitSummary})`
+        : `${targetEqub.name} Round #${targetEqub.currentRound} payment`,
+      creatorId: state.currentUser.id,
+      creatorName: state.currentUser.name,
+      branch: state.currentUser.branch,
+      refType: 'EQUB',
+      refId: equbId,
+      splits: splits.length > 1 ? splits : undefined
+    };
+
+    const newAuditLog: AuditLogEntry = {
+      id: `aud-eq-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      actorId: state.currentUser.id,
+      actorName: state.currentUser.name,
+      action: 'PAY_EQUB_ROUND',
+      entity: 'Equb',
+      entityId: equbId,
+      diffAfter: {
+        equbName: targetEqub.name,
+        round: targetEqub.currentRound,
+        amount: totalPaid,
+        date: dateToUse,
+        splits: splits.length > 1 ? splits : [{ walletId: primaryWalletId, amount: totalPaid }]
+      },
+      branch: state.currentUser.branch
+    };
 
     setState(prev => {
       const updatedEqubs = prev.equbs.map(e => {
         if (e.id !== equbId) return e;
         const nextRound = e.currentRound + 1;
-        const isFinished = nextRound > e.totalRounds || e.currentRound >= e.totalRounds;
+        const completed = (e.completedRounds ?? Math.max(0, e.currentRound - 1)) + 1;
+        const isFinished = nextRound > e.totalRounds || completed >= e.totalRounds;
         return {
           ...e,
           currentRound: Math.min(e.totalRounds, nextRound),
-          status: isFinished ? 'COMPLETED' : 'ACTIVE'
+          completedRounds: Math.min(e.totalRounds, completed),
+          isOverdue: false,
+          status: (isFinished ? 'COMPLETED' : 'ACTIVE') as 'ACTIVE' | 'COMPLETED'
         };
       });
 
       return {
         ...prev,
-        transactions: [...newTxs, ...prev.transactions],
-        equbs: updatedEqubs
+        transactions: consolidateEqubSplitTransactions([newTx, ...prev.transactions], prev.wallets),
+        equbs: updatedEqubs,
+        auditLogs: [newAuditLog, ...(prev.auditLogs || [])]
       };
     });
 
@@ -943,24 +1335,29 @@ export default function App() {
     const targetWallet = state.wallets.find(w => w.id === walletId);
     if (!targetWallet) return;
 
+    if (state.currentUser.role !== 'SuperAdmin' && state.currentUser.role !== 'Admin') {
+      triggerToast(`⚠️ Admin authorization required to remove wallets.`);
+      return;
+    }
+
     const newAuditLog = {
       id: `aud-${Date.now()}`,
       timestamp: new Date().toISOString(),
       actorId: state.currentUser.id,
       actorName: state.currentUser.name,
-      action: 'DELETE_WALLET' as const,
-      entity: 'Wallet' as const,
+      action: 'DELETE_WALLET',
+      entity: 'Wallet',
       entityId: walletId,
       diffAfter: { deleted: true, name: targetWallet.name },
       branch: state.currentUser.branch
     };
 
     setState(prev => {
-      const updatedDeleted = Array.from(new Set([...(prev.deletedEntityIds || []), walletId]));
+      const newDeletedIds = Array.from(new Set([...(prev.deletedEntityIds || []), walletId]));
       const updated = {
         ...prev,
-        deletedEntityIds: updatedDeleted,
         wallets: prev.wallets.filter(w => w.id !== walletId),
+        deletedEntityIds: newDeletedIds,
         auditLogs: [newAuditLog, ...(prev.auditLogs || [])]
       };
       saveStateToStorage(updated);
@@ -969,6 +1366,7 @@ export default function App() {
     });
 
     triggerToast(`🗑️ Wallet "${targetWallet.name}" removed.`);
+    performRefresh(true);
   };
 
   // 7. Add Equb
@@ -1042,39 +1440,83 @@ export default function App() {
   };
 
   // 9. Repay / Collect Loan
-  const handleRepayLoan = (loanId: string, walletId: string, amount: number) => {
+  const handleRepayLoan = (
+    loanId: string,
+    walletId: string,
+    amount: number,
+    splits?: Array<{ walletId: string; amount: number }>,
+    paymentDate?: string
+  ) => {
     const targetLoan = state.loans.find(l => l.id === loanId);
     if (!targetLoan) return;
 
+    const effectiveSplits = splits && splits.length > 0
+      ? splits.filter(s => s.amount > 0)
+      : [{ walletId, amount }];
+
+    const totalAmount = effectiveSplits.reduce((sum, s) => sum + s.amount, 0);
+
+    // Validation: Loan repayment cannot be less than 1k (ETB 1,000) unless remaining balance is less than 1k
+    if (targetLoan.outstandingBalance >= 1000 && totalAmount < 1000) {
+      triggerToast('⚠️ Loan repayment cannot be less than ETB 1,000 (1k).');
+      return;
+    }
+    if (targetLoan.outstandingBalance < 1000 && totalAmount < targetLoan.outstandingBalance) {
+      triggerToast(`⚠️ Repayment must be at least ETB ${targetLoan.outstandingBalance.toLocaleString()} to settle the loan.`);
+      return;
+    }
+
     const isLent = targetLoan.direction === 'LENT';
-    const newBal = Math.max(0, targetLoan.outstandingBalance - amount);
+    const newBal = Math.max(0, targetLoan.outstandingBalance - totalAmount);
     const isPaid = newBal <= 0;
+    const nowIso = paymentDate ? new Date(`${paymentDate}T12:00:00.000Z`).toISOString() : new Date().toISOString();
+    const batchTimestamp = Date.now();
 
-    const paymentRecord: LoanPayment = {
-      id: `lp-${Date.now()}`,
+    const paymentRecords: LoanPayment[] = effectiveSplits.map((s, idx) => ({
+      id: `lp-${batchTimestamp}-${idx}`,
       loanId,
-      date: new Date().toISOString(),
-      amount,
-      principal: amount,
+      date: nowIso,
+      amount: s.amount,
+      principal: s.amount,
       interest: 0,
-      walletId
-    };
+      walletId: s.walletId
+    }));
 
-    const newTx: Transaction = {
-      id: `tx-lp-${Date.now()}`,
-      date: new Date().toISOString(),
-      type: isLent ? 'INCOME' : 'EXPENSE',
-      amount,
-      walletId,
-      category: 'Loan Payment',
-      description: isLent
-        ? `Collected loan repayment from ${targetLoan.counterparty}`
-        : `Paid loan installment to ${targetLoan.counterparty}`,
-      creatorId: state.currentUser.id,
-      creatorName: state.currentUser.name,
-      branch: state.currentUser.branch,
-      refType: 'LOAN',
-      refId: loanId
+    const newTransactions: Transaction[] = effectiveSplits.map((s, idx) => {
+      const splitW = state.wallets.find(w => w.id === s.walletId);
+      return {
+        id: `tx-lp-${batchTimestamp}-${idx}`,
+        date: nowIso,
+        type: isLent ? 'INCOME' : 'EXPENSE',
+        amount: s.amount,
+        walletId: s.walletId,
+        category: 'Loan Payment',
+        description: isLent
+          ? `Collected loan repayment from ${targetLoan.counterparty}${effectiveSplits.length > 1 ? ` (Split ${idx + 1}/${effectiveSplits.length} - ${splitW?.name || 'Wallet'})` : ''}`
+          : `Paid loan installment to ${targetLoan.counterparty}${effectiveSplits.length > 1 ? ` (Split ${idx + 1}/${effectiveSplits.length} - ${splitW?.name || 'Wallet'})` : ''}`,
+        creatorId: state.currentUser.id,
+        creatorName: state.currentUser.name,
+        branch: state.currentUser.branch,
+        refType: 'LOAN',
+        refId: loanId
+      };
+    });
+
+    const newAuditLog = {
+      id: `aud-${batchTimestamp}`,
+      timestamp: new Date().toISOString(),
+      actorId: state.currentUser.id,
+      actorName: state.currentUser.name,
+      action: isLent ? 'COLLECT_LOAN_REPAYMENT' : 'PAY_LOAN_REPAYMENT',
+      entity: 'Loan',
+      entityId: loanId,
+      diffAfter: {
+        totalAmount,
+        splitsCount: effectiveSplits.length,
+        remainingBalance: newBal,
+        isPaid
+      },
+      branch: state.currentUser.branch
     };
 
     setState(prev => ({
@@ -1085,22 +1527,23 @@ export default function App() {
               ...l,
               outstandingBalance: newBal,
               status: isPaid ? 'PAID' : 'ACTIVE',
-              payments: [paymentRecord, ...l.payments]
+              payments: [...paymentRecords, ...l.payments]
             }
           : l
       ),
-      transactions: [newTx, ...prev.transactions]
+      transactions: [...newTransactions, ...prev.transactions],
+      auditLogs: [newAuditLog, ...prev.auditLogs]
     }));
 
     triggerToast(
       isLent
-        ? `Collected ${formatETB(amount)} loan repayment from ${targetLoan.counterparty}!`
-        : `Paid ${formatETB(amount)} installment to ${targetLoan.counterparty}!`
+        ? `Collected ${formatETB(totalAmount)} loan repayment from ${targetLoan.counterparty}${effectiveSplits.length > 1 ? ` across ${effectiveSplits.length} wallets` : ''}!`
+        : `Paid ${formatETB(totalAmount)} installment to ${targetLoan.counterparty}${effectiveSplits.length > 1 ? ` split across ${effectiveSplits.length} wallets` : ''}!`
     );
     sendExternalNotification('PlusZone ERP - Loan Payment 💳', {
       body: isLent
-        ? `Collected ${formatETB(amount)} loan repayment from ${targetLoan.counterparty}.`
-        : `Paid ${formatETB(amount)} loan installment to ${targetLoan.counterparty}.`
+        ? `Collected ${formatETB(totalAmount)} loan repayment from ${targetLoan.counterparty}.`
+        : `Paid ${formatETB(totalAmount)} loan installment to ${targetLoan.counterparty}.`
     });
     performRefresh(true);
   };
@@ -1110,6 +1553,7 @@ export default function App() {
     const created: Receivable = {
       ...newRcv,
       id: `rcv-${Date.now()}`,
+      walletId: newRcv.walletId,
       amountCollected: 0,
       status: 'OUTSTANDING',
       createdDate: new Date().toISOString()
@@ -1126,6 +1570,19 @@ export default function App() {
 
   // 11. Collect Receivable
   const handleCollectReceivable = (receivableId: string, walletId: string, amount: number) => {
+    // 1. Debounce guard: check if this exact receivable was collected in the last 2.5 seconds
+    const now = Date.now();
+    if (
+      lastCollectRef.current &&
+      lastCollectRef.current.id === receivableId &&
+      lastCollectRef.current.amount === amount &&
+      now - lastCollectRef.current.time < 2500
+    ) {
+      console.warn('Blocked duplicate receivable collection event within 2.5s');
+      return;
+    }
+    lastCollectRef.current = { id: receivableId, amount, time: now };
+
     const target = state.receivables.find(r => r.id === receivableId);
     if (!target) return;
 
@@ -1134,17 +1591,18 @@ export default function App() {
     const resolvedWalletId = targetWallet?.id || walletId || 'w-cash';
     const walletName = targetWallet?.name || 'Wallet';
 
-    const newCollected = (target.amountCollected || 0) + amount;
-    const isFull = newCollected >= target.amountOwed;
+    const txId = `tx-rcv-${receivableId}-${now}`;
+    const auditId = `aud-${receivableId}-${now}`;
+    const isoDate = new Date(now).toISOString();
 
     const newTx: Transaction = {
-      id: `tx-rcv-${Date.now()}`,
-      date: new Date().toISOString(),
+      id: txId,
+      date: isoDate,
       type: 'INCOME',
       amount,
       walletId: resolvedWalletId,
-      category: 'Sales Revenue',
-      description: `Collected customer debt: ${target.customerName}${target.description ? ` (${target.description})` : ''}`,
+      category: 'Daily Income / Collected',
+      description: `Daily Income / Collected: ${target.customerName}${target.description ? ` (${target.description})` : ''}`,
       creatorId: state.currentUser.id,
       creatorName: state.currentUser.name,
       branch: state.currentUser.branch,
@@ -1152,54 +1610,66 @@ export default function App() {
       refId: receivableId
     };
 
-    const newAuditLog = {
-      id: `aud-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      actorId: state.currentUser.id,
-      actorName: state.currentUser.name,
-      action: 'COLLECT_RECEIVABLE',
-      entity: 'Receivable',
-      entityId: receivableId,
-      diffAfter: {
-        amountCollected: amount,
-        totalCollected: newCollected,
-        walletId: resolvedWalletId,
-        walletName,
-        customerName: target.customerName,
-        isFullyPaid: isFull
-      },
-      branch: state.currentUser.branch
-    };
+    let customerName = target.customerName;
 
     setState(prev => {
+      const currentTarget = prev.receivables.find(r => r.id === receivableId);
+      if (!currentTarget) return prev;
+      customerName = currentTarget.customerName;
+
+      // Duplicate check: verify if a transaction for this receivable and amount already exists in the last 10 seconds
+      const alreadyCollected = prev.transactions.some(
+        t => t.refType === 'RECEIVABLE' && t.refId === receivableId && t.amount === amount && (now - new Date(t.date).getTime() < 10000)
+      );
+      if (alreadyCollected) {
+        return prev;
+      }
+
+      const newCollected = (currentTarget.amountCollected || 0) + amount;
+      const isFull = newCollected >= currentTarget.amountOwed;
+
+      const newAuditLog: AuditLogEntry = {
+        id: auditId,
+        timestamp: isoDate,
+        actorId: prev.currentUser.id,
+        actorName: prev.currentUser.name,
+        action: 'COLLECT_RECEIVABLE',
+        entity: 'Receivable',
+        entityId: receivableId,
+        diffAfter: {
+          amountCollected: amount,
+          totalCollected: newCollected,
+          walletId: resolvedWalletId,
+          walletName,
+          customerName: currentTarget.customerName,
+          isFullyPaid: isFull
+        },
+        branch: prev.currentUser.branch
+      };
+
       const updatedReceivables = syncReceivablesLateStatus(prev.receivables.map(r =>
         r.id === receivableId
           ? {
               ...r,
               amountCollected: newCollected,
               status: isFull ? ('COLLECTED' as const) : ('OUTSTANDING' as const),
-              lastPaymentDate: new Date().toISOString()
+              lastPaymentDate: isoDate
             }
           : r
       ));
 
-      const updatedState = {
+      return {
         ...prev,
         receivables: updatedReceivables,
         transactions: [newTx, ...prev.transactions],
         auditLogs: [newAuditLog, ...(prev.auditLogs || [])]
       };
-
-      saveStateToStorage(updatedState);
-      syncStateToFirebaseNow(updatedState);
-      return updatedState;
     });
 
-    triggerToast(`✓ Collected ${formatETB(amount)} from ${target.customerName} → Deposited into ${walletName}!`);
-    sendExternalNotification('PlusZone ERP - Receivable Collected 💰', {
-      body: `Collected ${formatETB(amount)} from ${target.customerName} into ${walletName}.`
+    triggerToast(`✓ Collected ${formatETB(amount)} from ${customerName} → Recorded as Daily Income / Collected in ${walletName}!`);
+    sendExternalNotification('PlusZone ERP - Daily Income / Collected 💰', {
+      body: `Daily Income / Collected: ${formatETB(amount)} from ${customerName} into ${walletName}.`
     });
-    performRefresh(true);
   };
 
   // 12. Update & Delete Equb
@@ -1234,33 +1704,39 @@ export default function App() {
     const targetEqub = state.equbs.find(e => e.id === equbId);
     if (!targetEqub) return;
 
+    if (state.currentUser.role !== 'SuperAdmin' && state.currentUser.role !== 'Admin') {
+      triggerToast(`⚠️ Admin authorization required to delete equb circles.`);
+      return;
+    }
+
     setState(prev => {
-      const updatedDeleted = Array.from(new Set([...(prev.deletedEntityIds || []), equbId]));
-      const updated = {
+      const newDeletedIds = Array.from(new Set([...(prev.deletedEntityIds || []), equbId]));
+      const updatedState = {
         ...prev,
-        deletedEntityIds: updatedDeleted,
         equbs: prev.equbs.filter(e => e.id !== equbId),
+        deletedEntityIds: newDeletedIds,
         auditLogs: [
           {
             id: `aud-${Date.now()}`,
             timestamp: new Date().toISOString(),
             actorId: prev.currentUser.id,
             actorName: prev.currentUser.name,
-            action: 'DELETE_EQUB' as const,
-            entity: 'Equb' as const,
+            action: 'DELETE_EQUB',
+            entity: 'Equb',
             entityId: equbId,
             diffAfter: { deleted: true, name: targetEqub.name },
             branch: prev.currentUser.branch
           },
-          ...(prev.auditLogs || [])
+          ...prev.auditLogs
         ]
       };
-      saveStateToStorage(updated);
-      syncStateToFirebaseNow(updated);
-      return updated;
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
     });
 
     triggerToast(`🗑️ Equb circle "${targetEqub.name}" deleted.`);
+    performRefresh(true);
   };
 
   // 13. Update & Delete Loan
@@ -1295,33 +1771,39 @@ export default function App() {
     const targetLoan = state.loans.find(l => l.id === loanId);
     if (!targetLoan) return;
 
+    if (state.currentUser.role !== 'SuperAdmin' && state.currentUser.role !== 'Admin') {
+      triggerToast(`⚠️ Admin authorization required to delete loan contracts.`);
+      return;
+    }
+
     setState(prev => {
-      const updatedDeleted = Array.from(new Set([...(prev.deletedEntityIds || []), loanId]));
-      const updated = {
+      const newDeletedIds = Array.from(new Set([...(prev.deletedEntityIds || []), loanId]));
+      const updatedState = {
         ...prev,
-        deletedEntityIds: updatedDeleted,
         loans: prev.loans.filter(l => l.id !== loanId),
+        deletedEntityIds: newDeletedIds,
         auditLogs: [
           {
             id: `aud-${Date.now()}`,
             timestamp: new Date().toISOString(),
             actorId: prev.currentUser.id,
             actorName: prev.currentUser.name,
-            action: 'DELETE_LOAN' as const,
-            entity: 'Loan' as const,
+            action: 'DELETE_LOAN',
+            entity: 'Loan',
             entityId: loanId,
             diffAfter: { deleted: true, title: targetLoan.title },
             branch: prev.currentUser.branch
           },
-          ...(prev.auditLogs || [])
+          ...prev.auditLogs
         ]
       };
-      saveStateToStorage(updated);
-      syncStateToFirebaseNow(updated);
-      return updated;
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
     });
 
     triggerToast(`🗑️ Loan contract "${targetLoan.title}" deleted.`);
+    performRefresh(true);
   };
 
   const handleUpdateReceivable = (receivableId: string, updates: Partial<Receivable>) => {
@@ -1364,21 +1846,25 @@ export default function App() {
     const targetRcv = (state.receivables || []).find(r => r.id === receivableId);
     if (!targetRcv) return;
 
+    if (state.currentUser.role !== 'SuperAdmin' && state.currentUser.role !== 'Admin') {
+      triggerToast(`⚠️ Admin authorization required to delete receivables.`);
+      return;
+    }
+
     setState(prev => {
-      const updatedDeleted = Array.from(new Set([...(prev.deletedEntityIds || []), receivableId]));
-      const updatedReceivables = (prev.receivables || []).filter(r => r.id !== receivableId);
+      const newDeletedIds = Array.from(new Set([...(prev.deletedEntityIds || []), receivableId]));
       const updatedState = {
         ...prev,
-        deletedEntityIds: updatedDeleted,
-        receivables: updatedReceivables,
+        receivables: (prev.receivables || []).filter(r => r.id !== receivableId),
+        deletedEntityIds: newDeletedIds,
         auditLogs: [
           {
             id: `aud-${Date.now()}`,
             timestamp: new Date().toISOString(),
             actorId: prev.currentUser.id,
             actorName: prev.currentUser.name,
-            action: 'DELETE_RECEIVABLE' as const,
-            entity: 'Receivable' as const,
+            action: 'DELETE_RECEIVABLE',
+            entity: 'Receivable',
             entityId: receivableId,
             diffAfter: { deleted: true, customerName: targetRcv.customerName },
             branch: prev.currentUser.branch
@@ -1392,6 +1878,7 @@ export default function App() {
     });
 
     triggerToast(`🗑️ Customer receivable for "${targetRcv.customerName}" deleted.`);
+    performRefresh(true);
   };
 
   // 14. Approval Request Handlers
@@ -1487,11 +1974,37 @@ export default function App() {
       let updatedUsers = prev.users;
       let updatedCategories = prev.categories;
       let updatedAssets = prev.assets || [];
+      let updatedDeletedEntityIds = prev.deletedEntityIds || [];
       const newAuditLogs: AuditLogEntry[] = [];
 
       if (req.actionType === 'DELETE_TRANSACTION') {
-        const deletedTx = prev.transactions.find(t => t.id === req.targetId);
-        updatedTransactions = prev.transactions.filter(t => t.id !== req.targetId);
+        const consolidated = consolidateEqubSplitTransactions(prev.transactions, prev.wallets);
+        const deletedTx = prev.transactions.find(t => t.id === req.targetId) || consolidated.find(t => t.id === req.targetId);
+        const idsToDelete = new Set<string>([req.targetId]);
+        if (deletedTx) {
+          idsToDelete.add(deletedTx.id);
+          const batchPrefix = deletedTx.id.replace(/-\d+$/, '');
+          if (batchPrefix !== deletedTx.id) {
+            prev.transactions.forEach(t => {
+              if (t.id.startsWith(batchPrefix)) idsToDelete.add(t.id);
+            });
+          }
+          if (isEqubContributionTransaction(deletedTx)) {
+            const targetEqub = findMatchingEqub(deletedTx, prev.equbs);
+            if (targetEqub) {
+              const { updatedEqub, restoredRound } = revertEqubForDeletedContribution(targetEqub, deletedTx);
+              updatedEqubs = prev.equbs.map(e => e.id === targetEqub.id ? updatedEqub : e);
+              toastText = `🗑️ Equb contribution deleted. ${targetEqub.name} updated back to Round #${restoredRound}!`;
+            }
+          } else if (isEqubPayoutTransaction(deletedTx)) {
+            const targetEqub = findMatchingEqub(deletedTx, prev.equbs);
+            if (targetEqub) {
+              updatedEqubs = prev.equbs.map(e => e.id === targetEqub.id ? revertEqubForDeletedPayout(e) : e);
+            }
+          }
+        }
+        updatedTransactions = prev.transactions.filter(t => !idsToDelete.has(t.id));
+        updatedDeletedEntityIds = Array.from(new Set([...updatedDeletedEntityIds, ...Array.from(idsToDelete)]));
         newAuditLogs.push({
           id: `aud-${Date.now()}`,
           timestamp: new Date().toISOString(),
@@ -1504,7 +2017,9 @@ export default function App() {
           diffAfter: { deleted: true },
           branch: prev.currentUser.branch
         });
-        toastText = `🗑️ Transaction deleted from financial ledger.`;
+        if (!toastText.includes('Equb')) {
+          toastText = `🗑️ Transaction deleted from financial ledger.`;
+        }
       } else if (req.actionType === 'EDIT_TRANSACTION' && req.payload) {
         const existingTx = prev.transactions.find(t => t.id === req.targetId);
         updatedTransactions = prev.transactions.map(t =>
@@ -1524,9 +2039,33 @@ export default function App() {
         });
         toastText = `✏️ Transaction updated in financial ledger.`;
       } else if (req.actionType === 'REVERSE_TRANSACTION') {
-        const existingTx = prev.transactions.find(t => t.id === req.targetId);
+        const consolidated = consolidateEqubSplitTransactions(prev.transactions, prev.wallets);
+        const existingTx = prev.transactions.find(t => t.id === req.targetId) || consolidated.find(t => t.id === req.targetId);
+        const idsToReverse = new Set<string>([req.targetId]);
+        if (existingTx) {
+          idsToReverse.add(existingTx.id);
+          const batchPrefix = existingTx.id.replace(/-\d+$/, '');
+          if (batchPrefix !== existingTx.id) {
+            prev.transactions.forEach(t => {
+              if (t.id.startsWith(batchPrefix)) idsToReverse.add(t.id);
+            });
+          }
+          if (isEqubContributionTransaction(existingTx)) {
+            const targetEqub = findMatchingEqub(existingTx, prev.equbs);
+            if (targetEqub) {
+              const { updatedEqub, restoredRound } = revertEqubForDeletedContribution(targetEqub, existingTx);
+              updatedEqubs = prev.equbs.map(e => e.id === targetEqub.id ? updatedEqub : e);
+              toastText = `↩️ Equb contribution reversed. ${targetEqub.name} updated back to Round #${restoredRound}!`;
+            }
+          } else if (isEqubPayoutTransaction(existingTx)) {
+            const targetEqub = findMatchingEqub(existingTx, prev.equbs);
+            if (targetEqub) {
+              updatedEqubs = prev.equbs.map(e => e.id === targetEqub.id ? revertEqubForDeletedPayout(e) : e);
+            }
+          }
+        }
         updatedTransactions = prev.transactions.map(t =>
-          t.id === req.targetId ? { ...t, reversed: true, reversedAt: new Date().toISOString() } : t
+          idsToReverse.has(t.id) ? { ...t, reversed: true, reversedAt: new Date().toISOString() } : t
         );
         newAuditLogs.push({
           id: `aud-${Date.now()}`,
@@ -1540,10 +2079,15 @@ export default function App() {
           diffAfter: { reversed: true, reversedAt: new Date().toISOString() },
           branch: prev.currentUser.branch
         });
-        toastText = `↩️ Transaction reversed in financial ledger.`;
+        if (!toastText.includes('Equb')) {
+          toastText = `↩️ Transaction reversed in financial ledger.`;
+        }
       } else if (req.actionType === 'DELETE_EQUB') {
         const targetEqub = prev.equbs.find(e => e.id === req.targetId);
         updatedEqubs = prev.equbs.filter(e => e.id !== req.targetId);
+        if (req.targetId && !updatedDeletedEntityIds.includes(req.targetId)) {
+          updatedDeletedEntityIds = [...updatedDeletedEntityIds, req.targetId];
+        }
         newAuditLogs.push({
           id: `aud-${Date.now()}`,
           timestamp: new Date().toISOString(),
@@ -1576,6 +2120,9 @@ export default function App() {
       } else if (req.actionType === 'DELETE_LOAN') {
         const targetLoan = prev.loans.find(l => l.id === req.targetId);
         updatedLoans = prev.loans.filter(l => l.id !== req.targetId);
+        if (req.targetId && !updatedDeletedEntityIds.includes(req.targetId)) {
+          updatedDeletedEntityIds = [...updatedDeletedEntityIds, req.targetId];
+        }
         newAuditLogs.push({
           id: `aud-${Date.now()}`,
           timestamp: new Date().toISOString(),
@@ -1608,6 +2155,9 @@ export default function App() {
       } else if (req.actionType === 'DELETE_RECEIVABLE') {
         const targetRcv = (prev.receivables || []).find(r => r.id === req.targetId);
         updatedReceivables = (prev.receivables || []).filter(r => r.id !== req.targetId);
+        if (req.targetId && !updatedDeletedEntityIds.includes(req.targetId)) {
+          updatedDeletedEntityIds = [...updatedDeletedEntityIds, req.targetId];
+        }
         newAuditLogs.push({
           id: `aud-${Date.now()}`,
           timestamp: new Date().toISOString(),
@@ -1642,6 +2192,9 @@ export default function App() {
       } else if (req.actionType === 'DELETE_WALLET') {
         const targetWallet = prev.wallets.find(w => w.id === req.targetId);
         updatedWallets = prev.wallets.filter(w => w.id !== req.targetId);
+        if (req.targetId && !updatedDeletedEntityIds.includes(req.targetId)) {
+          updatedDeletedEntityIds = [...updatedDeletedEntityIds, req.targetId];
+        }
         newAuditLogs.push({
           id: `aud-${Date.now()}`,
           timestamp: new Date().toISOString(),
@@ -1674,6 +2227,9 @@ export default function App() {
       } else if (req.actionType === 'DELETE_USER') {
         const targetUser = prev.users.find(u => u.id === req.targetId);
         updatedUsers = prev.users.filter(u => u.id !== req.targetId);
+        if (req.targetId && !updatedDeletedEntityIds.includes(req.targetId)) {
+          updatedDeletedEntityIds = [...updatedDeletedEntityIds, req.targetId];
+        }
         newAuditLogs.push({
           id: `aud-${Date.now()}`,
           timestamp: new Date().toISOString(),
@@ -1687,9 +2243,12 @@ export default function App() {
           branch: prev.currentUser.branch
         });
         toastText = `🗑️ User profile "${targetUser?.name || req.targetTitle}" deleted.`;
-      } else if (req.actionType === 'DELETE_CATEGORY') {
+      } else if ((req.actionType as string) === 'DELETE_CATEGORY') {
         const targetCat = prev.categories.find(c => c.id === req.targetId);
         updatedCategories = prev.categories.filter(c => c.id !== req.targetId);
+        if (req.targetId && !updatedDeletedEntityIds.includes(req.targetId)) {
+          updatedDeletedEntityIds = [...updatedDeletedEntityIds, req.targetId];
+        }
         newAuditLogs.push({
           id: `aud-${Date.now()}`,
           timestamp: new Date().toISOString(),
@@ -1706,6 +2265,9 @@ export default function App() {
       } else if (req.actionType === 'DELETE_ASSET') {
         const targetAsset = (prev.assets || []).find(a => a.id === req.targetId);
         updatedAssets = (prev.assets || []).filter(a => a.id !== req.targetId);
+        if (req.targetId && !updatedDeletedEntityIds.includes(req.targetId)) {
+          updatedDeletedEntityIds = [...updatedDeletedEntityIds, req.targetId];
+        }
         newAuditLogs.push({
           id: `aud-${Date.now()}`,
           timestamp: new Date().toISOString(),
@@ -1758,6 +2320,7 @@ export default function App() {
 
       const updatedState = {
         ...prev,
+        deletedEntityIds: updatedDeletedEntityIds,
         transactions: updatedTransactions,
         equbs: updatedEqubs,
         loans: updatedLoans,
@@ -2133,15 +2696,18 @@ export default function App() {
         onToggleTheme={() => setState(prev => ({ ...prev, theme: prev.theme === 'dark' ? 'light' : 'dark' }))}
         hideBalances={state.hideBalances}
         onToggleHideBalances={() => setState(prev => ({ ...prev, hideBalances: !prev.hideBalances }))}
-        onNavigateTab={(tab, subView) => handleNavigateTab(tab, subView)}
+        onNavigateTab={(tab: any, subView?: any) => handleNavigateTab(tab, subView)}
         notifications={headerNotifications}
         onDismissNotification={handleDismissNotification}
         onClearAllNotifications={handleClearAllNotifications}
         lastRefreshedAt={lastRefreshedAt}
         isRefreshing={isRefreshing}
         autoRefreshEnabled={autoRefreshEnabled}
-        calendarType={state.calendarType || 'ETHIOPIAN'}
-        onToggleCalendarType={(type) => setState(prev => ({ ...prev, calendarType: type }))}
+        calendarType={state.calendarType || 'GREGORIAN'}
+        onToggleCalendarType={(type) => {
+          if (typeof window !== 'undefined') localStorage.setItem('pluszone_calendar_user_choice', type);
+          setState(prev => ({ ...prev, calendarType: type }));
+        }}
         onToggleAutoRefresh={() => setAutoRefreshEnabled(prev => !prev)}
         onManualRefresh={() => performRefresh(true)}
         unreadChatCount={unreadChatCount}
@@ -2160,7 +2726,7 @@ export default function App() {
             recurring={state.recurring}
             receivables={state.receivables}
             hideBalances={state.hideBalances}
-            calendarType={state.calendarType || 'ETHIOPIAN'}
+            calendarType={state.calendarType || 'GREGORIAN'}
             dismissedNotifIds={dismissedNotifIds}
             onDismissNotification={handleDismissNotification}
             onClearAllNotifications={handleClearAllNotifications}
@@ -2169,6 +2735,7 @@ export default function App() {
             onOpenTransferModal={() => setShowTransferModal(true)}
             onNavigateTab={(tab, subView) => handleNavigateTab(tab, subView)}
             onAddIncome={handleAddGamingIncome}
+            onOpenAiAssistant={handleOpenAiAssistant}
           />
         )}
 
@@ -2182,12 +2749,11 @@ export default function App() {
             currentUser={state.currentUser}
             users={state.users}
             hideBalances={state.hideBalances}
-            calendarType={state.calendarType || 'ETHIOPIAN'}
+            calendarType={state.calendarType || 'GREGORIAN'}
             onReverseTransaction={handleReverseTransaction}
             onUpdateTransaction={handleUpdateTransaction}
             onDeleteTransaction={handleDeleteTransaction}
             onClearAllTransactions={handleClearAllTransactions}
-            onRestoreTransactions={handleRestoreTransactions}
             onRequestApproval={handleCreateApprovalRequest}
             onNavigateTab={(tab, subView) => handleNavigateTab(tab, subView)}
           />
@@ -2227,8 +2793,11 @@ export default function App() {
             users={state.users}
             approvalRequests={state.approvalRequests}
             hideBalances={state.hideBalances}
-            calendarType={state.calendarType || 'ETHIOPIAN'}
-            onToggleCalendarType={(type) => setState(prev => ({ ...prev, calendarType: type }))}
+            calendarType={state.calendarType || 'GREGORIAN'}
+            onToggleCalendarType={(type) => {
+              if (typeof window !== 'undefined') localStorage.setItem('pluszone_calendar_user_choice', type);
+              setState(prev => ({ ...prev, calendarType: type }));
+            }}
             onPayRound={handlePayEqubRound}
             onClaimPayout={handleClaimEqubPayout}
             onCreateEqub={handleCreateEqub}
@@ -2245,6 +2814,7 @@ export default function App() {
             onRequestApproval={handleCreateApprovalRequest}
             onApproveRequest={handleApproveRequest}
             onRejectRequest={handleRejectRequest}
+            onOpenAiAdvisor={handleOpenAiAssistant}
           />
         )}
 
@@ -2264,10 +2834,11 @@ export default function App() {
           <MoreHubView
             state={state}
             onUpdateState={setState}
-            onOpenAiAssistant={() => setShowAiAssistant(true)}
+            onOpenAiAssistant={(prompt, mode) => handleOpenAiAssistant(prompt, mode || 'simulator')}
             onLogout={() => setIsLoggedIn(false)}
             initialSubView={moreSubView}
             onNavigateTab={(tab) => handleNavigateTab(tab)}
+            onCollectReceivable={handleCollectReceivable}
           />
         )}
       </main>
@@ -2293,6 +2864,8 @@ export default function App() {
         defaultWalletId={quickEntryWalletId}
         transactions={state.transactions}
         transfers={state.transfers}
+        equbs={state.equbs}
+        loans={state.loans}
         onSubmitTransaction={handlePostTransaction}
         onBatchSubmitTransactions={handleBatchPostTransactions}
       />
@@ -2305,6 +2878,8 @@ export default function App() {
         transactions={state.transactions}
         transfers={state.transfers}
         onExecuteTransfer={handleExecuteTransfer}
+        onUpdateTransfer={handleUpdateTransfer}
+        onDeleteTransfer={handleDeleteTransfer}
       />
 
       {/* Persistent Floating AI Assistant Bubble (Present on Every Page) */}
@@ -2313,25 +2888,58 @@ export default function App() {
           triggerHaptic('medium');
           setShowAiAssistant(prev => !prev);
         }}
-        aria-label="Open AI Assistant"
-        className="fixed bottom-20 right-4 z-40 w-13 h-13 rounded-full bg-gradient-to-tr from-[#00D4AA] via-[#3B82F6] to-[#A78BFA] p-0.5 shadow-2xl hover:scale-110 active:scale-95 transition-all cursor-pointer group flex items-center justify-center"
+        aria-label="Open PlusZone AI Business Partner"
+        className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40 w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-[#0F172A]/95 hover:bg-[#1E293B] border border-[#00D4AA]/60 text-[#00D4AA] shadow-xl hover:shadow-[#00D4AA]/25 backdrop-blur-md hover:scale-105 active:scale-95 transition-all cursor-pointer group flex items-center justify-center"
       >
-        <div className="w-full h-full rounded-full bg-[#0A0E1A] flex items-center justify-center text-[#00D4AA] group-hover:bg-transparent group-hover:text-[#0A0E1A] transition-colors relative">
-          <Sparkles className="w-5 h-5 animate-pulse text-[#00D4AA] group-hover:text-[#0A0E1A]" />
-          <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-[#00D4AA] rounded-full border-2 border-[#0A0E1A] animate-ping" />
-          <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-[#00D4AA] rounded-full border-2 border-[#0A0E1A]" />
+        <div className="relative flex items-center justify-center">
+          <Sparkles className="w-5 h-5 text-[#00D4AA] transition-transform group-hover:rotate-12" />
+          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[#00D4AA] rounded-full border-2 border-[#0F172A]" />
         </div>
       </button>
 
       {/* AI Assistant Floating Chat Widget */}
       <AiAssistantWidget
         isOpen={showAiAssistant}
-        onClose={() => setShowAiAssistant(false)}
+        onClose={() => {
+          setShowAiAssistant(false);
+          setAiAssistantPrompt(undefined);
+        }}
         state={state}
+        initialPrompt={aiAssistantPrompt}
+        initialMode={aiAssistantMode}
+        onCreateEqub={handleCreateEqub}
+        onAddGoal={(goal) => {
+          setState((prev) => {
+            const updated = {
+              ...prev,
+              goals: [goal, ...(prev.goals || [])],
+              auditLogs: [
+                {
+                  id: `aud-${Date.now()}`,
+                  timestamp: new Date().toISOString(),
+                  actorId: prev.currentUser.id,
+                  actorName: prev.currentUser.name,
+                  action: 'CREATE_GOAL',
+                  entity: 'Goal',
+                  entityId: goal.id,
+                  diffAfter: goal,
+                  branch: prev.currentUser.branch
+                },
+                ...prev.auditLogs
+              ]
+            };
+            saveStateToStorage(updated);
+            syncStateToFirebaseNow(updated);
+            return updated;
+          });
+          triggerToast(`🎯 Goal "${goal.title}" saved to your Roadmap Goals!`);
+        }}
+        onNavigateTab={(tab) => handleNavigateTab(tab as any)}
+        onShowToast={triggerToast}
       />
 
-      {/* Session Lock Screen Biometric & Password Unlock Modal */}
-      <FingerprintModal
+      {/* Session Lock Screen Password & PIN Unlock Modal */}
+      <SessionLockModal
         isOpen={isSessionLocked}
         onClose={() => {
           // If closed in locked state without authentication, log out safely

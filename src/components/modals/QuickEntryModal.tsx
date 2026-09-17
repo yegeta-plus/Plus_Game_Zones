@@ -13,11 +13,19 @@ import {
   FileText,
   Layers,
   Sparkles,
-  Calculator
+  Calculator,
+  User,
+  Briefcase,
+  Building2,
+  Users,
+  CheckCircle2,
+  DollarSign,
+  HandCoins
 } from 'lucide-react';
-import { Wallet, Category, TransactionType, UserProfile, Transaction, Transfer } from '../../types';
+import { Wallet, Category, TransactionType, UserProfile, Transaction, Transfer, Equb, Loan } from '../../types';
 import { formatETB, parseSummedAmount, calculateWalletBalance, getWalletNickname, isOverdraftAllowed, isWalletActive, validateTransactionPosting } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
+import { ModernDateInput } from '../common/ModernDateInput';
 
 interface QuickEntryModalProps {
   isOpen: boolean;
@@ -28,6 +36,8 @@ interface QuickEntryModalProps {
   defaultWalletId?: string;
   transactions?: Transaction[];
   transfers?: Transfer[];
+  equbs?: Equb[];
+  loans?: Loan[];
   onSubmitTransaction: (data: {
     type: TransactionType;
     amount: number;
@@ -38,6 +48,9 @@ interface QuickEntryModalProps {
     isCreditSale?: boolean;
     customerName?: string;
     dueDate?: string;
+    expenseScope?: 'BUSINESS' | 'PERSONAL';
+    refType?: 'LOAN' | 'RECEIVABLE' | 'EQUB' | 'TRANSFER' | 'SPLIT_SUB_ENTRY';
+    refId?: string;
   }) => void;
   onBatchSubmitTransactions?: (items: Array<{
     type: TransactionType;
@@ -46,6 +59,9 @@ interface QuickEntryModalProps {
     category: string;
     description: string;
     date: string;
+    expenseScope?: 'BUSINESS' | 'PERSONAL';
+    refType?: 'LOAN' | 'RECEIVABLE' | 'EQUB' | 'TRANSFER' | 'SPLIT_SUB_ENTRY';
+    refId?: string;
   }>) => void;
 }
 
@@ -58,18 +74,69 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
   defaultWalletId,
   transactions = [],
   transfers = [],
+  equbs = [],
+  loans = [],
   onSubmitTransaction,
   onBatchSubmitTransactions
 }) => {
   const [entryMode, setEntryMode] = useState<'INCOME' | 'EXPENSE'>('INCOME');
   const [batchMode, setBatchMode] = useState<'single' | 'batch'>('single');
   const [isCreditSale, setIsCreditSale] = useState(false);
+  const [expenseScope, setExpenseScope] = useState<'BUSINESS' | 'PERSONAL'>('BUSINESS');
+  const [selectedEqubId, setSelectedEqubId] = useState<string | null>(null);
+  const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
 
   // Single mode state
   const [amountStr, setAmountStr] = useState('');
   const [walletId, setWalletId] = useState(defaultWalletId || wallets[0]?.id || '');
   const [category, setCategory] = useState(categories.find(c => c.type === 'INCOME')?.name || 'Daily Income');
   const [description, setDescription] = useState('');
+
+  // Active Equbs list & detection
+  const activeEqubs = (equbs || []).filter(e => e.status === 'ACTIVE');
+  const isEqubContribution = entryMode === 'EXPENSE' && (
+    category === 'Equb Contribution' ||
+    category.toLowerCase().includes('equb') ||
+    category.toLowerCase().includes('ekub')
+  );
+  const selectedEqub = activeEqubs.find(e => e.id === selectedEqubId);
+
+  const handleSelectEqub = (eq: Equb) => {
+    triggerHaptic('medium');
+    setSelectedEqubId(eq.id);
+    setSelectedLoanId(null);
+    setCategory('Equb Contribution');
+    const roundDue = eq.contributionPerRound * (eq.mySlots || 1);
+    setAmountStr(roundDue.toString());
+    if (eq.walletId && wallets.some(w => w.id === eq.walletId && isWalletActive(w))) {
+      setWalletId(eq.walletId);
+    }
+    setDescription(`${eq.name} — Round #${eq.currentRound} contribution`);
+  };
+
+  // Active Loans list & detection
+  const activeLoans = (loans || []).filter(l => l.status === 'ACTIVE' && l.outstandingBalance > 0);
+  const isLoanPayment = category === 'Loan Payment' || category.toLowerCase().includes('loan');
+  const selectedLoan = activeLoans.find(l => l.id === selectedLoanId);
+
+  const handleSelectLoan = (loan: Loan) => {
+    triggerHaptic('medium');
+    setSelectedLoanId(loan.id);
+    setSelectedEqubId(null);
+    setCategory('Loan Payment');
+    const isLent = loan.direction === 'LENT';
+    setEntryMode(isLent ? 'INCOME' : 'EXPENSE');
+    const targetAmt = loan.monthlyInstallment || Math.min(1000, loan.outstandingBalance);
+    setAmountStr(targetAmt.toString());
+    if (loan.walletId && wallets.some(w => w.id === loan.walletId && isWalletActive(w))) {
+      setWalletId(loan.walletId);
+    }
+    setDescription(
+      isLent
+        ? `Collected loan repayment from ${loan.counterparty} (${loan.title})`
+        : `Paid loan installment to ${loan.counterparty} (${loan.title})`
+    );
+  };
 
   // Date helper functions
   const isSuperAdmin = currentUser.role === 'SuperAdmin';
@@ -112,6 +179,8 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
     setDescription('');
     setCustomerName('');
     setIsCreditSale(false);
+    setExpenseScope('BUSINESS');
+    setSelectedEqubId(null);
     setValidationError(null);
     setPostingDate(getTodayStr());
     const defaultCat = categories.find(c => c.type === entryMode && c.active);
@@ -144,6 +213,8 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
     setValidationError(null);
     setEntryMode(mode);
     setIsCreditSale(false);
+    setSelectedEqubId(null);
+    setExpenseScope('BUSINESS');
     const targetCat = categories.find(c => c.type === mode && c.active);
     if (targetCat) setCategory(targetCat.name);
   };
@@ -202,6 +273,25 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
         }
       }
 
+      // Loan validation for batch mode
+      if (isLoanPayment && selectedLoan) {
+        if (selectedLoan.outstandingBalance >= 1000 && totalBatchAmount < 1000) {
+          triggerHaptic('heavy');
+          setValidationError('Total split repayment cannot be less than ETB 1,000 (1k).');
+          return;
+        }
+        if (selectedLoan.outstandingBalance < 1000 && totalBatchAmount < selectedLoan.outstandingBalance) {
+          triggerHaptic('heavy');
+          setValidationError(`Total split repayment must be at least ETB ${selectedLoan.outstandingBalance.toLocaleString()} to settle the loan.`);
+          return;
+        }
+        if (totalBatchAmount > selectedLoan.outstandingBalance) {
+          triggerHaptic('heavy');
+          setValidationError(`Total split repayment cannot exceed outstanding balance of ETB ${selectedLoan.outstandingBalance.toLocaleString()}.`);
+          return;
+        }
+      }
+
       triggerHaptic('success');
 
       const batchItems = batchEntries.map(entry => {
@@ -211,8 +301,11 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
           amount: entry.amount,
           walletId: entry.walletId,
           category: category || (entryMode === 'INCOME' ? 'Daily Income' : 'Daily Expense'),
-          description: description || (entryMode === 'INCOME' ? 'Daily Income' : `${category} - ${targetW?.name || 'Wallet'}`),
-          date: txDate
+          description: description || (entryMode === 'INCOME' ? 'Split Income' : `Split Payment - ${targetW?.name || 'Wallet'}`),
+          date: txDate,
+          expenseScope: entryMode === 'EXPENSE' ? expenseScope : undefined,
+          refType: isEqubContribution && selectedEqubId ? ('EQUB' as const) : isLoanPayment && selectedLoanId ? ('LOAN' as const) : undefined,
+          refId: isEqubContribution && selectedEqubId ? selectedEqubId : isLoanPayment && selectedLoanId ? selectedLoanId : undefined
         };
       });
 
@@ -233,6 +326,25 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
       triggerHaptic('heavy');
       setValidationError('Please enter a valid amount greater than ETB 0 (e.g. 90 or 40,50).');
       return;
+    }
+
+    // Loan validation for single entry mode
+    if (isLoanPayment && selectedLoan) {
+      if (selectedLoan.outstandingBalance >= 1000 && parsedAmount < 1000) {
+        triggerHaptic('heavy');
+        setValidationError('Loan repayment cannot be less than ETB 1,000 (1k).');
+        return;
+      }
+      if (selectedLoan.outstandingBalance < 1000 && parsedAmount < selectedLoan.outstandingBalance) {
+        triggerHaptic('heavy');
+        setValidationError(`Repayment must be at least ETB ${selectedLoan.outstandingBalance.toLocaleString()} to settle the loan.`);
+        return;
+      }
+      if (parsedAmount > selectedLoan.outstandingBalance) {
+        triggerHaptic('heavy');
+        setValidationError(`Repayment cannot exceed outstanding balance of ETB ${selectedLoan.outstandingBalance.toLocaleString()}.`);
+        return;
+      }
     }
 
     const targetWallet = wallets.find(w => w.id === walletId);
@@ -270,7 +382,10 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
       date: txDate,
       isCreditSale: activeCreditSale,
       customerName: activeCreditSale ? customerName.trim() : undefined,
-      dueDate: activeCreditSale ? calculatedDueDate : undefined
+      dueDate: activeCreditSale ? calculatedDueDate : undefined,
+      expenseScope: currentType === 'EXPENSE' ? expenseScope : undefined,
+      refType: isEqubContribution && selectedEqubId ? 'EQUB' : isLoanPayment && selectedLoanId ? 'LOAN' : undefined,
+      refId: isEqubContribution && selectedEqubId ? selectedEqubId : isLoanPayment && selectedLoanId ? selectedLoanId : undefined
     });
 
     resetForm();
@@ -324,14 +439,14 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                <span>{batchMode === 'batch' ? (entryMode === 'INCOME' ? 'Daily Income' : 'Daily Expense') : 'Quick Transaction'}</span>
+                <span>{batchMode === 'batch' ? 'Split Payment' : 'Quick Transaction'}</span>
                 <span className="text-[10px] bg-slate-100 dark:bg-[#1E2D40] text-slate-600 dark:text-[#8899BB] px-2 py-0.5 rounded-full font-mono font-semibold uppercase">
-                  {batchMode === 'batch' ? `BATCH ${entryMode}` : 'DIRECT ENTRY'}
+                  {batchMode === 'batch' ? 'SPLIT PAYMENT' : 'DIRECT ENTRY'}
                 </span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-[#8899BB]">
                 {batchMode === 'batch'
-                  ? `Record daily ${entryMode === 'INCOME' ? 'sales' : 'expenses'} across Telebirr, CBE Birr, Cash & Banks`
+                  ? `Split payment across Telebirr, CBE Birr, Cash & Banks`
                   : 'Log single income, expense, or customer credit sales'}
               </p>
             </div>
@@ -391,7 +506,77 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
             </button>
           </div>
 
-          {/* Sub-Type Switcher: Single Entry vs Multi-Wallet Daily Batch */}
+          {/* Expense Classification: Business vs Personal Expense */}
+          {entryMode === 'EXPENSE' && (
+            <div className="p-3.5 rounded-2xl border bg-slate-50/80 dark:bg-[#131926] border-slate-200 dark:border-[#1E2D40] space-y-2.5 animate-fadeIn">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${
+                    expenseScope === 'PERSONAL'
+                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                      : 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30'
+                  }`}>
+                    {expenseScope === 'PERSONAL' ? <User className="w-4 h-4" /> : <Briefcase className="w-4 h-4" />}
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <span>Expense Classification</span>
+                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold uppercase ${
+                        expenseScope === 'PERSONAL'
+                          ? 'bg-amber-500/20 text-amber-800 dark:text-amber-300'
+                          : 'bg-indigo-500/20 text-indigo-800 dark:text-indigo-300'
+                      }`}>
+                        {expenseScope === 'PERSONAL' ? 'Personal' : 'Business'}
+                      </span>
+                    </h4>
+                    <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">
+                      {expenseScope === 'PERSONAL'
+                        ? 'Personal withdrawals, home expenses & private spending'
+                        : 'Official business operations, rent, utilities & equipment'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setExpenseScope('BUSINESS');
+                  }}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    expenseScope === 'BUSINESS'
+                      ? 'bg-indigo-600 dark:bg-indigo-500 text-white border-indigo-600 dark:border-indigo-500 shadow-sm'
+                      : 'bg-white dark:bg-[#0A0E1A] border-slate-200 dark:border-[#1E2D40] text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>Business Expense</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setExpenseScope('PERSONAL');
+                    const personalCat = categories.find(c => c.type === 'EXPENSE' && (c.name.toLowerCase().includes('withdrawal') || c.name.toLowerCase().includes('home') || c.name.toLowerCase().includes('food')));
+                    if (personalCat) setCategory(personalCat.name);
+                  }}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    expenseScope === 'PERSONAL'
+                      ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
+                      : 'bg-white dark:bg-[#0A0E1A] border-slate-200 dark:border-[#1E2D40] text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <User className="w-3.5 h-3.5" />
+                  <span>Personal Expense</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Sub-Type Switcher: Single Entry vs Split Payment (Multi-Wallet) */}
           <div className="space-y-3">
             <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-[#0A0E1A] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40]">
               <button
@@ -426,7 +611,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                 }`}
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>{entryMode === 'INCOME' ? 'Daily Income' : 'Daily Expense'}</span>
+                <span>Split Payment</span>
               </button>
             </div>
 
@@ -549,7 +734,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
               )}
             </div>
 
-          {/* MULTI-WALLET DAILY BATCH MODE BODY */}
+          {/* MULTI-WALLET SPLIT PAYMENT MODE BODY */}
           {batchMode === 'batch' ? (
             <div className="space-y-4 animate-fadeIn">
               
@@ -563,14 +748,14 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                     entryMode === 'INCOME' ? 'text-purple-900 dark:text-white' : 'text-rose-900 dark:text-white'
                   }`}>
                     <Sparkles className={`w-4 h-4 ${entryMode === 'INCOME' ? 'text-purple-600 dark:text-[#A78BFA]' : 'text-rose-600 dark:text-rose-400'}`} />
-                    <span>{entryMode === 'INCOME' ? 'Daily Earnings Across Accounts' : 'Daily Expenses Across Accounts'}</span>
+                    <span>{entryMode === 'INCOME' ? 'Split Income Across Accounts' : 'Split Payment Across Accounts'}</span>
                   </h4>
                   <p className={`text-[11px] mt-0.5 ${
                     entryMode === 'INCOME' ? 'text-purple-700 dark:text-[#8899BB]' : 'text-rose-700 dark:text-[#8899BB]'
                   }`}>
                     {entryMode === 'INCOME'
-                      ? 'Enter the total earnings received in each wallet today'
-                      : 'Enter the total expenses paid out from each wallet today'}
+                      ? 'Enter the amount received in each wallet'
+                      : 'Enter the amount paid out from each wallet'}
                   </p>
                 </div>
 
@@ -677,12 +862,12 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
               <div className="bg-slate-900 dark:bg-[#0A0E1A] border border-purple-500/40 rounded-2xl p-3.5 flex items-center justify-between text-white">
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 dark:text-[#8899BB] uppercase tracking-wider block">
-                    Combined Daily {entryMode === 'INCOME' ? 'Income' : 'Expense'} Total
+                    Combined Split {entryMode === 'INCOME' ? 'Income' : 'Payment'} Total
                   </span>
                   <span className={`text-xs font-medium ${
                     entryMode === 'INCOME' ? 'text-purple-300 dark:text-[#A78BFA]' : 'text-rose-300 dark:text-rose-400'
                   }`}>
-                    {batchEntries.length} {batchEntries.length === 1 ? 'account' : 'accounts'} {entryMode === 'INCOME' ? 'receiving income' : 'paying expense'}
+                    {batchEntries.length} {batchEntries.length === 1 ? 'account' : 'accounts'} {entryMode === 'INCOME' ? 'receiving funds' : 'paying split'}
                   </span>
                 </div>
                 <div className="text-right">
@@ -759,19 +944,14 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
             </div>
           )}
 
-          {/* Wallet Selection Grid for Single Entry Mode */}
-          {batchMode === 'single' && (
+          {/* Wallet Selection Grid for Single Entry Mode (Hidden for Credit Sales/IOUs) */}
+          {batchMode === 'single' && !isCreditSale && (
             <div>
               <label className="text-xs font-semibold text-slate-600 dark:text-[#8899BB] flex items-center justify-between mb-2">
                 <span className="flex items-center gap-1.5">
-                  <WalletIcon className={`w-3.5 h-3.5 ${isCreditSale ? 'text-blue-500' : 'text-emerald-600 dark:text-[#00D4AA]'}`} />
-                  <span>{isCreditSale ? 'Target Collection Wallet (Deposit Destination)' : 'Source / Destination Wallet'}</span>
+                  <WalletIcon className="w-3.5 h-3.5 text-emerald-600 dark:text-[#00D4AA]" />
+                  <span>Source / Destination Wallet</span>
                 </span>
-                {isCreditSale && (
-                  <span className="text-[10px] bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800">
-                    Collection Target
-                  </span>
-                )}
               </label>
               <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
                 {wallets.map((w) => {
@@ -830,17 +1010,17 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
             </div>
           )}
 
-          {/* Informational notice when Sale on Credit is active */}
+          {/* Informational notice when Sale on Credit / IOU is active */}
           {batchMode === 'single' && isCreditSale && entryMode === 'INCOME' && (
             <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/50 rounded-2xl flex items-start gap-2.5 text-xs text-blue-900 dark:text-blue-200">
               <FileCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
               <div className="space-y-1">
-                <p className="font-bold">Receivables Ledger & Collection Target</p>
+                <p className="font-bold">Customer Credit IOU (Receivables Entry)</p>
                 <p className="text-[11px] text-blue-700 dark:text-blue-300/90 leading-relaxed">
-                  This credit sale will be recorded in <strong>Receivables</strong> for <strong>{customerName || 'the customer'}</strong>.
+                  This credit IOU will be recorded in <strong>Receivables</strong> for <strong>{customerName || 'the customer'}</strong>.
                 </p>
                 <p className="text-[11px] text-blue-800 dark:text-blue-200 bg-blue-100/60 dark:bg-blue-900/40 p-2 rounded-lg border border-blue-200/50 dark:border-blue-800/40">
-                  💼 <strong>Target Collection Wallet:</strong> <span className="font-bold text-blue-900 dark:text-white underline">{wallets.find(w => w.id === walletId)?.name || 'Main Cash Drawer'}</span>. No balance is added now; money will be deposited when collected in the Receivables Hub.
+                  ℹ️ <strong>No Wallet Balance Impact:</strong> No cash or wallet balance is altered now. You will choose the deposit wallet when the customer settles the debt in Receivables.
                 </p>
               </div>
             </div>
@@ -853,24 +1033,346 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
               <span>Category Tag</span>
             </label>
             <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1.5 border border-slate-200 dark:border-[#1E2D40] rounded-2xl bg-slate-50 dark:bg-[#0A0E1A]">
-              {filteredCategories.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setCategory(c.name);
-                  }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-medium cursor-pointer transition-all ${
-                    category === c.name
-                      ? 'bg-emerald-600 dark:bg-[#00D4AA] text-white dark:text-[#0A0E1A] font-bold shadow-md'
-                      : 'bg-white dark:bg-[#131926] text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-transparent'
-                  }`}
-                >
-                  {c.name}
-                </button>
-              ))}
+              {filteredCategories.map((c) => {
+                const isEqubCat = c.name === 'Equb Contribution' || c.name.toLowerCase().includes('equb') || c.name.toLowerCase().includes('ekub');
+                const isLoanCat = c.name === 'Loan Payment' || c.name.toLowerCase().includes('loan');
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setCategory(c.name);
+                      if (isEqubCat) {
+                        setSelectedLoanId(null);
+                        if (activeEqubs.length > 0 && !selectedEqubId) {
+                          handleSelectEqub(activeEqubs[0]);
+                        }
+                      } else if (isLoanCat) {
+                        setSelectedEqubId(null);
+                        if (activeLoans.length > 0 && !selectedLoanId) {
+                          handleSelectLoan(activeLoans[0]);
+                        }
+                      } else {
+                        setSelectedEqubId(null);
+                        setSelectedLoanId(null);
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium cursor-pointer transition-all ${
+                      category === c.name
+                        ? isEqubCat
+                          ? 'bg-purple-600 dark:bg-purple-500 text-white font-bold shadow-md'
+                          : isLoanCat
+                          ? 'bg-indigo-600 dark:bg-indigo-500 text-white font-bold shadow-md'
+                          : 'bg-emerald-600 dark:bg-[#00D4AA] text-white dark:text-[#0A0E1A] font-bold shadow-md'
+                        : 'bg-white dark:bg-[#131926] text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-transparent'
+                    }`}
+                  >
+                    {c.name}
+                  </button>
+                );
+              })}
             </div>
+
+            {/* Active Loans Selection Grid - shown when Loan Payment category is selected */}
+            {isLoanPayment && (
+              <div className="mt-3 p-3.5 rounded-2xl border bg-gradient-to-br from-indigo-50/80 to-slate-50 dark:from-indigo-950/30 dark:to-[#131926] border-indigo-200 dark:border-indigo-800/50 space-y-3 animate-fadeIn shadow-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-xl bg-indigo-600 dark:bg-indigo-500 text-white flex items-center justify-center shadow-xs">
+                      <HandCoins className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <span>Active Loans (Borrow / Lent)</span>
+                        <span className="text-[9px] bg-indigo-600 dark:bg-indigo-500 text-white px-1.5 py-0.5 rounded-full font-mono font-bold">
+                          {activeLoans.length} Active
+                        </span>
+                      </h4>
+                      <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">
+                        Select loan to pay — use single wallet or Equb-style split payment across multiple wallets
+                      </p>
+                    </div>
+                  </div>
+
+                  {selectedLoanId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setSelectedLoanId(null);
+                      }}
+                      className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 underline cursor-pointer"
+                    >
+                      Deselect
+                    </button>
+                  )}
+                </div>
+
+                {activeLoans.length === 0 ? (
+                  <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 text-amber-900 dark:text-amber-200 text-xs space-y-1">
+                    <p className="font-bold flex items-center gap-1">
+                      <span>⚠️ No Active Loans Available</span>
+                    </p>
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                      All registered loans are settled or none exist yet. You can create loans in the Loans & Debt hub.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {activeLoans.map((loan) => {
+                      const isSelected = selectedLoanId === loan.id;
+                      const isLent = loan.direction === 'LENT';
+                      const linkedW = wallets.find(w => w.id === loan.walletId);
+
+                      return (
+                        <button
+                          key={loan.id}
+                          type="button"
+                          onClick={() => handleSelectLoan(loan)}
+                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative ${
+                            isSelected
+                              ? 'bg-indigo-100/80 dark:bg-indigo-900/45 border-indigo-500 dark:border-indigo-400 ring-2 ring-indigo-500/40 shadow-sm'
+                              : 'bg-white dark:bg-[#131926] border-slate-200 dark:border-[#1E2D40] hover:border-indigo-300 dark:hover:border-indigo-700/60'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 pr-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                                  {loan.title}
+                                </span>
+                                <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold ${
+                                  isLent
+                                    ? 'bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-400'
+                                    : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400'
+                                }`}>
+                                  {isLent ? 'LENT (COLLECT)' : 'BORROW (REPAY)'}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-600 dark:text-slate-300 font-medium mt-0.5">
+                                Party: <span className="font-semibold text-slate-900 dark:text-white">{loan.counterparty}</span>
+                              </p>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <span className="text-xs font-mono font-black text-indigo-700 dark:text-indigo-300">
+                                {formatETB(loan.outstandingBalance)}
+                              </span>
+                              <span className="text-[9px] text-slate-400 dark:text-[#8899BB] block font-mono">
+                                remaining
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="mt-2 pt-2 border-t border-slate-100 dark:border-[#1E2D40] flex items-center justify-between text-[10px] text-slate-500 dark:text-[#8899BB]">
+                            <span>
+                              Due: <strong className="text-slate-700 dark:text-slate-300">{loan.dueDate ? loan.dueDate.split('T')[0] : 'N/A'}</strong>
+                              {loan.monthlyInstallment ? ` • ${formatETB(loan.monthlyInstallment)}/mo` : ''}
+                            </span>
+                            {linkedW && (
+                              <span className="truncate max-w-[110px] text-[9px] font-medium bg-slate-100 dark:bg-[#1C2333] px-1.5 py-0.5 rounded">
+                                💼 {getWalletNickname(linkedW.name)}
+                              </span>
+                            )}
+                          </div>
+
+                          {isSelected && (
+                            <div className="absolute top-2 right-2 flex items-center gap-1 text-[9px] font-bold bg-indigo-600 dark:bg-indigo-500 text-white px-1.5 py-0.5 rounded-full shadow-xs">
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>SELECTED</span>
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {selectedLoan && (
+                  <div className="p-2.5 bg-indigo-100/70 dark:bg-indigo-900/40 border border-indigo-300 dark:border-indigo-700/60 rounded-xl flex items-center justify-between text-xs animate-fadeIn">
+                    <div className="min-w-0 pr-2">
+                      <p className="text-[11px] font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1">
+                        <span>✅ Selected: {selectedLoan.title} ({selectedLoan.counterparty})</span>
+                      </p>
+                      <p className="text-[10px] text-indigo-700 dark:text-indigo-300/90 mt-0.5">
+                        Outstanding: <strong>{formatETB(selectedLoan.outstandingBalance)}</strong>. Min ETB 1,000. Equb-style split payment enabled!
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {selectedLoan.monthlyInstallment && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setAmountStr(selectedLoan.monthlyInstallment!.toString());
+                          }}
+                          className="text-[10px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2 py-1 rounded-lg cursor-pointer transition-colors"
+                        >
+                          Fill Installment {formatETB(selectedLoan.monthlyInstallment)}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setAmountStr(selectedLoan.outstandingBalance.toString());
+                        }}
+                        className="text-[10px] bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 text-white font-bold px-2 py-1 rounded-lg cursor-pointer transition-colors"
+                      >
+                        Fill Full {formatETB(selectedLoan.outstandingBalance)}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Active Equbs Selection Grid - ONLY shown when Equb Contribution is selected from category */}
+            {isEqubContribution && (
+              <div className="mt-3 p-3.5 rounded-2xl border bg-gradient-to-br from-purple-50/80 to-slate-50 dark:from-purple-950/30 dark:to-[#131926] border-purple-200 dark:border-purple-800/50 space-y-3 animate-fadeIn shadow-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-xl bg-purple-600 dark:bg-purple-500 text-white flex items-center justify-center shadow-xs">
+                      <Users className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <span>Active Equbs to Choose From</span>
+                        <span className="text-[9px] bg-purple-600 dark:bg-purple-500 text-white px-1.5 py-0.5 rounded-full font-mono font-bold">
+                          {activeEqubs.length} Active
+                        </span>
+                      </h4>
+                      <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">
+                        Select which active Equb circle this round contribution belongs to
+                      </p>
+                    </div>
+                  </div>
+
+                  {selectedEqubId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setSelectedEqubId(null);
+                      }}
+                      className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 underline cursor-pointer"
+                    >
+                      Deselect
+                    </button>
+                  )}
+                </div>
+
+                {activeEqubs.length === 0 ? (
+                  <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 text-amber-900 dark:text-amber-200 text-xs space-y-1">
+                    <p className="font-bold flex items-center gap-1">
+                      <span>⚠️ No Active Equbs Available</span>
+                    </p>
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                      All registered Equbs are completed or none have been created yet. You can manage Equb circles in the Equb Hub.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {activeEqubs.map((eq) => {
+                      const isSelected = selectedEqubId === eq.id;
+                      const roundDue = eq.contributionPerRound * (eq.mySlots || 1);
+                      const linkedW = wallets.find(w => w.id === eq.walletId);
+                      const intervalLabel = eq.interval === 'EVERY_10_DAYS'
+                        ? 'Every 10 Days'
+                        : eq.interval === 'EVERY_15_DAYS'
+                        ? 'Every 15 Days'
+                        : eq.interval === 'WEEKLY'
+                        ? 'Weekly'
+                        : 'Monthly';
+
+                      return (
+                        <button
+                          key={eq.id}
+                          type="button"
+                          onClick={() => handleSelectEqub(eq)}
+                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative ${
+                            isSelected
+                              ? 'bg-purple-100/80 dark:bg-purple-900/45 border-purple-500 dark:border-purple-400 ring-2 ring-purple-500/40 shadow-sm'
+                              : 'bg-white dark:bg-[#131926] border-slate-200 dark:border-[#1E2D40] hover:border-purple-300 dark:hover:border-purple-700/60'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 pr-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                                  {eq.name}
+                                </span>
+                                <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.2 rounded font-mono font-bold">
+                                  ACTIVE
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-purple-700 dark:text-purple-300 font-mono font-semibold mt-0.5">
+                                Round #{eq.currentRound} of {eq.totalRounds}
+                              </p>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <span className="text-xs font-mono font-black text-purple-700 dark:text-purple-300">
+                                {formatETB(roundDue)}
+                              </span>
+                              <span className="text-[9px] text-slate-400 dark:text-[#8899BB] block font-mono">
+                                / round
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="mt-2 pt-2 border-t border-slate-100 dark:border-[#1E2D40] flex items-center justify-between text-[10px] text-slate-500 dark:text-[#8899BB]">
+                            <span className="flex items-center gap-1">
+                              <span>⏱️ {intervalLabel}</span>
+                              {eq.mySlots && eq.mySlots > 1 && (
+                                <span className="text-purple-600 dark:text-purple-400 font-bold">({eq.mySlots} slots)</span>
+                              )}
+                            </span>
+                            {linkedW && (
+                              <span className="truncate max-w-[110px] text-[9px] font-medium bg-slate-100 dark:bg-[#1C2333] px-1.5 py-0.5 rounded">
+                                💼 {getWalletNickname(linkedW.name)}
+                              </span>
+                            )}
+                          </div>
+
+                          {isSelected && (
+                            <div className="absolute top-2 right-2 flex items-center gap-1 text-[9px] font-bold bg-purple-600 dark:bg-purple-500 text-white px-1.5 py-0.5 rounded-full shadow-xs">
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>SELECTED</span>
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {selectedEqub && (
+                  <div className="p-2.5 bg-purple-100/70 dark:bg-purple-900/40 border border-purple-300 dark:border-purple-700/60 rounded-xl flex items-center justify-between text-xs animate-fadeIn">
+                    <div className="min-w-0 pr-2">
+                      <p className="text-[11px] font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1">
+                        <span>✅ Selected: {selectedEqub.name} (Round #{selectedEqub.currentRound})</span>
+                      </p>
+                      <p className="text-[10px] text-purple-700 dark:text-purple-300/90 mt-0.5">
+                        Submitting this will record the expense and advance {selectedEqub.name} to Round #{Math.min(selectedEqub.totalRounds, selectedEqub.currentRound + 1)}.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        const roundAmount = selectedEqub.contributionPerRound * (selectedEqub.mySlots || 1);
+                        setAmountStr(roundAmount.toString());
+                      }}
+                      className="text-[10px] bg-purple-600 dark:bg-purple-500 hover:bg-purple-700 text-white font-bold px-2 py-1 rounded-lg shrink-0 cursor-pointer transition-colors"
+                    >
+                      Fill {formatETB(selectedEqub.contributionPerRound * (selectedEqub.mySlots || 1))}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Description & Reference Note */}
@@ -883,85 +1385,41 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Note or reference"
+              placeholder={
+                isEqubContribution && selectedEqub
+                  ? `${selectedEqub.name} Round #${selectedEqub.currentRound} contribution`
+                  : isLoanPayment && selectedLoan
+                  ? `${selectedLoan.direction === 'LENT' ? 'Collected repayment for' : 'Repaid installment for'} ${selectedLoan.title} (${selectedLoan.counterparty})`
+                  : entryMode === 'EXPENSE'
+                  ? (expenseScope === 'PERSONAL' ? 'e.g. Personal withdrawal, home supplies, shopping' : 'e.g. Electricity bill, equipment repair, lounge supplies')
+                  : (isCreditSale ? 'e.g. Credit sale details or customer invoice ref' : 'Note or reference')
+              }
               className="w-full bg-slate-50 dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] focus:border-emerald-500 dark:focus:border-[#00D4AA] rounded-xl py-2.5 px-3 text-xs text-slate-900 dark:text-[#F0F4FF] outline-none"
             />
           </div>
 
-          {/* Date Selector (SuperAdmin can post to last month) */}
-          <div className="bg-slate-50 dark:bg-[#131926] p-3 rounded-2xl border border-slate-200 dark:border-[#1E2D40] space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-600 dark:text-[#8899BB] flex items-center gap-1.5 font-semibold">
-                <CalendarIcon className="w-4 h-4 text-emerald-600 dark:text-[#00D4AA]" />
-                <span>Posting Date</span>
-              </span>
-              <span className="text-[10px] font-mono text-slate-500 dark:text-[#8899BB]">
-                {isAdminOrSuperAdmin ? '⚡ Admin Privilege: Past Month Allowed' : '(Up to 30 days back)'}
-              </span>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              <div className="flex items-center gap-1 bg-white dark:bg-[#0A0E1A] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40] shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setPostingDate(getTodayStr());
-                  }}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    postingDate === getTodayStr() ? 'bg-emerald-600 dark:bg-[#00D4AA] text-white dark:text-[#0A0E1A]' : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Today
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setPostingDate(getYesterdayStr());
-                  }}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    postingDate === getYesterdayStr() ? 'bg-emerald-600 dark:bg-[#00D4AA] text-white dark:text-[#0A0E1A]' : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Yesterday
-                </button>
-                {isAdminOrSuperAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setPostingDate(getLastMonthEndStr());
-                    }}
-                    className={`px-2 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      postingDate === getLastMonthEndStr() ? 'bg-purple-600 dark:bg-purple-500 text-white' : 'text-purple-600 dark:text-purple-400 hover:text-purple-700 bg-purple-50 dark:bg-purple-500/10'
-                    }`}
-                  >
-                    Last Month
-                  </button>
-                )}
-              </div>
-
-              <input
-                type="date"
-                min={getMinDateStr()}
-                max={getTodayStr()}
-                value={postingDate}
-                onChange={(e) => {
-                  if (e.target.value) {
-                    triggerHaptic('light');
-                    setPostingDate(e.target.value);
-                  }
-                }}
-                className="bg-white dark:bg-[#0A0E1A] border border-slate-200 dark:border-[#1E2D40] focus:border-emerald-500 dark:focus:border-[#00D4AA] rounded-xl py-1 px-2 text-xs text-slate-900 dark:text-white outline-none cursor-pointer font-mono font-bold w-full text-center"
-              />
-            </div>
-
-            {isSuperAdmin && postingDate < getYesterdayStr() && (
-              <p className="text-[10px] text-purple-600 dark:text-purple-400 font-medium bg-purple-50 dark:bg-purple-500/10 p-1.5 rounded-lg border border-purple-200 dark:border-purple-500/20">
-                🔒 <strong>SuperAdmin Privilege Active:</strong> Registering backdated entry for {postingDate}.
-              </p>
-            )}
+          {/* Date Selector */}
+          <div className="space-y-2">
+            <ModernDateInput
+              label="Posting Date"
+              sublabel="Select date for this entry"
+              min={getMinDateStr()}
+              max={getTodayStr()}
+              value={postingDate}
+              onChange={(newVal) => {
+                if (newVal) {
+                  triggerHaptic('light');
+                  setPostingDate(newVal);
+                }
+              }}
+              accentColor={isEqubContribution ? 'purple' : isLoanPayment ? 'indigo' : (entryMode === 'INCOME' ? 'emerald' : 'amber')}
+              presets={[
+                { label: 'Today', value: getTodayStr() },
+                { label: 'Yesterday', value: getYesterdayStr() },
+                ...(isAdminOrSuperAdmin ? [{ label: 'Last Month', value: getLastMonthEndStr() }] : [])
+              ]}
+              helperText="Click anywhere in the box to open calendar picker."
+            />
           </div>
 
           {/* Submit Action Button */}
@@ -971,9 +1429,17 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
               batchMode === 'batch'
                 ? entryMode === 'INCOME'
                   ? 'bg-gradient-to-r from-purple-600 to-purple-800 dark:from-[#A78BFA] dark:to-[#8B5CF6] text-white dark:text-[#0A0E1A] shadow-purple-500/25'
+                  : isEqubContribution && selectedEqub
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-700 dark:from-purple-600 dark:to-indigo-600 text-white shadow-purple-500/25'
+                  : isLoanPayment && selectedLoan
+                  ? 'bg-gradient-to-r from-indigo-600 to-blue-700 dark:from-indigo-600 dark:to-blue-600 text-white shadow-indigo-500/25'
                   : 'bg-gradient-to-r from-rose-600 to-rose-800 dark:from-rose-500 dark:to-rose-700 text-white shadow-rose-500/25'
                 : isCreditSale && entryMode === 'INCOME'
                 ? 'bg-gradient-to-r from-blue-600 to-blue-700 dark:from-[#3B82F6] dark:to-[#2563EB] text-white shadow-blue-500/25'
+                : isEqubContribution && selectedEqub
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-700 dark:from-purple-600 dark:to-indigo-600 text-white shadow-purple-500/25'
+                : isLoanPayment && selectedLoan
+                ? 'bg-gradient-to-r from-indigo-600 to-blue-700 dark:from-indigo-600 dark:to-blue-600 text-white shadow-indigo-500/25'
                 : entryMode === 'INCOME'
                 ? 'bg-gradient-to-r from-emerald-600 to-teal-700 dark:from-[#00D4AA] dark:to-[#00B894] text-white dark:text-[#0A0E1A] shadow-emerald-500/20'
                 : 'bg-gradient-to-r from-rose-600 to-red-700 dark:from-[#EF4444] dark:to-[#DC2626] text-white shadow-rose-500/20'
@@ -982,9 +1448,17 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
             <Check className="w-5 h-5" />
             <span>
               {batchMode === 'batch'
-                ? `Post Daily ${entryMode === 'INCOME' ? 'Incomes' : 'Expenses'} across ${batchEntries.length} ${batchEntries.length === 1 ? 'Wallet' : 'Wallets'} (${formatETB(totalBatchAmount)})`
+                ? isEqubContribution && selectedEqub
+                  ? `Post ${selectedEqub.name} Equb Split across ${batchEntries.length} ${batchEntries.length === 1 ? 'Wallet' : 'Wallets'} (${formatETB(totalBatchAmount)})`
+                  : isLoanPayment && selectedLoan
+                  ? `Post ${selectedLoan.title} Split Repayment across ${batchEntries.length} ${batchEntries.length === 1 ? 'Wallet' : 'Wallets'} (${formatETB(totalBatchAmount)})`
+                  : `Post Split ${entryMode === 'INCOME' ? 'Income' : 'Payment'} across ${batchEntries.length} ${batchEntries.length === 1 ? 'Wallet' : 'Wallets'} (${formatETB(totalBatchAmount)})`
                 : isCreditSale && entryMode === 'INCOME'
                 ? `Record Credit Sale for ${customerName || 'Customer'}`
+                : isEqubContribution && selectedEqub
+                ? `Post Equb Contribution (${selectedEqub.name} Round #${selectedEqub.currentRound})`
+                : isLoanPayment && selectedLoan
+                ? `Post ${selectedLoan.title} Repayment (${formatETB(parsedSingle.total)})`
                 : `Post ${entryMode === 'INCOME' ? 'Income' : 'Expense'} to Ledger`}
             </span>
           </button>

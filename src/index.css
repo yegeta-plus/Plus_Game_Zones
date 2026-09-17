@@ -100,6 +100,34 @@ input, textarea, [contenteditable="true"] {
   user-select: text !important;
 }
 
+/* Modern Date & DateTime Pickers */
+input[type="date"],
+input[type="datetime-local"] {
+  cursor: pointer;
+  position: relative;
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  opacity: 0.75;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+.dark input[type="date"]::-webkit-calendar-picker-indicator,
+.dark input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.85) hue-rotate(180deg);
+}
+
 img, svg {
   -webkit-user-drag: none !important;
   user-drag: none !important;

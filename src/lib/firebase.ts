@@ -1,5 +1,13 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { initializeFirestore, doc, onSnapshot, setDoc, getDoc, disableNetwork } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  memoryLocalCache,
+  doc,
+  onSnapshot,
+  setDoc,
+  getDoc,
+  disableNetwork
+} from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import config from '../../firebase-applet-config.json';
 import { ERPState } from './store';
@@ -18,9 +26,11 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const dbId = config.firestoreDatabaseId || metaEnv.VITE_FIREBASE_DATABASE_ID || '(default)';
 
+// Initialize Firestore using memoryLocalCache to eliminate IndexedDB database closing/hidden conflicts in iframe/tabs
 export const db = initializeFirestore(
   app,
   {
+    localCache: memoryLocalCache(),
     experimentalForceLongPolling: true,
   },
   dbId
@@ -45,8 +55,15 @@ async function testConnection() {
       markQuotaExceeded();
       disableNetwork(db).catch(() => {});
       console.info('Firestore free tier daily quota reached. Switched to offline storage.');
-    } else if (error?.code === 'unavailable' || error?.message?.includes('unavailable') || error?.message?.includes('Could not reach Cloud Firestore') || error?.message?.includes('offline')) {
-      console.info('Firestore initialized. Operating smoothly with real-time offline persistence cache.');
+    } else if (
+      error?.code === 'unavailable' ||
+      error?.message?.includes('unavailable') ||
+      error?.message?.includes('Could not reach Cloud Firestore') ||
+      error?.message?.includes('offline') ||
+      error?.message?.includes('closing') ||
+      error?.message?.includes('hidden')
+    ) {
+      console.info('Firestore initialized with real-time memory cache & local persistence.');
     }
   }
 }
@@ -128,31 +145,52 @@ if (isQuotaExceeded) {
   disableNetwork(db).catch(() => {});
 }
 
-// Suppress unhandled Firestore quota and connection errors in background
+// Suppress unhandled Firestore database closing, hidden tab, quota, and connection errors in background
 if (typeof window !== 'undefined') {
   window.addEventListener('unhandledrejection', (event) => {
+    const reasonMsg = String(event.reason?.message || event.reason || '');
     const isQuota =
       event.reason?.code === 'resource-exhausted' ||
-      event.reason?.message?.includes('Quota') ||
-      event.reason?.message?.includes('quota') ||
-      event.reason?.message?.includes('resource-exhausted');
+      reasonMsg.includes('Quota') ||
+      reasonMsg.includes('quota') ||
+      reasonMsg.includes('resource-exhausted');
     
+    const isDbClosingOrHidden =
+      reasonMsg.includes('Database is closing') ||
+      reasonMsg.includes('closing/hidden') ||
+      reasonMsg.includes('IDBDatabase') ||
+      reasonMsg.includes('The database connection is closing');
+
     const isUnavailable =
       event.reason?.code === 'unavailable' ||
-      event.reason?.message?.includes('unavailable') ||
-      event.reason?.message?.includes('Could not reach Cloud Firestore') ||
-      event.reason?.message?.includes('offline');
+      reasonMsg.includes('unavailable') ||
+      reasonMsg.includes('Could not reach Cloud Firestore') ||
+      reasonMsg.includes('offline') ||
+      reasonMsg.includes('the client is offline');
 
     if (isQuota) {
       isQuotaExceeded = true;
       markQuotaExceeded();
       disableNetwork(db).catch(() => {});
       event.preventDefault();
-    } else if (isUnavailable) {
-      // Gracefully handle offline / connection error without breaking app flow
+    } else if (isDbClosingOrHidden || isUnavailable) {
+      // Gracefully suppress benign database closing / tab hidden / network offline rejections
       event.preventDefault();
     }
   });
+
+  window.addEventListener('error', (event) => {
+    const errorMsg = String(event.message || event.error?.message || '');
+    if (
+      errorMsg.includes('Database is closing') ||
+      errorMsg.includes('closing/hidden') ||
+      errorMsg.includes('IDBDatabase') ||
+      errorMsg.includes('The database connection is closing')
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, true);
 }
 
 /**

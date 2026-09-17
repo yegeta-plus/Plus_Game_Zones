@@ -8,6 +8,60 @@
         "updatedAt": { "type": "string" },
         "updatedBy": { "type": "string" }
       }
+    },
+    "IncomePendingConfirmation": {
+      "title": "Income Pending Confirmation",
+      "description": "Customer payments pending bank SMS confirmation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "expectedAmount": { "type": "number" },
+        "currency": { "type": "string", "enum": ["ETB"] },
+        "createdAt": { "type": "string" },
+        "staffId": { "type": "string" },
+        "customerRef": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "paid", "flagged_unconfirmed", "flagged_mismatch"]
+        },
+        "matchedConfirmationId": { "type": "string" }
+      },
+      "required": ["id", "expectedAmount", "currency", "createdAt", "staffId", "status"]
+    },
+    "TransactionConfirmed": {
+      "title": "Transaction Confirmed",
+      "description": "Verified incoming SMS transaction captured on company device",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "provider": { "type": "string", "enum": ["telebirr", "cbe", "ebirr"] },
+        "rawSmsText": { "type": "string" },
+        "sender": { "type": "string" },
+        "amount": { "type": "number" },
+        "referenceNumber": { "type": "string" },
+        "senderName": { "type": "string" },
+        "senderPhone": { "type": "string" },
+        "transactionDate": { "type": "string" },
+        "balanceAfter": { "type": "number" },
+        "receivedAt": { "type": "string" },
+        "matched": { "type": "boolean" },
+        "matchedIncomeId": { "type": "string" }
+      },
+      "required": ["id", "provider", "rawSmsText", "sender", "amount", "referenceNumber", "transactionDate", "receivedAt", "matched"]
+    }
+  },
+  "firestore": {
+    "/erp_state/{documentId}": {
+      "schema": "ERPState",
+      "description": "Full ERP data state"
+    },
+    "/income_pending_confirmation/{incomeId}": {
+      "schema": "IncomePendingConfirmation",
+      "description": "Pending customer payments awaiting official SMS confirmation"
+    },
+    "/transactions_confirmed/{confirmationId}": {
+      "schema": "TransactionConfirmed",
+      "description": "SMS bank confirmations written exclusively via Admin SDK / webhook"
     }
   }
 }

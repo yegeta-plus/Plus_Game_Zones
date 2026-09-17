@@ -5,7 +5,6 @@ import {
   Shield,
   Key,
   Smartphone,
-  Fingerprint,
   Clock,
   Bell,
   CheckCircle2,
@@ -33,17 +32,11 @@ import {
 import { ERPState } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 import {
-  registerBiometricCredential,
-  getEnrolledBiometric,
-  removeEnrolledBiometric,
-  StoredBiometricCredential
-} from '../../lib/biometrics';
-import {
   requestNotificationPermission,
   sendExternalNotification,
   getNotificationPermission
 } from '../../lib/notifications';
-import { FingerprintModal } from '../auth/FingerprintModal';
+import { PaymentFraudPreventionView } from './PaymentFraudPreventionView';
 
 export interface SecuritySession {
   id: string;
@@ -68,7 +61,7 @@ export interface SecurityEventLog {
 
 export const SecuritySystemView: React.FC<{ state: ERPState }> = ({ state }) => {
   const [activeTab, setActiveTab] = useState<
-    'radar' | 'sessions' | '2fa' | 'pin' | 'biometrics' | 'ip_geofence'
+    'radar' | 'fraud_prevention' | 'sessions' | '2fa' | 'pin' | 'ip_geofence'
   >('radar');
 
   // Security 2FA State
@@ -111,11 +104,6 @@ export const SecuritySystemView: React.FC<{ state: ERPState }> = ({ state }) => 
       return false;
     }
   });
-
-  // Biometrics State
-  const [enrolledCred, setEnrolledCred] = useState<StoredBiometricCredential | null>(null);
-  const [isRegisteringBio, setIsRegisteringBio] = useState(false);
-  const [isBioModalOpen, setIsBioModalOpen] = useState(false);
 
   // Session Timeout
   const [sessionTimeoutMins, setSessionTimeoutMins] = useState<number>(() => {
@@ -204,7 +192,7 @@ export const SecuritySystemView: React.FC<{ state: ERPState }> = ({ state }) => 
       {
         id: 'log-2',
         timestamp: new Date(Date.now() - 3600000).toISOString(),
-        event: 'WebAuthn Fingerprint Hardware Passkey Enrolled',
+        event: 'Hardware Master Security PIN Initialized',
         severity: 'INFO',
         ip: '197.156.78.14',
         user: state.currentUser.name,
@@ -229,11 +217,6 @@ export const SecuritySystemView: React.FC<{ state: ERPState }> = ({ state }) => 
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(null), 4000);
   };
-
-  useEffect(() => {
-    const cred = getEnrolledBiometric(state.currentUser.email);
-    setEnrolledCred(cred);
-  }, [state.currentUser.email]);
 
   // Save changes to localStorage
   useEffect(() => {
@@ -263,11 +246,10 @@ export const SecuritySystemView: React.FC<{ state: ERPState }> = ({ state }) => 
   // Calculate System Security Score (0 to 100)
   const calculateSecurityScore = () => {
     let score = 0;
-    if (is2FAEnabled) score += 25;
-    if (securityPin && securityPin !== '1234') score += 20;
-    if (enrolledCred) score += 20;
-    if (sessionTimeoutMins > 0 && sessionTimeoutMins <= 10) score += 15;
-    if (enforceIpRestriction) score += 10;
+    if (is2FAEnabled) score += 30;
+    if (securityPin && securityPin !== '1234') score += 25;
+    if (sessionTimeoutMins > 0 && sessionTimeoutMins <= 10) score += 20;
+    if (enforceIpRestriction) score += 15;
     if (!emergencyLockdown) score += 10;
     return Math.min(100, score);
   };
@@ -394,43 +376,6 @@ export const SecuritySystemView: React.FC<{ state: ERPState }> = ({ state }) => 
     };
     setSecurityLogs(prev => [newLog, ...prev]);
     showToast('✓ Master Transaction PIN updated successfully!');
-  };
-
-  // Biometric Handlers
-  const handleEnrollBiometric = async () => {
-    triggerHaptic('heavy');
-    setIsRegisteringBio(true);
-    try {
-      const cred = await registerBiometricCredential({
-        id: state.currentUser.id,
-        email: state.currentUser.email,
-        name: state.currentUser.name
-      });
-      setEnrolledCred(cred);
-      const newLog: SecurityEventLog = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        event: `Fingerprint Passkey Enrolled for ${state.currentUser.email}`,
-        severity: 'SUCCESS',
-        ip: '197.156.78.14',
-        user: state.currentUser.name,
-        location: 'Addis Ababa, ET'
-      };
-      setSecurityLogs(prev => [newLog, ...prev]);
-      showToast('✓ Fingerprint passkey enrolled successfully!');
-    } catch (err) {
-      console.error(err);
-      showToast('⚠️ Biometric enrollment failed or cancelled.');
-    } finally {
-      setIsRegisteringBio(false);
-    }
-  };
-
-  const handleRemoveBiometric = () => {
-    triggerHaptic('warning');
-    removeEnrolledBiometric(state.currentUser.email);
-    setEnrolledCred(null);
-    showToast('Biometric credential removed.');
   };
 
   // Session Management Handlers
@@ -574,7 +519,7 @@ export const SecuritySystemView: React.FC<{ state: ERPState }> = ({ state }) => 
               <span>Security Operations & Threat Shield</span>
             </h1>
             <p className="text-xs text-slate-400 max-w-xl leading-relaxed">
-              Multi-layered financial vault security featuring real-time risk scoring, 2FA TOTP authenticator keys, WebAuthn biometrics, session remote termination, and IP geo-fencing rules.
+              Multi-layered financial vault security featuring real-time risk scoring, 2FA TOTP authenticator keys, Master PIN security, session remote termination, and IP geo-fencing controls.
             </p>
           </div>
 
@@ -644,8 +589,8 @@ export const SecuritySystemView: React.FC<{ state: ERPState }> = ({ state }) => 
               <span>2FA: {is2FAEnabled ? 'Active' : 'Disabled'}</span>
             </span>
             <span className="px-2.5 py-1 rounded-xl bg-slate-800/80 border border-slate-700/80 text-slate-300 font-mono text-[11px] flex items-center gap-1.5">
-              <Fingerprint className="w-3.5 h-3.5 text-amber-400" />
-              <span>Passkeys: {enrolledCred ? 'Enrolled' : 'None'}</span>
+              <Lock className="w-3.5 h-3.5 text-amber-400" />
+              <span>PIN: {securityPin ? 'Armed' : 'Default'}</span>
             </span>
           </div>
 
@@ -667,10 +612,10 @@ export const SecuritySystemView: React.FC<{ state: ERPState }> = ({ state }) => 
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar border-b border-slate-200 dark:border-[#1E2D40]">
         {[
           { id: 'radar' as const, label: 'Threat Radar & Logs', icon: Activity },
+          { id: 'fraud_prevention' as const, label: 'Bank SMS Fraud Prevention', icon: ShieldCheck, active: true },
           { id: 'sessions' as const, label: 'Active Devices', icon: Smartphone, badge: sessions.length },
           { id: '2fa' as const, label: '2FA Authenticator', icon: Key, active: is2FAEnabled },
           { id: 'pin' as const, label: 'Master Transaction PIN', icon: Lock },
-          { id: 'biometrics' as const, label: 'Biometrics & Touch ID', icon: Fingerprint, active: !!enrolledCred },
           { id: 'ip_geofence' as const, label: 'IP Whitelist & Geo', icon: Globe }
         ].map(tab => {
           const Icon = tab.icon;
@@ -702,6 +647,11 @@ export const SecuritySystemView: React.FC<{ state: ERPState }> = ({ state }) => 
           );
         })}
       </div>
+
+      {/* TAB: BANK SMS PAYMENT FRAUD PREVENTION SYSTEM */}
+      {activeTab === 'fraud_prevention' && (
+        <PaymentFraudPreventionView state={state} />
+      )}
 
       {/* TAB 1: THREAT RADAR & SECURITY AUDIT LOG */}
       {activeTab === 'radar' && (
@@ -1120,206 +1070,6 @@ export const SecuritySystemView: React.FC<{ state: ERPState }> = ({ state }) => 
         </div>
       )}
 
-      {/* TAB 5: BIOMETRICS & TOUCH ID (OS-Level BiometricPrompt / iOS LocalAuthentication) */}
-      {activeTab === 'biometrics' && (
-        <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-5 space-y-6 shadow-sm animate-fadeIn">
-          {/* Section Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-[#1E2D40] pb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
-                <Fingerprint className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <span>OS Biometric Authentication</span>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
-                    Android BiometricPrompt • iOS Touch ID
-                  </span>
-                </h3>
-                <p className="text-[11px] text-slate-500 dark:text-[#8899BB]">
-                  App requests the phone's native OS to verify biometrics. The OS checks the sensor and returns only the authentication result.
-                </p>
-              </div>
-            </div>
-
-            <span
-              className={`text-xs font-mono font-bold px-3 py-1 rounded-full border self-start sm:self-auto ${
-                enrolledCred
-                  ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-[#00D4AA] border-emerald-200 dark:border-emerald-800'
-                  : 'bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800'
-              }`}
-            >
-              {enrolledCred ? '✓ OS Sensor Enrolled' : 'Ready to Enroll'}
-            </span>
-          </div>
-
-          {/* Architectural 4-Step Flow Explanation */}
-          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1C2333]/70 border border-slate-200 dark:border-[#1E2D40] space-y-3">
-            <h4 className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
-              <Zap className="w-4 h-4 text-amber-400" />
-              <span>How OS Biometric Authentication Works</span>
-            </h4>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 pt-1">
-              <div className="p-3 rounded-xl bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] space-y-1">
-                <span className="text-[10px] font-mono font-bold text-indigo-500 dark:text-indigo-400 block">
-                  STEP 1 • REQUEST
-                </span>
-                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  App asks OS to authenticate
-                </p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  App displays “Verify your fingerprint to continue” and calls the OS Biometric API.
-                </p>
-              </div>
-
-              <div className="p-3 rounded-xl bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] space-y-1">
-                <span className="text-[10px] font-mono font-bold text-amber-500 dark:text-amber-400 block">
-                  STEP 2 • SENSOR CHECK
-                </span>
-                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  Phone hardware checks touch
-                </p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  OS compares sensor input against enrolled prints in the device's Secure Enclave.
-                </p>
-              </div>
-
-              <div className="p-3 rounded-xl bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] space-y-1">
-                <span className="text-[10px] font-mono font-bold text-emerald-500 dark:text-emerald-400 block">
-                  STEP 3 • BINARY RESULT
-                </span>
-                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  OS gives only result
-                </p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  ✅ Authentication successful or ❌ Failed/Cancelled. App never reads raw biometric data.
-                </p>
-              </div>
-
-              <div className="p-3 rounded-xl bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] space-y-1">
-                <span className="text-[10px] font-mono font-bold text-cyan-500 dark:text-cyan-400 block">
-                  STEP 4 • EXECUTE ACTION
-                </span>
-                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  App performs action
-                </p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Unlocks app, confirms sensitive transfer, or reveals financial records (with PIN fallback).
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Enrolled Status Card */}
-          {enrolledCred ? (
-            <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider block">
-                    Registered Platform Authenticator
-                  </span>
-                  <p className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-2">
-                    <Smartphone className="w-4 h-4 text-emerald-500" />
-                    <span>{enrolledCred.deviceLabel}</span>
-                  </p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                    Enrolled User: {enrolledCred.userEmail} ({enrolledCred.userName})
-                  </p>
-                </div>
-
-                <button
-                  onClick={handleRemoveBiometric}
-                  className="px-3.5 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-bold text-xs hover:bg-rose-100 cursor-pointer transition-all self-start sm:self-auto"
-                >
-                  Remove Biometric Enrollment
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-600 dark:text-amber-300">
-              No biometric hardware key enrolled for {state.currentUser.email}. Click below to register.
-            </div>
-          )}
-
-          {/* Action Tests: App Unlock, Private Finance, Sensitive Transfer */}
-          <div className="space-y-3 pt-2">
-            <h4 className="text-xs font-extrabold text-slate-900 dark:text-white">
-              Test OS Biometric Authentication Scenarios:
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              <button
-                onClick={() => {
-                  triggerHaptic('medium');
-                  setIsBioModalOpen(true);
-                }}
-                className="p-3 rounded-xl bg-slate-50 dark:bg-[#1C2333] hover:bg-slate-100 dark:hover:bg-[#253047] border border-slate-200 dark:border-[#1E2D40] text-left space-y-1 transition-all cursor-pointer group"
-              >
-                <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-500">
-                  <Lock className="w-4 h-4 text-emerald-500" />
-                  <span>1. Unlock App</span>
-                </div>
-                <p className="text-[10px] text-slate-400">
-                  Prompts OS sensor → Success → Resumes app dashboard.
-                </p>
-              </button>
-
-              <button
-                onClick={() => {
-                  triggerHaptic('medium');
-                  setIsBioModalOpen(true);
-                }}
-                className="p-3 rounded-xl bg-slate-50 dark:bg-[#1C2333] hover:bg-slate-100 dark:hover:bg-[#253047] border border-slate-200 dark:border-[#1E2D40] text-left space-y-1 transition-all cursor-pointer group"
-              >
-                <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-indigo-500">
-                  <Eye className="w-4 h-4 text-indigo-500" />
-                  <span>2. Private Financial Info</span>
-                </div>
-                <p className="text-[10px] text-slate-400">
-                  Prompts OS sensor → Success → Reveals confidential balances.
-                </p>
-              </button>
-
-              <button
-                onClick={() => {
-                  triggerHaptic('medium');
-                  setIsBioModalOpen(true);
-                }}
-                className="p-3 rounded-xl bg-slate-50 dark:bg-[#1C2333] hover:bg-slate-100 dark:hover:bg-[#253047] border border-slate-200 dark:border-[#1E2D40] text-left space-y-1 transition-all cursor-pointer group"
-              >
-                <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-amber-500">
-                  <Send className="w-4 h-4 text-amber-500" />
-                  <span>3. Authorize Transfer</span>
-                </div>
-                <p className="text-[10px] text-slate-400">
-                  Prompts OS sensor → Success → Authorizes high-value payout.
-                </p>
-              </button>
-            </div>
-          </div>
-
-          {/* Primary Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2.5 pt-2">
-            <button
-              onClick={handleEnrollBiometric}
-              disabled={isRegisteringBio}
-              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-md cursor-pointer transition-all"
-            >
-              <Fingerprint className="w-4 h-4" />
-              <span>{isRegisteringBio ? 'Connecting to OS...' : 'Re-Enroll OS Biometrics'}</span>
-            </button>
-
-            <button
-              onClick={() => setIsBioModalOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-[#1C2333] text-white dark:text-slate-200 font-extrabold text-xs flex items-center gap-2 hover:bg-slate-800 cursor-pointer transition-all border border-slate-700 dark:border-[#2A3B53]"
-            >
-              <Sparkles className="w-4 h-4 text-emerald-400" />
-              <span>Trigger OS Biometric Prompt</span>
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* TAB 6: IP WHITELISTING & GEO-FENCING */}
       {activeTab === 'ip_geofence' && (
         <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-5 space-y-4 shadow-sm animate-fadeIn">
@@ -1330,7 +1080,7 @@ export const SecuritySystemView: React.FC<{ state: ERPState }> = ({ state }) => 
               </div>
               <div>
                 <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
-                  IP Address Whitelisting & Branch Network Rules
+                  IP Address Whitelisting & Branch Network Controls
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-[#8899BB]">
                   Restrict partner or cashier access strictly to authorized corporate IP subnet CIDRs
@@ -1344,7 +1094,7 @@ export const SecuritySystemView: React.FC<{ state: ERPState }> = ({ state }) => 
                 setEnforceIpRestriction(!enforceIpRestriction);
                 showToast(
                   !enforceIpRestriction
-                    ? '✓ Enforcing IP restriction rules.'
+                    ? '✓ Enforcing IP restrictions.'
                     : 'IP restriction disarmed.'
                 );
               }}
@@ -1399,18 +1149,6 @@ export const SecuritySystemView: React.FC<{ state: ERPState }> = ({ state }) => 
           </div>
         </div>
       )}
-
-      {/* Fingerprint Testing Modal */}
-      <FingerprintModal
-        isOpen={isBioModalOpen}
-        onClose={() => setIsBioModalOpen(false)}
-        userEmail={state.currentUser.email}
-        userName={state.currentUser.name}
-        onSuccess={email => {
-          showToast(`✓ Biometric verified for ${email}!`);
-        }}
-        mode="LOGIN"
-      />
     </div>
   );
 };

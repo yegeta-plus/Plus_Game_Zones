@@ -1,5 +1,10 @@
 import { Transaction, Transfer, Receivable, Loan, Equb, Asset } from '../types';
 import { CANONICAL_PDF_TRANSACTIONS } from './canonicalPdfTransactions';
+import {
+  NEW_AUGUST_SEPTEMBER_TRANSACTIONS,
+  NEW_SEPTEMBER_TRANSFERS,
+  NEW_SEPTEMBER_RECEIVABLES
+} from './newAugustSeptemberTransactions';
 
 export interface DatasetResult {
   openingBalances: {
@@ -31,11 +36,13 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
       contributionPerRound: 5000,
       mySlots: 1,
       interval: 'EVERY_10_DAYS',
-      currentRound: 21,
+      currentRound: 24,
+      completedRounds: 23,
       totalRounds: 27,
       startDate: '2026-06-01T00:00:00.000Z',
       computedEndingDate: '2026-10-30T00:00:00.000Z',
       status: 'ACTIVE',
+      isOverdue: true,
       walletId: 'w-cash',
       payoutsClaimed: 1
     },
@@ -47,75 +54,40 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
       mySlots: 1,
       interval: 'MONTHLY',
       currentRound: 10,
+      completedRounds: 10,
       totalRounds: 10,
       startDate: '2026-01-01T00:00:00.000Z',
       computedEndingDate: '2026-07-27T00:00:00.000Z',
       status: 'COMPLETED',
+      isOverdue: false,
       walletId: 'w-cash',
       payoutsClaimed: 1
     }
   ],
   loans: [
-    // 4 Active / Outstanding
+    // 1. Hermi (Active, One-time, Due 2026-10-30, Rem: 15,000 ETB)
     {
       id: 'loan-hermi',
       title: 'Hermi',
       counterparty: 'Hermi',
       type: 'FRIEND_FAMILY',
       direction: 'BORROWED',
+      repaymentType: 'ONE_TIME',
       initialAmount: 15000,
       outstandingBalance: 15000,
-      dueDate: '2026-09-05T00:00:00.000Z',
+      dueDate: '2026-10-30T00:00:00.000Z',
       walletId: 'w-cash',
       status: 'ACTIVE',
       payments: []
     },
-    {
-      id: 'loan-zeru-3',
-      title: 'Zerubabel 3',
-      counterparty: 'Zerubabel',
-      type: 'FRIEND_FAMILY',
-      direction: 'BORROWED',
-      initialAmount: 1500,
-      outstandingBalance: 1500,
-      dueDate: '2026-08-19T00:00:00.000Z',
-      walletId: 'w-telebirr',
-      status: 'ACTIVE',
-      payments: []
-    },
-    {
-      id: 'loan-zeru-2',
-      title: 'Zerubabel 2',
-      counterparty: 'Zerubabel',
-      type: 'FRIEND_FAMILY',
-      direction: 'BORROWED',
-      initialAmount: 25500,
-      outstandingBalance: 25500,
-      dueDate: '2026-08-27T00:00:00.000Z',
-      walletId: 'w-cash',
-      status: 'ACTIVE',
-      payments: []
-    },
-    {
-      id: 'loan-gg',
-      title: 'Gg',
-      counterparty: 'Gg',
-      type: 'FRIEND_FAMILY',
-      direction: 'BORROWED',
-      initialAmount: 25500,
-      outstandingBalance: 25500,
-      dueDate: '2026-09-20T00:00:00.000Z',
-      walletId: 'w-cash',
-      status: 'ACTIVE',
-      payments: []
-    },
-    // 2 Overdue Outstanding
+    // 2. Zerubabel (Overdue, One-time, Due 2026-08-14, Rem: 27,000 ETB)
     {
       id: 'loan-zeru-1',
       title: 'Zerubabel',
       counterparty: 'Zerubabel',
       type: 'FRIEND_FAMILY',
       direction: 'BORROWED',
+      repaymentType: 'ONE_TIME',
       initialAmount: 27000,
       outstandingBalance: 27000,
       dueDate: '2026-08-14T00:00:00.000Z',
@@ -123,15 +95,44 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
       status: 'ACTIVE',
       payments: []
     },
+    // 3. Zerubabel 2 (Active, Installment, Due 2026-09-26, Rem: 20,400 ETB)
+    {
+      id: 'loan-zeru-2',
+      title: 'Zerubabel 2',
+      counterparty: 'Zerubabel',
+      type: 'FRIEND_FAMILY',
+      direction: 'BORROWED',
+      repaymentType: 'INSTALLMENT',
+      initialAmount: 25500,
+      outstandingBalance: 20400,
+      monthlyInstallment: 5100,
+      dueDate: '2026-09-26T00:00:00.000Z',
+      walletId: 'w-cash',
+      status: 'ACTIVE',
+      payments: [
+        {
+          id: 'lp-zeru2-1',
+          loanId: 'loan-zeru-2',
+          date: '2026-08-27T12:00:00.000Z',
+          amount: 5100,
+          principal: 5100,
+          interest: 0,
+          walletId: 'w-cash'
+        }
+      ]
+    },
+    // 4. Hermi father (Overdue, Installment, Due 2026-09-05, Rem: 15,000 ETB)
     {
       id: 'loan-hermi-father',
       title: 'Hermi father',
       counterparty: 'Hermi father',
       type: 'FRIEND_FAMILY',
       direction: 'BORROWED',
+      repaymentType: 'INSTALLMENT',
       initialAmount: 50000,
-      outstandingBalance: 30000,
-      dueDate: '2026-08-06T00:00:00.000Z',
+      outstandingBalance: 15000,
+      monthlyInstallment: 5000,
+      dueDate: '2026-09-05T00:00:00.000Z',
       walletId: 'w-cash',
       status: 'ACTIVE',
       payments: [
@@ -152,58 +153,76 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
           principal: 5000,
           interest: 0,
           walletId: 'w-cash'
+        },
+        {
+          id: 'lp-hf-3',
+          loanId: 'loan-hermi-father',
+          date: '2026-08-25T12:00:00.000Z',
+          amount: 15000,
+          principal: 15000,
+          interest: 0,
+          walletId: 'w-cash'
         }
       ]
     },
-    // 6 Settled (PAID) Loans
+    // 5. Gg (Active, One-time, Due 2026-09-20, Rem: 25,500 ETB)
     {
-      id: 'loan-zeru-settled-1200',
-      title: 'Zerubabel (1,200)',
+      id: 'loan-gg',
+      title: 'Gg',
+      counterparty: 'Gg',
+      type: 'FRIEND_FAMILY',
+      direction: 'BORROWED',
+      repaymentType: 'ONE_TIME',
+      initialAmount: 25500,
+      outstandingBalance: 25500,
+      dueDate: '2026-09-20T00:00:00.000Z',
+      walletId: 'w-cash',
+      status: 'ACTIVE',
+      payments: []
+    },
+    // 6. Zerubabel 3 (Settled, One-time, Due 2026-08-19, Rem: 0 ETB)
+    {
+      id: 'loan-zeru-3',
+      title: 'Zerubabel 3',
       counterparty: 'Zerubabel',
       type: 'FRIEND_FAMILY',
       direction: 'BORROWED',
-      initialAmount: 1200,
+      repaymentType: 'ONE_TIME',
+      initialAmount: 1500,
       outstandingBalance: 0,
-      dueDate: '2026-07-20T00:00:00.000Z',
-      walletId: 'w-cash',
+      dueDate: '2026-08-19T00:00:00.000Z',
+      walletId: 'w-telebirr',
       status: 'PAID',
       payments: [
         {
-          id: 'lp-zs-1',
-          loanId: 'loan-zeru-settled-1200',
-          date: '2026-07-16T12:00:00.000Z',
-          amount: 200,
-          principal: 200,
+          id: 'lp-zeru3-1',
+          loanId: 'loan-zeru-3',
+          date: '2026-08-19T12:00:00.000Z',
+          amount: 1500,
+          principal: 1500,
           interest: 0,
-          walletId: 'w-cash'
-        },
-        {
-          id: 'lp-zs-2',
-          loanId: 'loan-zeru-settled-1200',
-          date: '2026-07-18T12:00:00.000Z',
-          amount: 1000,
-          principal: 1000,
-          interest: 0,
-          walletId: 'w-cash'
+          walletId: 'w-telebirr'
         }
       ]
     },
+    // 7. Hermi sister (Settled, One-time, Due 2026-08-01, Rem: 0 ETB)
     {
       id: 'loan-hermi-sister',
       title: 'Hermi sister',
       counterparty: 'Hermi sister',
       type: 'FRIEND_FAMILY',
       direction: 'BORROWED',
+      repaymentType: 'ONE_TIME',
       initialAmount: 5000,
       outstandingBalance: 0,
-      dueDate: '2026-08-05T00:00:00.000Z',
+      dueDate: '2026-08-01T00:00:00.000Z',
       walletId: 'w-cash',
       status: 'PAID',
       payments: [
         {
           id: 'lp-hs-1',
           loanId: 'loan-hermi-sister',
-          date: '2026-08-03T12:00:00.000Z',
+          date: '2026-08-01T12:00:00.000Z',
           amount: 5000,
           principal: 5000,
           interest: 0,
@@ -211,15 +230,17 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
         }
       ]
     },
+    // 8. Gg sister (Settled, Installment, Due 2026-08-21, Rem: 0 ETB)
     {
       id: 'loan-gg-sister-20k',
-      title: 'Gg sister (20,000)',
+      title: 'Gg sister',
       counterparty: 'Gg sister',
       type: 'FRIEND_FAMILY',
       direction: 'BORROWED',
+      repaymentType: 'INSTALLMENT',
       initialAmount: 20000,
       outstandingBalance: 0,
-      dueDate: '2026-07-31T00:00:00.000Z',
+      dueDate: '2026-08-21T00:00:00.000Z',
       walletId: 'w-cash',
       status: 'PAID',
       payments: [
@@ -270,22 +291,24 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
         }
       ]
     },
+    // 9. Leli (Settled, One-time, Due 2026-08-01, Rem: 0 ETB)
     {
       id: 'loan-leli-settled',
-      title: 'Leli (3,000)',
+      title: 'Leli',
       counterparty: 'Leli',
       type: 'FRIEND_FAMILY',
       direction: 'BORROWED',
+      repaymentType: 'ONE_TIME',
       initialAmount: 3000,
       outstandingBalance: 0,
-      dueDate: '2026-08-04T00:00:00.000Z',
+      dueDate: '2026-08-01T00:00:00.000Z',
       walletId: 'w-cash',
       status: 'PAID',
       payments: [
         {
           id: 'lp-leli-1',
           loanId: 'loan-leli-settled',
-          date: '2026-08-03T12:00:00.000Z',
+          date: '2026-08-01T12:00:00.000Z',
           amount: 3000,
           principal: 3000,
           interest: 0,
@@ -293,54 +316,49 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
         }
       ]
     },
+    // 10. Zerubabel (Settled, Installment, Due 2026-07-12, Rem: 0 ETB)
     {
       id: 'loan-zeru-settled-16k',
-      title: 'Zerubabel (16,000)',
+      title: 'Zerubabel',
       counterparty: 'Zerubabel',
       type: 'FRIEND_FAMILY',
       direction: 'BORROWED',
+      repaymentType: 'INSTALLMENT',
       initialAmount: 16000,
       outstandingBalance: 0,
-      dueDate: '2026-07-28T00:00:00.000Z',
+      dueDate: '2026-07-12T00:00:00.000Z',
       walletId: 'w-cash',
       status: 'PAID',
       payments: [
         {
           id: 'lp-zs16-1',
           loanId: 'loan-zeru-settled-16k',
-          date: '2026-07-23T12:00:00.000Z',
-          amount: 11000,
-          principal: 11000,
-          interest: 0,
-          walletId: 'w-cash'
-        },
-        {
-          id: 'lp-zs16-2',
-          loanId: 'loan-zeru-settled-16k',
-          date: '2026-08-07T12:00:00.000Z',
-          amount: 11000,
-          principal: 11000,
+          date: '2026-07-12T12:00:00.000Z',
+          amount: 16000,
+          principal: 16000,
           interest: 0,
           walletId: 'w-cash'
         }
       ]
     },
+    // 11. Gg sister 2 (Settled, One-time, Due 2026-08-10, Rem: 0 ETB)
     {
       id: 'loan-gg-sister-9k',
-      title: 'Gg sister 2 (9,000)',
+      title: 'Gg sister 2',
       counterparty: 'Gg sister 2',
       type: 'FRIEND_FAMILY',
       direction: 'BORROWED',
+      repaymentType: 'ONE_TIME',
       initialAmount: 9000,
       outstandingBalance: 0,
-      dueDate: '2026-08-15T00:00:00.000Z',
+      dueDate: '2026-08-10T00:00:00.000Z',
       walletId: 'w-cash',
       status: 'PAID',
       payments: [
         {
           id: 'lp-ggs2-1',
           loanId: 'loan-gg-sister-9k',
-          date: '2026-08-13T12:30:00.000Z',
+          date: '2026-08-10T12:30:00.000Z',
           amount: 1501,
           principal: 1501,
           interest: 0,
@@ -349,9 +367,43 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
         {
           id: 'lp-ggs2-2',
           loanId: 'loan-gg-sister-9k',
-          date: '2026-08-13T13:00:00.000Z',
+          date: '2026-08-10T13:00:00.000Z',
           amount: 7499,
           principal: 7499,
+          interest: 0,
+          walletId: 'w-cash'
+        }
+      ]
+    },
+    // 12. Zerubabel (Settled, One-time, Due 2026-07-11, Rem: 0 ETB)
+    {
+      id: 'loan-zeru-settled-1200',
+      title: 'Zerubabel',
+      counterparty: 'Zerubabel',
+      type: 'FRIEND_FAMILY',
+      direction: 'BORROWED',
+      repaymentType: 'ONE_TIME',
+      initialAmount: 1200,
+      outstandingBalance: 0,
+      dueDate: '2026-07-11T00:00:00.000Z',
+      walletId: 'w-cash',
+      status: 'PAID',
+      payments: [
+        {
+          id: 'lp-zs-1',
+          loanId: 'loan-zeru-settled-1200',
+          date: '2026-07-11T12:00:00.000Z',
+          amount: 200,
+          principal: 200,
+          interest: 0,
+          walletId: 'w-cash'
+        },
+        {
+          id: 'lp-zs-2',
+          loanId: 'loan-zeru-settled-1200',
+          date: '2026-07-11T12:00:00.000Z',
+          amount: 1000,
+          principal: 1000,
           interest: 0,
           walletId: 'w-cash'
         }
@@ -530,7 +582,8 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
       dueDate: '2026-08-22T12:00:00.000Z',
       status: 'OUTSTANDING',
       walletId: 'w-telebirr'
-    }
+    },
+    ...NEW_SEPTEMBER_RECEIVABLES
   ],
   transfers: [
     {
@@ -602,7 +655,8 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
       reason: 'eBirr digital tax settlement transfer to CBE account',
       creatorId: 'u-1',
       creatorName: 'Yegeta Huawei'
-    }
+    },
+    ...NEW_SEPTEMBER_TRANSFERS
   ],
-  transactions: CANONICAL_PDF_TRANSACTIONS
+  transactions: [...CANONICAL_PDF_TRANSACTIONS, ...NEW_AUGUST_SEPTEMBER_TRANSACTIONS]
 };

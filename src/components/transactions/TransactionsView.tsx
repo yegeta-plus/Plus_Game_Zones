@@ -20,13 +20,32 @@ import {
   FileSpreadsheet,
   Sparkles,
   ArrowRightLeft,
-  FileCheck
+  FileCheck,
+  User,
+  Briefcase,
+  Building2,
+  ShieldCheck,
+  ShieldAlert,
+  Smartphone,
+  Layers
 } from 'lucide-react';
 import { Transaction, Transfer, Receivable, Wallet, Category, UserProfile, TransactionType, ERPState, NavTab } from '../../types';
-import { formatETB, isTransactionEditable, isCreditSaleCollected, parseSummedAmount, computeAllWalletRunningBalances, getRelativeWalletBalancesForTx, getRelativeWalletBalancesForTransfer, getWalletNickname } from '../../lib/store';
+import {
+  formatETB,
+  isTransactionEditable,
+  isCreditSaleCollected,
+  parseSummedAmount,
+  computeAllWalletRunningBalances,
+  getRelativeWalletBalancesForTx,
+  getRelativeWalletBalancesForTransfer,
+  getWalletNickname,
+  consolidateEqubSplitTransactions,
+  isEqubContributionTransaction
+} from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 import { generatePDFReport, generateExcelReport } from '../../lib/exports';
 import { formatDateByCalendar } from '../../lib/ethiopianCalendar';
+import { ModernDateInput } from '../common/ModernDateInput';
 
 interface TransactionsViewProps {
   transactions: Transaction[];
@@ -45,10 +64,10 @@ interface TransactionsViewProps {
     category: string;
     description: string;
     walletId: string;
+    expenseScope?: 'BUSINESS' | 'PERSONAL';
   }) => void;
   onDeleteTransaction?: (txId: string) => void;
   onClearAllTransactions?: () => void;
-  onRestoreTransactions?: () => void;
   users?: UserProfile[];
   onRequestApproval?: (req: Omit<import('../../types').AdminApprovalRequest, 'id' | 'createdAt' | 'requestedBy' | 'requestedByName' | 'status'>) => void;
   onNavigateTab?: (tab: NavTab, subView?: string) => void;
@@ -63,12 +82,11 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   currentUser,
   users = [],
   hideBalances,
-  calendarType = 'ETHIOPIAN',
+  calendarType = 'GREGORIAN',
   onReverseTransaction,
   onUpdateTransaction,
   onDeleteTransaction,
   onClearAllTransactions,
-  onRestoreTransactions,
   onRequestApproval,
   onNavigateTab
 }) => {
@@ -76,11 +94,11 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   const [selectedWalletId, setSelectedWalletId] = useState('ALL');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [selectedType, setSelectedType] = useState<'ALL' | 'INCOME' | 'EXPENSE' | 'CREDIT_SALE'>('ALL');
+  const [selectedScope, setSelectedScope] = useState<'ALL' | 'BUSINESS' | 'PERSONAL'>('ALL');
   const [activeTxDetail, setActiveTxDetail] = useState<Transaction | null>(null);
   const [activeCreditSaleDetail, setActiveCreditSaleDetail] = useState<Receivable | null>(null);
   const [confirmReversalTxId, setConfirmReversalTxId] = useState<string | null>(null);
   const [confirmDeleteTxId, setConfirmDeleteTxId] = useState<string | null>(null);
-  const [showConfirmClearAll, setShowConfirmClearAll] = useState(false);
 
   // Edit modal state
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
@@ -90,7 +108,8 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     type: 'INCOME' as TransactionType,
     category: '',
     description: '',
-    walletId: ''
+    walletId: '',
+    expenseScope: 'BUSINESS' as 'BUSINESS' | 'PERSONAL'
   });
 
   const handleOpenEdit = (tx: Transaction) => {
@@ -106,13 +125,18 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       formattedDate = tx.date;
     }
 
+    const defaultScope = tx.type === 'EXPENSE'
+      ? (tx.expenseScope || 'BUSINESS')
+      : 'BUSINESS';
+
     setEditForm({
       date: formattedDate,
       amount: tx.amount.toString(),
       type: tx.type,
       category: tx.category,
       description: tx.description,
-      walletId: tx.walletId
+      walletId: tx.walletId,
+      expenseScope: defaultScope
     });
     setEditingTx(tx);
   };
@@ -133,6 +157,10 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       isoDate = editingTx.date;
     }
 
+    const finalScope = editForm.type === 'EXPENSE'
+      ? (editForm.expenseScope || 'BUSINESS')
+      : undefined;
+
     const isOld = !isTransactionEditable(editingTx.date);
     const activeOtherUsers = (users || []).filter(u => u.id !== currentUser.id && u.active !== false);
     const hasOtherUsers = activeOtherUsers.length > 0;
@@ -149,7 +177,8 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
           type: editForm.type,
           category: editForm.category || 'General',
           description: editForm.description,
-          walletId: editForm.walletId
+          walletId: editForm.walletId,
+          expenseScope: finalScope
         }
       });
       setEditingTx(null);
@@ -163,7 +192,8 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       type: editForm.type,
       category: editForm.category || 'General',
       description: editForm.description,
-      walletId: editForm.walletId
+      walletId: editForm.walletId,
+      expenseScope: finalScope
     });
 
     setEditingTx(null);
@@ -173,13 +203,12 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   const handleConfirmDelete = () => {
     if (confirmDeleteTxId) {
       triggerHaptic('warning');
-      const targetTx = transactions.find(t => t.id === confirmDeleteTxId);
+      const targetTx = consolidatedTransactions.find(t => t.id === confirmDeleteTxId) || transactions.find(t => t.id === confirmDeleteTxId);
       const isOld = targetTx ? !isTransactionEditable(targetTx.date) : false;
       const activeOtherUsers = (users || []).filter(u => u.id !== currentUser.id && u.active !== false);
       const hasOtherUsers = activeOtherUsers.length > 0;
 
-      // SuperAdmin and Admin can delete directly; other roles with old transactions request approval
-      if (currentUser.role !== 'SuperAdmin' && currentUser.role !== 'Admin' && isOld && hasOtherUsers && onRequestApproval) {
+      if ((isOld || currentUser.role === 'Partner' || currentUser.role === 'Viewer') && hasOtherUsers && onRequestApproval) {
         onRequestApproval({
           actionType: 'DELETE_TRANSACTION',
           targetId: confirmDeleteTxId,
@@ -206,9 +235,14 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     | { kind: 'TRANSFER'; id: string; date: string; time: number; transfer: Transfer }
     | { kind: 'CREDIT_SALE'; id: string; date: string; time: number; receivable: Receivable };
 
+  // Consolidate any sibling split Equb entries into unified entries with total amount and split breakdowns
+  const consolidatedTransactions = React.useMemo(() => {
+    return consolidateEqubSplitTransactions(transactions, wallets);
+  }, [transactions, wallets]);
+
   const allLedgerItems: LedgerItem[] = React.useMemo(() => {
     const list: LedgerItem[] = [];
-    transactions.forEach(tx => {
+    consolidatedTransactions.forEach(tx => {
       const timeVal = new Date(tx.date).getTime();
       list.push({
         kind: 'TX',
@@ -242,12 +276,18 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       if (b.time !== a.time) return b.time - a.time;
       return (b.id || '').localeCompare(a.id || '');
     });
-  }, [transactions, transfers, receivables]);
+  }, [consolidatedTransactions, transfers, receivables]);
 
   // Filter ledger items (strictly sorted latest first)
   const filtered = allLedgerItems.filter((item) => {
     if (item.kind === 'TX') {
       const tx = item.tx;
+      if (selectedScope === 'PERSONAL') {
+        if (tx.type !== 'EXPENSE' || tx.expenseScope !== 'PERSONAL') return false;
+      } else if (selectedScope === 'BUSINESS') {
+        if (tx.type === 'EXPENSE' && tx.expenseScope === 'PERSONAL') return false;
+      }
+
       if (searchTerm) {
         const q = searchTerm.toLowerCase();
         const matchDesc = (tx.description || '').toLowerCase().includes(q);
@@ -265,6 +305,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       if (selectedType === 'CREDIT_SALE') return false;
       return true;
     } else if (item.kind === 'TRANSFER') {
+      if (selectedScope === 'PERSONAL') return false;
       const tr = item.transfer;
       if (selectedType !== 'ALL') return false;
       if (selectedCategory !== 'ALL') return false;
@@ -280,9 +321,14 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       }
       return true;
     } else {
+      if (selectedScope === 'PERSONAL') return false;
       const rcv = item.receivable;
       if (selectedType !== 'ALL' && selectedType !== 'CREDIT_SALE') return false;
-      if (selectedWalletId !== 'ALL') return false; // Credit sales do not alter a specific cash wallet until collected
+      // In the main "ALL" transactions feed, if a credit sale is already COLLECTED, the actual income cash transaction
+      // is already present in the ledger. Showing the settled credit note alongside it makes it look like it was registered twice.
+      // All credit sales (both active and settled) can be viewed under the "CREDIT SALES" tab.
+      if (selectedType === 'ALL' && rcv.status === 'COLLECTED') return false;
+      if (selectedWalletId !== 'ALL' && rcv.walletId !== selectedWalletId) return false;
       if (searchTerm) {
         const q = searchTerm.toLowerCase();
         const matchName = (rcv.customerName || '').toLowerCase().includes(q);
@@ -307,12 +353,12 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
   // Compute all relative wallet running balances chronologically
   const allWalletRunningBalancesMap = React.useMemo(() => {
-    return computeAllWalletRunningBalances(wallets, transactions, transfers);
-  }, [transactions, transfers, wallets]);
+    return computeAllWalletRunningBalances(wallets, consolidatedTransactions, transfers);
+  }, [consolidatedTransactions, transfers, wallets]);
 
   const handleConfirmReversal = (txId: string) => {
     triggerHaptic('warning');
-    const targetTx = transactions.find(t => t.id === txId);
+    const targetTx = consolidatedTransactions.find(t => t.id === txId);
     
     // If current user is Partner/Viewer or non-SuperAdmin requesting reversal on locked tx
     if ((currentUser.role === 'Partner' || currentUser.role === 'Viewer') && onRequestApproval) {
@@ -410,36 +456,6 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
             <FileSpreadsheet className="w-3.5 h-3.5" />
             <span>Export xlsx</span>
           </button>
-
-          {onRestoreTransactions && (currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('medium');
-                onRestoreTransactions();
-              }}
-              className="px-2.5 py-1.5 rounded-xl bg-teal-50 hover:bg-teal-100 dark:bg-[#00D4AA]/10 dark:hover:bg-[#00D4AA]/20 text-teal-700 dark:text-[#00D4AA] font-bold text-xs flex items-center gap-1 border border-teal-200 dark:border-[#00D4AA]/30 cursor-pointer transition-all active:scale-95"
-              title="Restore canonical official PDF ledger transactions"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Restore Ledger</span>
-            </button>
-          )}
-
-          {onClearAllTransactions && (currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && transactions.length > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('warning');
-                setShowConfirmClearAll(true);
-              }}
-              className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-[#1A2234] dark:hover:bg-rose-950/40 text-slate-600 dark:text-[#8899BB] hover:text-rose-600 dark:hover:text-rose-400 font-medium text-xs flex items-center gap-1 border border-slate-200 dark:border-[#2A3548] cursor-pointer transition-all active:scale-95"
-              title="Clear all transactions from ledger"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Clear Ledger</span>
-            </button>
-          )}
         </div>
       </div>
 
@@ -515,32 +531,26 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
             ))}
           </select>
 
+          {/* Scope Filter: All vs Business vs Personal */}
+          <select
+            value={selectedScope}
+            onChange={(e) => setSelectedScope(e.target.value as any)}
+            className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-[#8899BB] outline-none shrink-0 cursor-pointer"
+          >
+            <option value="ALL">All Scopes</option>
+            <option value="BUSINESS">🏢 Business</option>
+            <option value="PERSONAL">👤 Personal</option>
+          </select>
+
         </div>
       </div>
 
       {/* Grouped Transactions List */}
       {Object.keys(grouped).length === 0 ? (
-        <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-8 text-center text-slate-500 dark:text-[#8899BB] space-y-3 shadow-sm">
+        <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-8 text-center text-slate-500 dark:text-[#8899BB] space-y-2 shadow-sm">
           <AlertCircle className="w-8 h-8 mx-auto text-slate-300 dark:text-[#8899BB]/50" />
-          <div>
-            <p className="text-xs font-bold text-slate-800 dark:text-[#F0F4FF]">No matching ledger entries</p>
-            <p className="text-[11px] mt-0.5">Try clearing search or filters, or restore the canonical official transactions ledger.</p>
-          </div>
-          {onRestoreTransactions && (
-            <div className="pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('success');
-                  onRestoreTransactions();
-                }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 dark:bg-[#00D4AA] text-white dark:text-[#0A0E1A] text-xs font-bold rounded-xl shadow-md hover:brightness-110 active:scale-95 transition-all cursor-pointer"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Restore Canonical Transactions</span>
-              </button>
-            </div>
-          )}
+          <p className="text-xs font-bold text-slate-800 dark:text-[#F0F4FF]">No matching ledger entries</p>
+          <p className="text-[11px]">Try clearing search or filters to see all transactions.</p>
         </div>
       ) : (
         Object.entries(grouped)
@@ -602,7 +612,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                           }}
                           className={`p-3.5 flex items-center justify-between cursor-pointer transition-colors ${
                             isSettled
-                              ? 'bg-purple-50/30 dark:bg-purple-950/20 hover:bg-purple-50/70 dark:hover:bg-purple-950/35 border-l-4 border-l-purple-500 dark:border-l-purple-400'
+                              ? 'bg-purple-50/40 dark:bg-purple-950/25 hover:bg-purple-50/70 dark:hover:bg-purple-950/40 border-l-4 border-l-purple-600 dark:border-l-purple-400'
                               : 'bg-blue-50/25 dark:bg-blue-950/10 hover:bg-blue-50/70 dark:hover:bg-blue-950/25 border-l-2 border-l-blue-500 dark:border-l-blue-400'
                           }`}
                         >
@@ -655,7 +665,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                                 </span>
                                 <span>•</span>
                                 <span className="text-slate-600 dark:text-slate-300 font-medium bg-slate-100 dark:bg-[#1C2333] px-1.5 py-0.2 rounded">
-                                  💼 Wallet: {creditTargetWallet?.name || 'Main Cash Drawer'}
+                                  💼 Wallet: {creditTargetWallet?.name || (wallets.find(w => w.isDefault)?.name || wallets[0]?.name || 'Main Cash Drawer')}
                                 </span>
                               </p>
                             </div>
@@ -776,7 +786,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                           tx.reversed
                             ? 'opacity-50 line-through hover:bg-slate-50 dark:hover:bg-[#1C2333]/70'
                             : isCreditCollected
-                            ? 'bg-purple-50/20 dark:bg-purple-950/15 hover:bg-purple-50/50 dark:hover:bg-purple-950/30 border-l-4 border-l-purple-500 dark:border-l-purple-400'
+                            ? 'bg-purple-50/30 dark:bg-purple-950/20 hover:bg-purple-50/60 dark:hover:bg-purple-950/35 border-l-4 border-l-purple-600 dark:border-l-purple-400'
                             : 'hover:bg-slate-50 dark:hover:bg-[#1C2333]/70'
                         }`}
                       >
@@ -800,27 +810,39 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <p className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF] line-clamp-1">{tx.description}</p>
+                              {tx.source === 'auto_sms_confirmation' && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded border shrink-0 flex items-center gap-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30">
+                                  <ShieldCheck className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                                  <span>SMS Confirmed ({tx.provider?.toUpperCase()})</span>
+                                  {tx.entries && tx.entries.length > 0 && (
+                                    <span className="ml-0.5 font-mono text-[8px] bg-emerald-200/70 dark:bg-emerald-800/60 px-1 rounded-full">{tx.entries.length}</span>
+                                  )}
+                                </span>
+                              )}
+                              {tx.type === 'EXPENSE' && (
+                                <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border shrink-0 flex items-center gap-0.5 ${
+                                  tx.expenseScope === 'PERSONAL'
+                                    ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-500/30'
+                                    : 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30'
+                                }`}>
+                                  {tx.expenseScope === 'PERSONAL' ? '👤 Personal' : '🏢 Business'}
+                                </span>
+                              )}
                               {isCreditCollected && (
                                 <span className="text-[9px] bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0 font-bold">
                                   <CheckCircle2 className="w-2.5 h-2.5" />
-                                  Credit Collected
+                                  Daily Income / Collected
                                 </span>
                               )}
-                              {!isTransactionEditable(tx.date) && !tx.reversed && (
-                                currentUser.role === 'SuperAdmin' ? (
-                                  <span title="SuperAdmin can edit/delete backdated transactions" className="text-[9px] bg-purple-100 text-purple-800 dark:bg-purple-500/15 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0 font-bold">
-                                    ⚡ SuperAdmin
-                                  </span>
-                                ) : (
-                                  <span title="Can't be edited: older than 1 week" className="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0 font-medium">
-                                    <Lock className="w-2.5 h-2.5" />
-                                    <span className="hidden xs:inline">Locked</span>
-                                  </span>
-                                )
+                              {!isTransactionEditable(tx.date) && !tx.reversed && currentUser.role !== 'SuperAdmin' && currentUser.role !== 'Admin' && (
+                                <span title="Can't be edited: older than 1 week" className="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0 font-medium">
+                                  <Lock className="w-2.5 h-2.5" />
+                                  <span className="hidden xs:inline">Locked</span>
+                                </span>
                               )}
                             </div>
                             <p className="text-[10px] text-slate-500 dark:text-[#8899BB] flex items-center gap-1 mt-0.5 flex-wrap">
-                              <span className={isCreditCollected ? "text-purple-700 dark:text-purple-300 font-semibold" : ""}>{tx.category}</span>
+                              <span className={isCreditCollected ? "text-purple-700 dark:text-purple-300 font-medium" : ""}>{tx.category}</span>
                               <span>•</span>
                               {tx.splits && tx.splits.length > 1 ? (
                                 <span className="text-purple-600 dark:text-purple-400 font-bold bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.2 rounded border border-purple-200 dark:border-purple-800/40 text-[9px]">
@@ -843,7 +865,11 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                               ? 'text-emerald-600 dark:text-emerald-400'
                               : 'text-rose-600 dark:text-red-400'
                           }`}>
-                            {isIncome ? '+' : '-'}{hideBalances ? '••••••' : formatETB(Math.abs(tx.amount))}
+                            {isIncome ? '+' : '-'}{hideBalances ? '••••••' : formatETB(Math.abs(
+                              (tx.splits && tx.splits.length > 1)
+                                ? tx.splits.reduce((sum, s) => sum + Math.abs(s.amount), 0)
+                                : tx.amount
+                            ))}
                           </p>
 
                           {/* Relative wallet balance(s) after transaction */}
@@ -908,37 +934,127 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
               <div className="mt-4 space-y-3">
                 <div className={`text-center py-3 rounded-2xl border relative ${
                   isDetailCreditCollected
-                    ? 'bg-purple-50/30 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800/50'
+                    ? 'bg-purple-50/40 dark:bg-purple-950/25 border-purple-200 dark:border-purple-800/50'
                     : 'bg-slate-50 dark:bg-[#0A0E1A] border-slate-200 dark:border-[#1E2D40]'
                 }`}>
                   <div className="flex items-center justify-center gap-1.5 mb-0.5">
                     <p className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono uppercase">{activeTxDetail.type}</p>
                     {isDetailCreditCollected && (
                       <span className="text-[9px] bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300 font-bold px-1.5 py-0.2 rounded border border-purple-200 dark:border-purple-500/30 flex items-center gap-0.5">
-                        <CheckCircle2 className="w-2.5 h-2.5" /> Credit Sale Collected
+                        <CheckCircle2 className="w-2.5 h-2.5" /> Daily Income / Collected
                       </span>
                     )}
                   </div>
                   <p className={`text-2xl font-black font-mono ${
                     isDetailCreditCollected
-                      ? 'text-purple-600 dark:text-purple-400 font-black'
+                      ? 'text-purple-600 dark:text-purple-400'
                       : activeTxDetail.type === 'INCOME'
                       ? 'text-emerald-600 dark:text-emerald-400'
                       : 'text-rose-600 dark:text-red-400'
                   }`}>
-                    {activeTxDetail.type === 'INCOME' ? '+' : '-'}{formatETB(Math.abs(activeTxDetail.amount))}
+                    {activeTxDetail.type === 'INCOME' ? '+' : '-'}{formatETB(Math.abs(
+                      (activeTxDetail.splits && activeTxDetail.splits.length > 1)
+                        ? activeTxDetail.splits.reduce((sum, s) => sum + Math.abs(s.amount), 0)
+                        : activeTxDetail.amount
+                    ))}
                   </p>
                   <p className="text-xs text-slate-800 dark:text-[#F0F4FF] font-medium mt-1">{activeTxDetail.description}</p>
                 </div>
+
+                {/* Combined Split Wallet Breakdown */}
+                {activeTxDetail.splits && activeTxDetail.splits.length > 1 && (() => {
+                  const splitsTotal = activeTxDetail.splits.reduce((sum, s) => sum + Math.abs(s.amount), 0) || activeTxDetail.amount;
+                  return (
+                    <div className="bg-purple-50/70 dark:bg-[#1A182E] border border-purple-200 dark:border-purple-800/60 rounded-2xl p-3.5 space-y-3 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-xl bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center text-purple-600 dark:text-purple-400">
+                            <Layers className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                              Split Wallet Payment
+                            </h4>
+                            <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">
+                              Multi-source deduction across {activeTxDetail.splits.length} funding wallets
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-mono font-black text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/60 px-2 py-0.5 rounded-md border border-purple-200 dark:border-purple-700/50">
+                          {activeTxDetail.splits.length} Wallets
+                        </span>
+                      </div>
+
+                      {/* Proportional Split Bar */}
+                      <div className="space-y-1">
+                        <div className="h-2 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden flex shadow-inner">
+                          {activeTxDetail.splits.map((s, idx) => {
+                            const pct = Math.max(2, Math.round((Math.abs(s.amount) / Math.max(1, splitsTotal)) * 100));
+                            const barColors = ['bg-purple-500', 'bg-indigo-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500'];
+                            return (
+                              <div
+                                key={idx}
+                                style={{ width: `${pct}%` }}
+                                className={`${barColors[idx % barColors.length]} h-full transition-all`}
+                                title={`${getWalletNickname(wallets.find(w => w.id === s.walletId)?.name)}: ${pct}%`}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Split Breakdown Rows */}
+                      <div className="space-y-1.5">
+                        {activeTxDetail.splits.map((s, idx) => {
+                          const w = wallets.find(wal => wal.id === s.walletId);
+                          const pct = Math.round((Math.abs(s.amount) / Math.max(1, splitsTotal)) * 100);
+                          const dotColors = ['bg-purple-500', 'bg-indigo-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500'];
+                          return (
+                            <div
+                              key={s.walletId || idx}
+                              className="flex items-center justify-between p-2.5 rounded-xl bg-white dark:bg-[#131926] border border-purple-100 dark:border-[#1E2D40] text-xs shadow-xs"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className={`w-2.5 h-2.5 rounded-full ${dotColors[idx % dotColors.length]} shrink-0`} />
+                                <div>
+                                  <p className="font-bold text-slate-900 dark:text-white leading-tight">
+                                    {w ? w.name : 'Funding Wallet'}
+                                  </p>
+                                  <p className="text-[10px] text-slate-500 dark:text-[#8899BB] flex items-center gap-1">
+                                    <span>{w?.type || 'Account'}</span>
+                                    <span>•</span>
+                                    <span className="font-mono text-purple-600 dark:text-purple-400 font-semibold">{pct}% contribution</span>
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-mono font-extrabold text-rose-600 dark:text-red-400">
+                                  -{formatETB(Math.abs(s.amount))}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1.5 border-t border-purple-200/70 dark:border-purple-800/50 text-xs font-mono">
+                        <span className="text-slate-600 dark:text-[#8899BB] font-medium">Combined Payment Total:</span>
+                        <span className="font-black text-slate-900 dark:text-white">
+                          {formatETB(splitsTotal)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Status Notice about Edit Rule */}
                 {!isWithin7Days && hasOtherUsers && !activeTxDetail.reversed && (
                   <div className="p-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl flex items-start gap-2">
                     <Lock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-xs font-bold text-amber-800 dark:text-amber-400">Past 7-Day Window (2-User Rule Active)</p>
+                      <p className="text-xs font-bold text-amber-800 dark:text-amber-400">Past 7-Day Window (Approval Required)</p>
                       <p className="text-[10px] text-slate-600 dark:text-[#8899BB]">
-                        Because other users exist and this entry is older than 7 days, modifications or deletions will generate an approval request for co-admin review.
+                        Because other users exist and this entry is older than 7 days, modifications or deletions will generate an approval request for review.
                       </p>
                     </div>
                   </div>
@@ -965,6 +1081,63 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                     <span className="text-[10px] text-slate-500 dark:text-[#8899BB]">Branch Location</span>
                     <p className="font-bold text-slate-900 dark:text-white mt-0.5">{activeTxDetail.branch}</p>
                   </div>
+                  {activeTxDetail.type === 'EXPENSE' && (
+                    <div className="bg-slate-50 dark:bg-[#1C2333] p-2.5 rounded-xl border border-slate-100 dark:border-transparent sm:col-span-2 flex items-center justify-between">
+                      <span className="text-[10px] text-slate-500 dark:text-[#8899BB]">Expense Scope</span>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-md flex items-center gap-1 ${
+                        activeTxDetail.expenseScope === 'PERSONAL'
+                          ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30'
+                          : 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30'
+                      }`}>
+                        {activeTxDetail.expenseScope === 'PERSONAL' ? <User className="w-3 h-3" /> : <Briefcase className="w-3 h-3" />}
+                        <span>{activeTxDetail.expenseScope === 'PERSONAL' ? 'Personal Expense' : 'Business Expense'}</span>
+                      </span>
+                    </div>
+                  )}
+                  {activeTxDetail.source === 'auto_sms_confirmation' && (
+                    <div className="bg-emerald-50/70 dark:bg-emerald-950/20 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-500/30 sm:col-span-2 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-emerald-800 dark:text-emerald-400 flex items-center gap-1.5">
+                          <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>Official Bank SMS Confirmed ({activeTxDetail.provider?.toUpperCase()})</span>
+                        </span>
+                        <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-mono font-bold">
+                          Daily Aggregation Active
+                        </span>
+                      </div>
+                      {activeTxDetail.entries && activeTxDetail.entries.length > 0 && (
+                        <div className="space-y-1 pt-1">
+                          <p className="text-[10px] font-bold text-slate-600 dark:text-[#8899BB] uppercase tracking-wider">
+                            Daily Verified Transactions ({activeTxDetail.entries.length})
+                          </p>
+                          <div className="max-h-36 overflow-y-auto space-y-1 pr-0.5">
+                            {activeTxDetail.entries.map((entry, idx) => (
+                              <div key={idx} className="flex items-center justify-between p-1.5 rounded-lg bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] text-[11px]">
+                                <div className="min-w-0 pr-2">
+                                  <div className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate">
+                                    Ref: {entry.reference}
+                                  </div>
+                                  {entry.payerName && (
+                                    <div className="text-[9px] text-slate-500 dark:text-[#8899BB] truncate">
+                                      Payer: {entry.payerName}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <span className="font-mono font-bold text-emerald-600 dark:text-[#00D4AA]">
+                                    +{formatETB(entry.amount)}
+                                  </span>
+                                  <div className="text-[9px] text-slate-400">
+                                    {new Date(entry.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Post-Transaction Relative Wallet Balances */}
@@ -991,7 +1164,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                           <WalletIcon className="w-3.5 h-3.5 text-emerald-600 dark:text-[#00D4AA]" />
                           <span className="font-bold text-slate-900 dark:text-white">{rel.walletName}</span>
                           {rel.amount !== undefined && activeTxDetail.splits && activeTxDetail.splits.length > 1 && (
-                            <span className="text-[10px] text-slate-500 font-mono">({formatETB(rel.amount)})</span>
+                            <span className="text-[10px] text-rose-600 dark:text-rose-400 font-mono font-bold">(-{formatETB(rel.amount)})</span>
                           )}
                         </div>
                         <span className="font-bold font-mono text-emerald-700 dark:text-[#00D4AA]">
@@ -1067,15 +1240,25 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                 <div className="flex justify-between items-center bg-blue-50/50 dark:bg-blue-950/20 p-2.5 rounded-xl border border-blue-200/50 dark:border-blue-900/40">
                   <span className="text-slate-600 dark:text-[#8899BB] flex items-center gap-1.5 font-medium">
                     <WalletIcon className="w-3.5 h-3.5 text-blue-500" />
-                    Target Collection Wallet:
+                    {activeCreditSaleDetail.status === 'COLLECTED' ? 'Collected Deposit Wallet:' : 'Settlement Destination:'}
                   </span>
                   <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1">
-                    {wallets.find(w => w.id === activeCreditSaleDetail.walletId)?.name || 'Main Cash Drawer'}
-                    {wallets.find(w => w.id === activeCreditSaleDetail.walletId)?.type && (
-                      <span className="text-[10px] text-slate-500 font-normal">
-                        ({wallets.find(w => w.id === activeCreditSaleDetail.walletId)?.type})
-                      </span>
-                    )}
+                    {(() => {
+                      if (activeCreditSaleDetail.status === 'COLLECTED' && activeCreditSaleDetail.walletId) {
+                        const tw = wallets.find(w => w.id === activeCreditSaleDetail.walletId);
+                        return (
+                          <>
+                            <span>{tw ? tw.name : 'Wallet'}</span>
+                            {tw?.type && (
+                              <span className="text-[10px] text-slate-500 font-normal">
+                                ({tw.type})
+                              </span>
+                            )}
+                          </>
+                        );
+                      }
+                      return <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">Selected on Collection</span>;
+                    })()}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
@@ -1181,6 +1364,41 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                 </div>
               </div>
 
+              {/* Expense Scope Switcher for Expense editing */}
+              {editForm.type === 'EXPENSE' && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono block">EXPENSE CLASSIFICATION</label>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditForm(prev => ({ ...prev, expenseScope: 'BUSINESS' }))}
+                      className={`py-1.5 px-2 rounded-xl font-bold text-xs border flex items-center justify-center gap-1.5 ${
+                        editForm.expenseScope === 'BUSINESS'
+                          ? 'bg-indigo-600 dark:bg-indigo-500 text-white border-indigo-600 shadow-sm'
+                          : 'bg-slate-50 border-slate-200 dark:bg-[#1C2333] dark:border-[#1E2D40] text-slate-600 dark:text-[#8899BB]'
+                      }`}
+                    >
+                      <Building2 className="w-3.5 h-3.5" />
+                      <span>Business</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditForm(prev => ({ ...prev, expenseScope: 'PERSONAL' }))}
+                      className={`py-1.5 px-2 rounded-xl font-bold text-xs border flex items-center justify-center gap-1.5 ${
+                        editForm.expenseScope === 'PERSONAL'
+                          ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
+                          : 'bg-slate-50 border-slate-200 dark:bg-[#1C2333] dark:border-[#1E2D40] text-slate-600 dark:text-[#8899BB]'
+                      }`}
+                    >
+                      <User className="w-3.5 h-3.5" />
+                      <span>Personal</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Amount */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
@@ -1214,16 +1432,15 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
               </div>
 
               {/* Date & Time */}
-              <div>
-                <label className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono block mb-1">DATE & TIME</label>
-                <input
-                  type="datetime-local"
-                  required
-                  value={editForm.date}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, date: e.target.value }))}
-                  className="w-full bg-slate-50 dark:bg-[#0A0E1A] border border-slate-200 dark:border-[#1E2D40] rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 dark:focus:border-[#00D4AA]"
-                />
-              </div>
+              <ModernDateInput
+                type="datetime-local"
+                required
+                label="Date & Time"
+                value={editForm.date}
+                onChange={(val) => setEditForm(prev => ({ ...prev, date: val }))}
+                accentColor="emerald"
+                helperText="Click anywhere in the box to adjust timestamp"
+              />
 
               {/* Wallet Select */}
               <div>
@@ -1235,7 +1452,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                 >
                   {wallets.map(w => (
                     <option key={w.id} value={w.id}>
-                      {w.name} ({w.currency})
+                      {w.name} ({w.type})
                     </option>
                   ))}
                 </select>
@@ -1288,68 +1505,50 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       )}
 
       {/* Delete Confirmation Dialog */}
-      {confirmDeleteTxId && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/80 flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white dark:bg-[#131926] border border-rose-200 dark:border-red-500/40 max-w-xs w-full p-4 rounded-2xl text-center space-y-3 shadow-xl">
-            <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-700 dark:bg-red-500/20 dark:text-red-400 flex items-center justify-center mx-auto">
-              <Trash2 className="w-5 h-5" />
-            </div>
-            <h4 className="text-sm font-bold text-slate-900 dark:text-white">Delete Ledger Entry?</h4>
-            <p className="text-xs text-slate-500 dark:text-[#8899BB]">
-              Are you sure you want to delete this transaction? This action will remove it from ledger calculation.
-            </p>
-            <div className="flex gap-2 pt-2">
-              <button
-                onClick={() => setConfirmDeleteTxId(null)}
-                className="flex-1 py-2 rounded-xl bg-slate-100 dark:bg-[#1C2333] text-xs font-bold text-slate-600 dark:text-[#8899BB]"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmDelete}
-                className="flex-1 py-2 rounded-xl bg-rose-600 text-xs font-bold text-white hover:bg-rose-700"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {confirmDeleteTxId && (() => {
+        const targetDeleteTx = consolidatedTransactions.find(t => t.id === confirmDeleteTxId) || transactions.find(t => t.id === confirmDeleteTxId);
+        const isEqubContribution = targetDeleteTx ? isEqubContributionTransaction(targetDeleteTx) : false;
 
-      {/* Clear All Transactions Confirmation Dialog */}
-      {showConfirmClearAll && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 dark:bg-black/85 flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white dark:bg-[#131926] border border-rose-200 dark:border-red-500/40 max-w-sm w-full p-5 rounded-2xl text-center space-y-3 shadow-2xl">
-            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-700 dark:bg-red-500/20 dark:text-red-400 flex items-center justify-center mx-auto">
-              <AlertCircle className="w-6 h-6" />
-            </div>
-            <h4 className="text-base font-bold text-slate-900 dark:text-white">Clear All Transactions?</h4>
-            <p className="text-xs text-slate-500 dark:text-[#8899BB] leading-relaxed">
-              This will remove all {transactions.length} transactions from the ledger so you can record your entries cleanly and manually from scratch.
-            </p>
-            <div className="flex gap-2 pt-2">
-              <button
-                onClick={() => setShowConfirmClearAll(false)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] text-xs font-bold text-slate-600 dark:text-[#8899BB] hover:bg-slate-200"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  triggerHaptic('heavy');
-                  if (onClearAllTransactions) {
-                    onClearAllTransactions();
-                  }
-                  setShowConfirmClearAll(false);
-                }}
-                className="flex-1 py-2.5 rounded-xl bg-rose-600 text-xs font-bold text-white hover:bg-rose-700 shadow-md"
-              >
-                Yes, Clear All
-              </button>
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/80 flex items-center justify-center p-4 animate-fadeIn">
+            <div className="bg-white dark:bg-[#131926] border border-rose-200 dark:border-red-500/40 max-w-xs w-full p-4 rounded-2xl text-center space-y-3 shadow-xl">
+              <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-700 dark:bg-red-500/20 dark:text-red-400 flex items-center justify-center mx-auto">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white">Delete Ledger Entry?</h4>
+              <p className="text-xs text-slate-500 dark:text-[#8899BB]">
+                Are you sure you want to delete this transaction? This action will remove it from ledger calculation.
+              </p>
+
+              {isEqubContribution && (
+                <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 text-[11px] text-purple-700 dark:text-purple-300 text-left font-medium space-y-1">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <span>🤝 Equb Circle Sync</span>
+                  </p>
+                  <p className="leading-relaxed">
+                    Deleting this contribution will automatically revert the Equb circle's round number so it can be re-contributed.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => setConfirmDeleteTxId(null)}
+                  className="flex-1 py-2 rounded-xl bg-slate-100 dark:bg-[#1C2333] text-xs font-bold text-slate-600 dark:text-[#8899BB]"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  className="flex-1 py-2 rounded-xl bg-rose-600 text-xs font-bold text-white hover:bg-rose-700"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
     </div>
   );

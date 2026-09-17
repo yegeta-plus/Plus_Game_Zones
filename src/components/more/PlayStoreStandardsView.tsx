@@ -198,7 +198,7 @@ export const PlayStoreStandardsView: React.FC<{ state: ERPState }> = ({ state })
                 </li>
                 <li className="flex items-start gap-2 text-slate-700 dark:text-slate-300">
                   <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                  <span><strong>User Data Protection:</strong> Biometric WebAuthn passkeys and 2FA Master PIN security options.</span>
+                  <span><strong>User Data Protection:</strong> Authenticator 2FA and Master PIN security options.</span>
                 </li>
                 <li className="flex items-start gap-2 text-slate-700 dark:text-slate-300">
                   <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />

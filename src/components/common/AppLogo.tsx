@@ -49,7 +49,7 @@ export const AppLogo: React.FC<AppLogoProps> = ({
   const logoIcon = (
     <div
       onClick={handleClick}
-      className={`relative overflow-hidden border border-emerald-500/30 shadow-md shadow-emerald-500/20 shrink-0 bg-[#0A0E1A] flex items-center justify-center ${sizeClasses} ${className} ${clickable ? 'cursor-pointer hover:scale-105 active:scale-95 transition-transform group' : ''}`}
+      className={`relative overflow-hidden shrink-0 flex items-center justify-center ${sizeClasses} ${className} ${clickable ? 'cursor-pointer hover:scale-105 active:scale-95 transition-transform group' : ''}`}
     >
       {!imgError ? (
         <img
@@ -60,7 +60,7 @@ export const AppLogo: React.FC<AppLogoProps> = ({
           className="w-full h-full object-cover"
         />
       ) : (
-        <div className="w-full h-full bg-gradient-to-br from-[#00D4AA] via-[#0A0E1A] to-[#3B82F6] flex items-center justify-center text-white relative">
+        <div className="w-full h-full bg-slate-900 flex items-center justify-center text-[#00D4AA] relative">
           <Gamepad2 className="w-1/2 h-1/2 text-[#00D4AA]" />
           <span className="absolute bottom-0.5 right-0.5 text-[8px] font-black text-amber-400 bg-black/80 px-1 rounded">PGZ</span>
         </div>

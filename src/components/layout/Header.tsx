@@ -56,7 +56,7 @@ export const Header: React.FC<HeaderProps> = ({
   lastRefreshedAt,
   isRefreshing = false,
   autoRefreshEnabled = true,
-  calendarType = 'ETHIOPIAN',
+  calendarType = 'GREGORIAN',
   onToggleCalendarType,
   onToggleAutoRefresh,
   onManualRefresh,

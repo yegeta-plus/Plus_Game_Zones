@@ -53,7 +53,7 @@ export interface ExternalNotificationOptions {
 }
 
 /**
- * Web Audio API synthesized tones for real-time notifications, chat messages, and biometric feedback
+ * Web Audio API synthesized tones for real-time notifications, chat messages, and authorization feedback
  */
 let audioCtx: AudioContext | null = null;
 
@@ -105,7 +105,7 @@ export function playNotificationSound(type: 'chat' | 'alert' | 'success' | 'scan
       osc.start(now);
       osc.stop(now + 0.4);
     } else if (type === 'scan') {
-      // Futuristic subtle pulse during fingerprint sensor scan
+      // Subtle pulse sound during authentication scan
       osc.type = 'sine';
       osc.frequency.setValueAtTime(440, now);
       osc.frequency.linearRampToValueAtTime(880, now + 0.15);
@@ -114,7 +114,7 @@ export function playNotificationSound(type: 'chat' | 'alert' | 'success' | 'scan
       osc.start(now);
       osc.stop(now + 0.2);
     } else if (type === 'unlock' || type === 'success') {
-      // Uplifting harmonic chord for biometric unlock
+      // Uplifting harmonic chord for authorization unlock
       osc.type = 'sine';
       osc.frequency.setValueAtTime(523.25, now); // C5
       osc.frequency.setValueAtTime(659.25, now + 0.07); // E5

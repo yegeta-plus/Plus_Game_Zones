@@ -37,6 +37,7 @@ import { CategoriesView } from './CategoriesView';
 import { SecuritySystemView } from './SecuritySystemView';
 import { AdvancedFinancialSystem } from './AdvancedFinancialSystem';
 import { PlayStoreStandardsView } from './PlayStoreStandardsView';
+import { PaymentFraudPreventionView } from './PaymentFraudPreventionView';
 import { SettingsView, SettingsTabType } from './SettingsView';
 import { ProfileView } from './ProfileView';
 import { User, Camera, Mail, ShieldCheck, Building2, Smartphone } from 'lucide-react';
@@ -57,11 +58,13 @@ export type SubViewType =
   | 'BACKUP'
   | 'SECURITY'
   | 'FINANCIAL_SYSTEM'
-  | 'PLAY_STORE_STANDARDS';
+  | 'PLAY_STORE_STANDARDS'
+  | 'FRAUD_PREVENTION';
 
 export const normalizeSubView = (raw?: string): SubViewType => {
   if (!raw) return 'HUB';
   const u = raw.toUpperCase();
+  if (u === 'FRAUD' || u === 'FRAUD_PREVENTION' || u === 'SMS_CONFIRMATION' || u === 'PAYMENT_FRAUD') return 'FRAUD_PREVENTION';
   if (u === 'RECEIVABLES' || u === 'RECEIVABLE') return 'RECEIVABLES';
   if (u === 'REPORTS' || u === 'REPORT') return 'REPORTS';
   if (u === 'CALENDAR') return 'CALENDAR';
@@ -83,10 +86,11 @@ export const normalizeSubView = (raw?: string): SubViewType => {
 interface MoreHubViewProps {
   state: ERPState;
   onUpdateState: (fn: (prev: ERPState) => ERPState) => void;
-  onOpenAiAssistant: () => void;
+  onOpenAiAssistant: (prompt?: string, initialMode?: 'chat' | 'simulator') => void;
   onLogout?: () => void;
   initialSubView?: SubViewType;
   onNavigateTab?: (tab: any) => void;
+  onCollectReceivable?: (receivableId: string, walletId: string, amount: number) => void;
 }
 
 export const MoreHubView: React.FC<MoreHubViewProps> = ({
@@ -95,7 +99,8 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
   onOpenAiAssistant,
   onLogout,
   initialSubView,
-  onNavigateTab
+  onNavigateTab,
+  onCollectReceivable
 }) => {
   const [subView, setSubView] = useState<SubViewType>(() => normalizeSubView(initialSubView));
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabType | null>(null);
@@ -151,6 +156,17 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
 
   const operationalTiles = [
     {
+      id: 'SIMULATOR' as any,
+      title: 'Business Decision & Scenario Simulator',
+      subtitle: 'Simulate CapEx, Equb Circles, Branch Expansion, Price Elasticity & 24-Mo Enterprise Valuation',
+      icon: Sliders,
+      color: '#00D4AA',
+      onClick: () => {
+        triggerHaptic('light');
+        onOpenAiAssistant(undefined, 'simulator');
+      }
+    },
+    {
       id: 'FINANCIAL_SYSTEM' as SubViewType,
       title: 'Financial System & Intelligence Hub',
       subtitle: 'Liquidity Matrix, Cash Runway Buffer, Category Budgets & 3-Month Fixed Tax Schedule',
@@ -170,6 +186,17 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
       onClick: () => {
         triggerHaptic('light');
         setSubView('SECURITY');
+      }
+    },
+    {
+      id: 'FRAUD_PREVENTION' as SubViewType,
+      title: 'Payment Fraud Prevention System',
+      subtitle: 'Zero-Trust Telebirr / CBE / E-Birr Bank SMS Verification & Cashier Protection',
+      icon: Shield,
+      color: '#00D4AA',
+      onClick: () => {
+        triggerHaptic('light');
+        setSubView('FRAUD_PREVENTION');
       }
     },
     {
@@ -290,10 +317,11 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
               type="button"
               onClick={() => {
                 triggerHaptic('medium');
+                if (typeof window !== 'undefined') localStorage.setItem('pluszone_calendar_user_choice', 'ETHIOPIAN');
                 onUpdateState(prev => ({ ...prev, calendarType: 'ETHIOPIAN' }));
               }}
               className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
-                (state.calendarType || 'ETHIOPIAN') === 'ETHIOPIAN'
+                state.calendarType === 'ETHIOPIAN'
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
               }`}
@@ -304,10 +332,11 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
               type="button"
               onClick={() => {
                 triggerHaptic('medium');
+                if (typeof window !== 'undefined') localStorage.setItem('pluszone_calendar_user_choice', 'GREGORIAN');
                 onUpdateState(prev => ({ ...prev, calendarType: 'GREGORIAN' }));
               }}
               className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
-                state.calendarType === 'GREGORIAN'
+                (state.calendarType || 'GREGORIAN') === 'GREGORIAN'
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
               }`}
@@ -334,6 +363,10 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
             wallets={state.wallets}
             currentUser={state.currentUser}
             onCollect={(id, wId, amt) => {
+              if (onCollectReceivable) {
+                onCollectReceivable(id, wId, amt);
+                return;
+              }
               onUpdateState(prev => {
                 const target = prev.receivables.find(r => r.id === id);
                 if (!target) return prev;
@@ -357,22 +390,22 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
                 );
 
                 const newTx = {
-                  id: `tx-rcv-${Date.now()}`,
+                  id: `tx-rcv-${id}-${Date.now()}`,
                   date: new Date().toISOString(),
                   type: 'INCOME' as const,
                   amount: amt,
                   walletId: resolvedWalletId,
-                  category: 'Sales Revenue',
-                  description: `Receivable collected: ${target.customerName}${target.description ? ` (${target.description})` : ''}`,
+                  category: 'Daily Income / Collected',
+                  description: `Daily Income / Collected: ${target.customerName}${target.description ? ` (${target.description})` : ''}`,
                   creatorId: prev.currentUser.id,
                   creatorName: prev.currentUser.name,
                   branch: prev.currentUser.branch,
-                  refType: 'RECEIVABLE',
+                  refType: 'RECEIVABLE' as const,
                   refId: id
                 };
 
                 const newAuditLog = {
-                  id: `aud-${Date.now()}`,
+                  id: `aud-${id}-${Date.now()}`,
                   timestamp: new Date().toISOString(),
                   actorId: prev.currentUser.id,
                   actorName: prev.currentUser.name,
@@ -390,16 +423,12 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
                   branch: prev.currentUser.branch
                 };
 
-                const updated = {
+                return {
                   ...prev,
                   receivables: updatedReceivables,
                   transactions: [newTx, ...prev.transactions],
                   auditLogs: [newAuditLog, ...(prev.auditLogs || [])]
                 };
-
-                saveStateToStorage(updated);
-                syncStateToFirebaseNow(updated);
-                return updated;
               });
             }}
             onUpdate={(id, updates) => {
@@ -458,14 +487,15 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
               });
             }}
             onCreate={(data) => {
-              const created: Receivable = {
-                ...data,
-                id: `rcv-${Date.now()}`,
-                amountCollected: 0,
-                status: 'OUTSTANDING',
-                createdDate: new Date().toISOString()
-              };
               onUpdateState(prev => {
+                const created: Receivable = {
+                  ...data,
+                  id: `rcv-${Date.now()}`,
+                  walletId: data.walletId,
+                  amountCollected: 0,
+                  status: 'OUTSTANDING',
+                  createdDate: new Date().toISOString()
+                };
                 const updated = {
                   ...prev,
                   receivables: [created, ...(prev.receivables || [])],
@@ -513,7 +543,19 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
           />
         )}
         {subView === 'ASSETS' && <AssetsView assets={state.assets} wallets={state.wallets} />}
-        {subView === 'GOALS' && <GoalsView goals={state.goals} />}
+        {subView === 'GOALS' && (
+          <GoalsView
+            goals={state.goals || []}
+            onUpdateGoals={(newGoals) => {
+              onUpdateState((prev) => {
+                const updated = { ...prev, goals: newGoals };
+                saveStateToStorage(updated);
+                syncStateToFirebaseNow(updated);
+                return updated;
+              });
+            }}
+          />
+        )}
         {subView === 'AUDIT_LOG' && <AuditLogView auditLogs={state.auditLogs} />}
         {subView === 'CALENDAR' && (
           <CalendarView
@@ -522,8 +564,9 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
             recurring={state.recurring}
             receivables={state.receivables}
             transactions={state.transactions}
-            calendarType={state.calendarType || 'ETHIOPIAN'}
+            calendarType={state.calendarType || 'GREGORIAN'}
             onToggleCalendarType={(type) => {
+              if (typeof window !== 'undefined') localStorage.setItem('pluszone_calendar_user_choice', type);
               onUpdateState(prev => ({ ...prev, calendarType: type }));
             }}
           />
@@ -539,6 +582,9 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
         )}
         {subView === 'PLAY_STORE_STANDARDS' && (
           <PlayStoreStandardsView state={state} />
+        )}
+        {subView === 'FRAUD_PREVENTION' && (
+          <PaymentFraudPreventionView state={state} />
         )}
       </div>
     );
@@ -556,7 +602,7 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
             <div className="flex items-center gap-2">
               <h2 className="text-base font-extrabold text-white">ERP Operations Hub</h2>
               <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full font-mono font-bold border border-indigo-400/30">
-                {(state.calendarType || 'ETHIOPIAN') === 'ETHIOPIAN' ? '🇪🇹 Ethiopian E.C.' : '🌐 Gregorian G.C.'}
+                {(state.calendarType || 'GREGORIAN') === 'GREGORIAN' ? '🌐 Gregorian G.C.' : '🇪🇹 Ethiopian E.C.'}
               </span>
             </div>
             <p className="text-xs text-slate-300 mt-0.5">Active Calendar System for Equbs, Obligations & Statements</p>
@@ -569,10 +615,11 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
             type="button"
             onClick={() => {
               triggerHaptic('medium');
+              if (typeof window !== 'undefined') localStorage.setItem('pluszone_calendar_user_choice', 'ETHIOPIAN');
               onUpdateState(prev => ({ ...prev, calendarType: 'ETHIOPIAN' }));
             }}
             className={`px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
-              (state.calendarType || 'ETHIOPIAN') === 'ETHIOPIAN'
+              state.calendarType === 'ETHIOPIAN'
                 ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md border border-emerald-400/40'
                 : 'text-slate-400 hover:text-white'
             }`}
@@ -584,10 +631,11 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
             type="button"
             onClick={() => {
               triggerHaptic('medium');
+              if (typeof window !== 'undefined') localStorage.setItem('pluszone_calendar_user_choice', 'GREGORIAN');
               onUpdateState(prev => ({ ...prev, calendarType: 'GREGORIAN' }));
             }}
             className={`px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
-              state.calendarType === 'GREGORIAN'
+              (state.calendarType || 'GREGORIAN') === 'GREGORIAN'
                 ? 'bg-indigo-600 text-white shadow-md border border-indigo-400/40'
                 : 'text-slate-400 hover:text-white'
             }`}
@@ -698,18 +746,27 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
           triggerHaptic('medium');
           onOpenAiAssistant();
         }}
-        className="p-4 rounded-2xl bg-gradient-to-r from-[#00D4AA]/15 via-[#3B82F6]/15 to-[#A78BFA]/15 border border-[#00D4AA]/30 flex items-center justify-between cursor-pointer hover:border-[#00D4AA]/60 transition-all shadow-sm"
+        className="p-4 rounded-2xl bg-gradient-to-r from-[#00D4AA]/15 via-[#3B82F6]/15 to-[#A78BFA]/15 border border-[#00D4AA]/35 hover:border-[#00D4AA]/70 flex items-center justify-between cursor-pointer transition-all shadow-sm group"
       >
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-[#00D4AA]/20 text-[#00D4AA] flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-[#00D4AA]/20 text-[#00D4AA] flex items-center justify-center group-hover:scale-105 transition-transform shadow-xs">
             <Sparkles className="w-5 h-5 animate-pulse" />
           </div>
           <div>
-            <h4 className="text-xs font-bold text-slate-900 dark:text-white">Gemini AI ERP Assistant</h4>
-            <p className="text-[11px] text-slate-600 dark:text-[#8899BB]">Ask cash flow forecasts, Ethiopian tax & Equb strategies</p>
+            <div className="flex items-center gap-2">
+              <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                PlusZone AI CFO & Decision Simulator
+              </h4>
+              <span className="text-[9px] bg-[#00D4AA]/20 text-[#00D4AA] px-1.5 py-0.2 rounded font-mono font-black">
+                PREDICTIVE AI
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-600 dark:text-[#8899BB] mt-0.5">
+              Simulate What-If decisions, forecast 365-day cashflow, and model fixed constants & consequences
+            </p>
           </div>
         </div>
-        <ChevronRight className="w-4 h-4 text-[#00D4AA]" />
+        <ChevronRight className="w-5 h-5 text-[#00D4AA] group-hover:translate-x-1 transition-transform" />
       </div>
 
       {/* System Settings Tile (at the bottom of the page) - SuperAdmin Only */}

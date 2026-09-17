@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Tag, Users, Repeat, Database, Settings, ArrowLeft, ChevronRight, ShieldAlert, Fingerprint } from 'lucide-react';
+import { Tag, Users, Repeat, Database, Settings, ArrowLeft, ChevronRight, ShieldAlert } from 'lucide-react';
 import { ERPState } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 
@@ -107,7 +107,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 System Settings & Configurations
               </h2>
               <p className="text-xs text-slate-500 dark:text-[#8899BB] mt-0.5">
-                Select a master configuration module to manage system rules & data
+                Select a master configuration module to manage system settings and data
               </p>
             </div>
           </div>

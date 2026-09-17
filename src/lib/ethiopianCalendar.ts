@@ -117,15 +117,23 @@ export function calculateNextEthiopianDueDate(
 
   const freq = (frequency || '').toUpperCase();
 
-  if (freq === 'WEEKLY') {
+  if (freq === 'DAILY') {
+    targetDay += 1;
+  } else if (freq === 'WEEKLY') {
     targetDay += 7;
   } else if (freq === 'BIWEEKLY') {
     targetDay += 14;
+  } else if (freq === 'EVERY_3_WEEKS') {
+    targetDay += 21;
+  } else if (freq === 'EVERY_4_WEEKS') {
+    targetDay += 28;
   } else if (freq === 'EVERY_10_DAYS') {
     targetDay += 10;
   } else if (freq === 'MONTHLY') {
     targetMonth += 1;
-  } else if (freq === 'QUARTERLY') {
+  } else if (freq === 'EVERY_2_MONTHS') {
+    targetMonth += 2;
+  } else if (freq === 'QUARTERLY' || freq === 'EVERY_3_MONTHS') {
     targetMonth += 3;
   } else if (freq === 'YEARLY') {
     targetYear += 1;
@@ -142,7 +150,7 @@ export function calculateNextEthiopianDueDate(
   // Handle day overflow for current target month
   const maxDaysInMonth = targetMonth === 13 ? ((targetYear + 1) % 4 === 0 ? 6 : 5) : 30;
 
-  if (targetDay > maxDaysInMonth && (freq === 'WEEKLY' || freq === 'BIWEEKLY' || freq === 'EVERY_10_DAYS')) {
+  if (targetDay > maxDaysInMonth && (freq === 'DAILY' || freq === 'WEEKLY' || freq === 'BIWEEKLY' || freq === 'EVERY_3_WEEKS' || freq === 'EVERY_4_WEEKS' || freq === 'EVERY_10_DAYS')) {
     targetDay -= maxDaysInMonth;
     targetMonth += 1;
     if (targetMonth > 13) {
@@ -202,7 +210,7 @@ export function formatEthiopianDate(gregorianDate: Date | string, includeAmharic
  */
 export function formatDateByCalendar(
   gregorianDate: Date | string,
-  calendarType: 'ETHIOPIAN' | 'GREGORIAN' | string = 'ETHIOPIAN',
+  calendarType: 'ETHIOPIAN' | 'GREGORIAN' | string = 'GREGORIAN',
   includeAmharic = true
 ): string {
   const d = typeof gregorianDate === 'string' ? new Date(gregorianDate) : gregorianDate;

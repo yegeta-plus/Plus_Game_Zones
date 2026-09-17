@@ -21,11 +21,49 @@ import {
   ArrowDownRight,
   Zap,
   RefreshCw,
-  Layers
+  Layers,
+  Search,
+  Filter,
+  ChevronDown,
+  ChevronUp,
+  Wallet,
+  User,
+  Car,
+  Check,
+  ShieldCheck,
+  Info,
+  ArrowRight,
+  List,
+  Grid,
+  CalendarClock,
+  CreditCard,
+  Users,
+  ChevronRight
 } from 'lucide-react';
 import { ERPState } from '../../types';
-import { formatETB, calculateTotalBusinessBalance } from '../../lib/store';
+import { formatETB, calculateTotalBusinessBalance, calculateWalletBalance } from '../../lib/store';
+import { formatEthiopianDate } from '../../lib/ethiopianCalendar';
 import { triggerHaptic } from '../../lib/haptics';
+
+export interface NextMonthExpenseDetail {
+  id: string;
+  title: string;
+  category: string;
+  categoryType: 'UTILITIES' | 'TRANSPORT' | 'EQUB' | 'LOAN' | 'OPERATIONS' | 'TAX' | 'MAINTENANCE' | 'RECURRING';
+  amount: number;
+  dateStr: string;
+  calendarDateLabel: string;
+  ethiopianDateStr: string;
+  walletName: string;
+  walletId?: string;
+  beneficiary?: string;
+  frequency: string;
+  reason: string;
+  calculationBasis: string;
+  isEssential: boolean;
+  notes?: string;
+  status: 'SCHEDULED' | 'PENDING' | 'PAID';
+}
 
 interface CategoryBudget {
   category: string;
@@ -97,6 +135,12 @@ export const AdvancedFinancialSystem: React.FC<{ state: ERPState }> = ({ state }
   const [principalInput, setPrincipalInput] = useState<number>(100000);
   const [annualReturnRate, setAnnualReturnRate] = useState<number>(14.5);
   const [investmentYears, setInvestmentYears] = useState<number>(3);
+
+  // Next Month Cashflow & Liquidity Filter States
+  const [nextMonthCatFilter, setNextMonthCatFilter] = useState<string>('ALL');
+  const [nextMonthSearch, setNextMonthSearch] = useState<string>('');
+  const [nextMonthViewMode, setNextMonthViewMode] = useState<'cards' | 'table' | 'weekly'>('cards');
+  const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
 
   // Toast
   const [toast, setToast] = useState<string | null>(null);
@@ -188,7 +232,7 @@ export const AdvancedFinancialSystem: React.FC<{ state: ERPState }> = ({ state }
 
     // Receivables (Uncollected Customer Debts)
     const totalReceivablesOwed = state.receivables
-      .filter(r => r.status !== 'PAID')
+      .filter(r => r.status !== 'COLLECTED')
       .reduce((acc, r) => acc + (r.amountOwed - r.amountCollected), 0);
 
     return { income, expense, netProfit, profitMarginPct, totalReceivablesOwed };
@@ -222,6 +266,354 @@ export const AdvancedFinancialSystem: React.FC<{ state: ERPState }> = ({ state }
 
   // Next Pending Tax Payment Info
   const nextPendingQuarter = quarterlyTaxRecords.find(r => r.status === 'PENDING') || quarterlyTaxRecords[quarterlyTaxRecords.length - 1];
+
+  // 1.5 NEXT MONTH CASHFLOW & DETAILED LIQUIDITY EXPENSE ENGINE
+  const nextMonthLiquidityData = useMemo(() => {
+    const now = new Date();
+    const nextMonthYear = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
+    const nextMonthIdx = (now.getMonth() + 1) % 12;
+    const nextMonthDate = new Date(nextMonthYear, nextMonthIdx, 1);
+    const daysInNextMonth = new Date(nextMonthYear, nextMonthIdx + 1, 0).getDate();
+
+    const monthNamesEn = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const monthLabel = `${monthNamesEn[nextMonthIdx]} ${nextMonthYear}`;
+    const ethiopianDateRangeStr = `${formatEthiopianDate(nextMonthDate)} - ${formatEthiopianDate(new Date(nextMonthYear, nextMonthIdx, daysInNextMonth))}`;
+
+    const items: NextMonthExpenseDetail[] = [];
+
+    // Helper to get wallet info
+    const getWalletInfo = (walletId?: string, fallback = 'Telebirr Working Balance') => {
+      if (!walletId) return { name: fallback, balance: 0 };
+      const w = state.wallets.find(x => x.id === walletId);
+      if (!w) return { name: fallback, balance: 0 };
+      const bal = calculateWalletBalance(w, state.transactions, state.transfers);
+      return { name: w.name, balance: bal };
+    };
+
+    const telebirrWallet = state.wallets.find(w => w.type === 'TELEBIRR' || w.name.toLowerCase().includes('telebirr')) || state.wallets[0];
+    const telebirrName = telebirrWallet?.name || 'Telebirr Working Balance';
+
+    const cbeWallet = state.wallets.find(w => w.type === 'CBE_BANK' || w.name.toLowerCase().includes('cbe')) || state.wallets[0];
+    const cbeName = cbeWallet?.name || 'CBE Commercial Account';
+
+    const cashWallet = state.wallets.find(w => w.type === 'CASH' || w.name.toLowerCase().includes('cash')) || state.wallets[0];
+    const cashName = cashWallet?.name || 'Cash Vault';
+
+    // 1. Staff Transportation Stipends (3 disbursements: 5th, 15th, 25th)
+    const transportDays = [
+      { day: 5, payee: 'Shift Tech #1 (Mobility Allowance)', amount: 1500, id: 'nm-trans-1' },
+      { day: 15, payee: 'Shift Tech #2 (Mobility Allowance)', amount: 1500, id: 'nm-trans-2' },
+      { day: 25, payee: 'Shift Tech #3 (Mobility Allowance)', amount: 1500, id: 'nm-trans-3' }
+    ];
+
+    transportDays.forEach(td => {
+      const gDate = new Date(nextMonthYear, nextMonthIdx, td.day);
+      items.push({
+        id: td.id,
+        title: `Staff Transport Stipend • Day ${td.day}`,
+        category: 'Transportation',
+        categoryType: 'TRANSPORT',
+        amount: td.amount,
+        dateStr: gDate.toISOString().split('T')[0],
+        calendarDateLabel: `${monthNamesEn[nextMonthIdx]} ${td.day}, ${nextMonthYear}`,
+        ethiopianDateStr: formatEthiopianDate(gDate),
+        walletName: telebirrName,
+        walletId: telebirrWallet?.id,
+        beneficiary: td.payee,
+        frequency: '3x Monthly (5th, 15th, 25th)',
+        reason: 'Contractual technician transportation and mobility allowance ensuring on-time lounge shifts & opening continuity.',
+        calculationBasis: 'Fixed operational travel stipend: ETB 1,500 / recipient',
+        isEssential: true,
+        notes: `Disbursed directly to ${td.payee} via Telebirr scheduled transfer.`,
+        status: 'SCHEDULED'
+      });
+    });
+
+    // 2. Dedicated Utility Commitments
+    // a. Ethio Telecom High-Speed Fiber Internet (1st of month)
+    const internetDate = new Date(nextMonthYear, nextMonthIdx, 1);
+    items.push({
+      id: 'nm-util-internet',
+      title: 'Ethio Telecom Dedicated High-Speed Fiber Broadband',
+      category: 'Utilities & Internet',
+      categoryType: 'UTILITIES',
+      amount: 1010,
+      dateStr: internetDate.toISOString().split('T')[0],
+      calendarDateLabel: `${monthNamesEn[nextMonthIdx]} 1, ${nextMonthYear}`,
+      ethiopianDateStr: formatEthiopianDate(internetDate),
+      walletName: telebirrName,
+      walletId: telebirrWallet?.id,
+      beneficiary: 'Ethio Telecom (Enterprise Fiber Division)',
+      frequency: 'Monthly (1st)',
+      reason: 'Dedicated high-speed fiber internet subscription for multiplayer PlayStation Network (PSN) gaming, live streaming, and cloud save synchronization.',
+      calculationBasis: 'Monthly fixed ISP package tariff: ETB 1,010 / month',
+      isEssential: true,
+      notes: 'Required for multiplayer matches, firmware updates & patron Wi-Fi access.',
+      status: 'SCHEDULED'
+    });
+
+    // b. Ethiopian Electric Utility (EEU) Commercial Power (10th of month)
+    const elecDate = new Date(nextMonthYear, nextMonthIdx, 10);
+    items.push({
+      id: 'nm-util-electricity',
+      title: 'Ethiopian Electric Utility (EEU) 3-Phase Commercial Power',
+      category: 'Utilities & Internet',
+      categoryType: 'UTILITIES',
+      amount: 4200,
+      dateStr: elecDate.toISOString().split('T')[0],
+      calendarDateLabel: `${monthNamesEn[nextMonthIdx]} 10, ${nextMonthYear}`,
+      ethiopianDateStr: formatEthiopianDate(elecDate),
+      walletName: cbeName,
+      walletId: cbeWallet?.id,
+      beneficiary: 'Ethiopian Electric Utility (EEU)',
+      frequency: 'Monthly (10th)',
+      reason: 'Continuous commercial electrical supply powering 12+ PlayStation 5 stations, 4K HDR display arrays, and venue cooling.',
+      calculationBasis: 'Metered commercial grid consumption rate: ~ETB 4,200 / month based on active gaming load',
+      isEssential: true,
+      notes: 'Direct post-paid bill settlement via CBE Corporate Banking.',
+      status: 'SCHEDULED'
+    });
+
+    // c. Municipal Water & Sanitation Utility (12th of month)
+    const waterDate = new Date(nextMonthYear, nextMonthIdx, 12);
+    items.push({
+      id: 'nm-util-water',
+      title: 'Municipal Water & Sanitation Utility Subscription',
+      category: 'Utilities & Internet',
+      categoryType: 'UTILITIES',
+      amount: 450,
+      dateStr: waterDate.toISOString().split('T')[0],
+      calendarDateLabel: `${monthNamesEn[nextMonthIdx]} 12, ${nextMonthYear}`,
+      ethiopianDateStr: formatEthiopianDate(waterDate),
+      walletName: telebirrName,
+      walletId: telebirrWallet?.id,
+      beneficiary: 'Addis Ababa Water & Sewerage Authority (AAWSA)',
+      frequency: 'Monthly (12th)',
+      reason: 'Lounge sanitation, patron restroom amenities, and cafe counter beverage preparation water supply.',
+      calculationBasis: 'Standard commercial municipal water tariff: ETB 450 / month',
+      isEssential: true,
+      notes: 'Settled via Telebirr bill payment portal.',
+      status: 'SCHEDULED'
+    });
+
+    // 3. Equb Circle Contributions for Next Month
+    state.equbs.forEach((eq, eqIdx) => {
+      if (eq.status === 'ACTIVE') {
+        const nextRound = (eq.currentRound || 0) + 1;
+        const totalRounds = eq.totalRounds || (eq.members ? eq.members.length : 10);
+        if (nextRound <= totalRounds) {
+          const eqDate = new Date(nextMonthYear, nextMonthIdx, 15);
+          const eqWallet = getWalletInfo(eq.walletId, cbeName);
+          const roundAmt = eq.contributionPerRound || 5000;
+          const membersTotal = eq.members ? eq.members.length : 10;
+          items.push({
+            id: `nm-equb-${eq.id || eqIdx}`,
+            title: `${eq.name} • Round #${nextRound} Contribution`,
+            category: 'Equb Contribution',
+            categoryType: 'EQUB',
+            amount: roundAmt,
+            dateStr: eqDate.toISOString().split('T')[0],
+            calendarDateLabel: `${monthNamesEn[nextMonthIdx]} ${eqDate.getDate()}, ${nextMonthYear}`,
+            ethiopianDateStr: formatEthiopianDate(eqDate),
+            walletName: eqWallet.name,
+            walletId: eq.walletId,
+            beneficiary: `Equb Pool Admin (${eq.name})`,
+            frequency: eq.interval || 'Monthly',
+            reason: `Mandatory rotating savings commitment for Round #${nextRound}/${totalRounds} to maintain spotless credit standing and secure pool eligibility.`,
+            calculationBasis: `Contractual slot contribution: ETB ${roundAmt.toLocaleString()} per round`,
+            isEssential: true,
+            notes: `Circle pool payout of ${formatETB(roundAmt * membersTotal)} expected on designated winning draw.`,
+            status: 'SCHEDULED'
+          });
+        }
+      }
+    });
+
+    // 4. Loan & Debt Repayment Installments for Next Month
+    state.loans.forEach((ln, lnIdx) => {
+      if (ln.status === 'ACTIVE' && ln.outstandingBalance > 0 && ln.direction !== 'LENT') {
+        const lnDate = ln.dueDate ? new Date(ln.dueDate) : new Date(nextMonthYear, nextMonthIdx, 20);
+        const lnWallet = getWalletInfo(ln.walletId, cbeName);
+        const installment = ln.outstandingBalance >= 1000
+          ? Math.min(Math.max(1000, ln.monthlyInstallment || 6000), ln.outstandingBalance)
+          : ln.outstandingBalance;
+        items.push({
+          id: `nm-loan-${ln.id || lnIdx}`,
+          title: `${ln.counterparty || ln.title || 'Commercial Facility'} • Loan Installment`,
+          category: 'Debt Repayment',
+          categoryType: 'LOAN',
+          amount: installment,
+          dateStr: lnDate.toISOString().split('T')[0],
+          calendarDateLabel: `${monthNamesEn[nextMonthIdx]} ${lnDate.getDate()}, ${nextMonthYear}`,
+          ethiopianDateStr: formatEthiopianDate(lnDate),
+          walletName: lnWallet.name,
+          walletId: ln.walletId,
+          beneficiary: ln.counterparty || 'Commercial Lending Desk',
+          frequency: 'Monthly (20th)',
+          reason: `Contractual monthly principal and interest debt servicing. Remaining loan balance after payment: ETB ${(ln.outstandingBalance - installment).toLocaleString()}.`,
+          calculationBasis: `Monthly amortized installment: ETB ${installment.toLocaleString()}`,
+          isEssential: true,
+          notes: `Helps maintain bank credit rating and avoid penalty interest surcharges.`,
+          status: 'SCHEDULED'
+        });
+      }
+    });
+
+    // 5. Staff Salaries & Shift Operations (25th of month)
+    const staffDate = new Date(nextMonthYear, nextMonthIdx, 25);
+    items.push({
+      id: 'nm-staff-operations',
+      title: 'Lounge Technician Salaries, Shift Stipends & Operations',
+      category: 'Salaries & Wages',
+      categoryType: 'OPERATIONS',
+      amount: 28000,
+      dateStr: staffDate.toISOString().split('T')[0],
+      calendarDateLabel: `${monthNamesEn[nextMonthIdx]} 25, ${nextMonthYear}`,
+      ethiopianDateStr: formatEthiopianDate(staffDate),
+      walletName: cbeName,
+      walletId: cbeWallet?.id,
+      beneficiary: 'PlusZone Floor Staff & Tech Crew',
+      frequency: 'Monthly (25th)',
+      reason: 'Compensation for senior gaming technicians, front-desk receptionists, cleaning crew, and shift supervisors.',
+      calculationBasis: 'Core team monthly payroll budget: ETB 28,000 / month',
+      isEssential: true,
+      notes: 'Direct salary batch transfer to employee accounts on the 25th of each month.',
+      status: 'SCHEDULED'
+    });
+
+    // 6. PS5 Hardware Maintenance & Consumables Reserve (18th of month)
+    const maintDate = new Date(nextMonthYear, nextMonthIdx, 18);
+    items.push({
+      id: 'nm-hardware-maintenance',
+      title: 'PlayStation 5 Controller Spares & Hardware Maintenance',
+      category: 'PS5 & Gaming Hardware Maintenance',
+      categoryType: 'MAINTENANCE',
+      amount: 3500,
+      dateStr: maintDate.toISOString().split('T')[0],
+      calendarDateLabel: `${monthNamesEn[nextMonthIdx]} 18, ${nextMonthYear}`,
+      ethiopianDateStr: formatEthiopianDate(maintDate),
+      walletName: cashName,
+      walletId: cashWallet?.id,
+      beneficiary: 'Hardware Tech Supplies & Electronics Vendor',
+      frequency: 'Monthly (18th)',
+      reason: 'DualSense analog thumbstick replacements, conductive silicone button pads, compressed air dust clearance, and HDMI 2.1 cable spares.',
+      calculationBasis: 'Monthly preventive maintenance reserve: ETB 3,500',
+      isEssential: false,
+      notes: 'Preserves high console uptime and responsive controller triggers for tournament play.',
+      status: 'SCHEDULED'
+    });
+
+    // 7. Fixed Quarterly Tax Reserve Allocation (30th of month)
+    const taxDate = new Date(nextMonthYear, nextMonthIdx, daysInNextMonth);
+    const taxMonthly = Math.round(fixedQuarterlyTaxAmount / 3);
+    items.push({
+      id: 'nm-tax-reserve',
+      title: 'Fixed 3-Month Tax Reserve Allocation (1/3 Quarterly Allowance)',
+      category: 'Tax & Compliance',
+      categoryType: 'TAX',
+      amount: taxMonthly,
+      dateStr: taxDate.toISOString().split('T')[0],
+      calendarDateLabel: `${monthNamesEn[nextMonthIdx]} ${daysInNextMonth}, ${nextMonthYear}`,
+      ethiopianDateStr: formatEthiopianDate(taxDate),
+      walletName: cbeName,
+      walletId: cbeWallet?.id,
+      beneficiary: 'Ministry of Revenues (Fixed Category C Assessment)',
+      frequency: 'Monthly Allocation (for 3-Month Cycle)',
+      reason: `Systematic monthly reserve accumulation (ETB ${taxMonthly.toLocaleString()}/mo) to fully fund the upcoming ETB ${fixedQuarterlyTaxAmount.toLocaleString()} quarterly tax payment without liquidity strain.`,
+      calculationBasis: `1/3 of fixed quarterly tax: ETB ${fixedQuarterlyTaxAmount.toLocaleString()} / 3 = ETB ${taxMonthly.toLocaleString()}`,
+      isEssential: true,
+      notes: 'Held in CBE working capital account for quarterly clearance.',
+      status: 'SCHEDULED'
+    });
+
+    // 8. Any Other Active Custom Recurring Templates from state.recurring
+    state.recurring.forEach((rec, rIdx) => {
+      if (
+        rec.status === 'ACTIVE' &&
+        rec.type === 'EXPENSE' &&
+        !rec.id.includes('rent') &&
+        !items.some(i => i.title.toLowerCase().includes(rec.title.toLowerCase()))
+      ) {
+        const rDate = rec.nextDueDate ? new Date(rec.nextDueDate) : new Date(nextMonthYear, nextMonthIdx, 15);
+        const rWallet = getWalletInfo(rec.walletId, telebirrName);
+        items.push({
+          id: `nm-custom-rec-${rec.id || rIdx}`,
+          title: rec.title,
+          category: rec.category || 'Recurring Expense',
+          categoryType: 'RECURRING',
+          amount: rec.amount,
+          dateStr: rDate.toISOString().split('T')[0],
+          calendarDateLabel: `${monthNamesEn[nextMonthIdx]} ${rDate.getDate()}, ${nextMonthYear}`,
+          ethiopianDateStr: formatEthiopianDate(rDate),
+          walletName: rWallet.name,
+          walletId: rec.walletId,
+          beneficiary: 'Vendor / Service Provider',
+          frequency: rec.frequency || 'Monthly',
+          reason: rec.notes || 'Scheduled recurring operational subscription or service fee.',
+          calculationBasis: `Configured template amount: ETB ${rec.amount.toLocaleString()}`,
+          isEssential: false,
+          notes: rec.notes || 'Automated recurring commitment.',
+          status: 'SCHEDULED'
+        });
+      }
+    });
+
+    // Sort items chronologically by date
+    items.sort((a, b) => new Date(a.dateStr).getTime() - new Date(b.dateStr).getTime());
+
+    // Compute Totals
+    const totalOutflows = items.reduce((sum, item) => sum + item.amount, 0);
+
+    const recent30dInflow = state.transactions
+      .filter(t => t.type === 'INCOME' && !t.reversed)
+      .reduce((s, t) => s + t.amount, 0);
+    const projectedInflows = Math.max(recent30dInflow > 0 ? recent30dInflow : 145000, 145000);
+    const netCashflow = projectedInflows - totalOutflows;
+    const endingLiquidity = totalLiquidity + netCashflow;
+    const nextMonthRunway = endingLiquidity / Math.max(1, totalOutflows);
+
+    // Category Breakdown Map
+    const catMap: { [cat: string]: { total: number; count: number } } = {};
+    items.forEach(i => {
+      if (!catMap[i.category]) {
+        catMap[i.category] = { total: 0, count: 0 };
+      }
+      catMap[i.category].total += i.amount;
+      catMap[i.category].count += 1;
+    });
+
+    // Wallet Breakdown Map
+    const walletMap: { [w: string]: number } = {};
+    items.forEach(i => {
+      walletMap[i.walletName] = (walletMap[i.walletName] || 0) + i.amount;
+    });
+
+    // Weekly Buckets (Week 1: 1-7, Week 2: 8-14, Week 3: 15-21, Week 4: 22-End)
+    const week1 = items.filter(i => { const d = new Date(i.dateStr).getDate(); return d >= 1 && d <= 7; });
+    const week2 = items.filter(i => { const d = new Date(i.dateStr).getDate(); return d >= 8 && d <= 14; });
+    const week3 = items.filter(i => { const d = new Date(i.dateStr).getDate(); return d >= 15 && d <= 21; });
+    const week4 = items.filter(i => { const d = new Date(i.dateStr).getDate(); return d >= 22; });
+
+    return {
+      monthLabel,
+      ethiopianDateRangeStr,
+      items,
+      totalOutflows,
+      projectedInflows,
+      netCashflow,
+      startingLiquidity: totalLiquidity,
+      endingLiquidity,
+      nextMonthRunway,
+      catMap,
+      walletMap,
+      weeks: [
+        { label: 'Week 1 (Days 1–7)', items: week1, total: week1.reduce((s, x) => s + x.amount, 0) },
+        { label: 'Week 2 (Days 8–14)', items: week2, total: week2.reduce((s, x) => s + x.amount, 0) },
+        { label: 'Week 3 (Days 15–21)', items: week3, total: week3.reduce((s, x) => s + x.amount, 0) },
+        { label: 'Week 4 (Days 22–End)', items: week4, total: week4.reduce((s, x) => s + x.amount, 0) }
+      ]
+    };
+  }, [state.wallets, state.transactions, state.transfers, state.recurring, state.equbs, state.loans, fixedQuarterlyTaxAmount, totalLiquidity]);
 
   // Compound Yield Calculator
   const projectedYield = useMemo(() => {
@@ -460,7 +852,7 @@ export const AdvancedFinancialSystem: React.FC<{ state: ERPState }> = ({ state }
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar border-b border-slate-200 dark:border-[#1E2D40]">
         {[
           { id: 'overview' as const, label: 'Financial Executive Overview', icon: BarChart3 },
-          { id: 'liquidity' as const, label: 'Liquidity & Runway Matrix', icon: Scale },
+          { id: 'liquidity' as const, label: 'Next Month Cashflow & Liquidity', icon: Scale },
           { id: 'budgeting' as const, label: 'Smart Category Budgeting', icon: Sliders },
           { id: 'predictive' as const, label: 'Predictive 3-Mo Budgeting', icon: Sparkles },
           { id: 'fixed_tax' as const, label: '3-Month Fixed Tax Schedule', icon: Calendar },
@@ -606,52 +998,673 @@ export const AdvancedFinancialSystem: React.FC<{ state: ERPState }> = ({ state }
               </div>
             </div>
           </div>
+
+          {/* NEXT MONTH QUICK GLANCE ACTION CARD */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 via-[#141C2B] to-[#1C2333] border border-[#00D4AA]/30 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-md">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full bg-[#00D4AA]/20 text-[#00D4AA] font-mono text-[10px] font-black uppercase">
+                  Horizon Forecast
+                </span>
+                <span className="text-xs text-slate-400 font-mono">
+                  {nextMonthLiquidityData.monthLabel} ({nextMonthLiquidityData.ethiopianDateRangeStr})
+                </span>
+              </div>
+              <h4 className="text-sm font-extrabold text-white flex items-center gap-2">
+                <CalendarClock className="w-4 h-4 text-[#00D4AA]" />
+                <span>Next Month Scheduled Outflows: {formatETB(nextMonthLiquidityData.totalOutflows)}</span>
+              </h4>
+              <p className="text-xs text-slate-300">
+                {nextMonthLiquidityData.items.length} itemized obligations scheduled (Utilities, Equb, Salaries, Transport, Tax Reserve, Hardware).
+              </p>
+            </div>
+
+            <button
+              onClick={() => {
+                triggerHaptic('light');
+                setActiveTab('liquidity');
+              }}
+              className="px-4 py-2.5 rounded-xl bg-[#00D4AA] text-slate-950 font-black text-xs hover:bg-[#00c29b] transition-all flex items-center gap-2 cursor-pointer shrink-0 shadow-lg"
+            >
+              <span>View Every Expense Detail</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 
       {/* TAB 2: LIQUIDITY & RUNWAY MATRIX */}
       {activeTab === 'liquidity' && (
-        <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-5 space-y-5 shadow-sm animate-fadeIn">
-          <div className="border-b border-slate-100 dark:border-[#1E2D40] pb-3">
-            <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-              <Scale className="w-4 h-4 text-indigo-500" />
-              <span>Liquidity Ratios & Cash Runway Forecast</span>
-            </h3>
-            <p className="text-[11px] text-slate-500 dark:text-[#8899BB]">
-              Standard banking liquidity metrics to verify cash solvency and financial stress endurance
-            </p>
+        <div className="space-y-5 animate-fadeIn">
+          {/* Top Banking Ratios & Solvency Header */}
+          <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-5 shadow-sm space-y-4">
+            <div className="border-b border-slate-100 dark:border-[#1E2D40] pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Scale className="w-4 h-4 text-indigo-500" />
+                  <span>Banking Liquidity Ratios & Cash Solvency Metrics</span>
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-[#8899BB]">
+                  Solvency endurance indicators based on real-time cash balances and scheduled outflows
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 font-mono text-[11px] font-bold">
+                  {nextMonthLiquidityData.items.length} Next-Month Commitments Itemized
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] space-y-1">
+                <span className="text-xs font-bold text-slate-500 dark:text-[#8899BB]">Current Ratio</span>
+                <p className="text-2xl font-black text-slate-900 dark:text-white font-mono">
+                  {currentRatio.toFixed(2)}x
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  Current Assets / Immediate Liabilities. <span className="font-bold text-emerald-500">Benchmark: &gt;1.5x</span>
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] space-y-1">
+                <span className="text-xs font-bold text-slate-500 dark:text-[#8899BB]">Quick Ratio (Acid Test)</span>
+                <p className="text-2xl font-black text-slate-900 dark:text-white font-mono">
+                  {quickRatio.toFixed(2)}x
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  Liquid Cash / Immediate Liabilities. <span className="font-bold text-emerald-500">Benchmark: &gt;1.0x</span>
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] space-y-1">
+                <span className="text-xs font-bold text-slate-500 dark:text-[#8899BB]">Solvency Buffer Runway</span>
+                <p className="text-2xl font-black text-amber-500 font-mono">
+                  {runwayMonths.toFixed(1)} Months
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  Cash buffer assuming $0 revenue at current burn rate
+                </p>
+              </div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] space-y-2">
-              <span className="text-xs font-bold text-slate-500 dark:text-[#8899BB]">Current Ratio</span>
-              <p className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-                {currentRatio.toFixed(2)}x
-              </p>
-              <p className="text-[11px] text-slate-500">
-                Current Assets / Liabilities. <span className="font-bold text-emerald-500">Benchmark: &gt;1.5x</span>
-              </p>
+          {/* NEXT MONTH CASHFLOW & DETAILED LIQUIDITY EXPENSE MATRIX */}
+          <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-5 shadow-sm space-y-6">
+            {/* Header with Ethiopian Calendar Horizon */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 dark:border-[#1E2D40] pb-4">
+              <div className="space-y-1">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#00D4AA]/10 border border-[#00D4AA]/30 text-[#00D4AA] font-black text-[10px] uppercase tracking-wider">
+                  <CalendarClock className="w-3.5 h-3.5" />
+                  <span>Next Month Liquidity Matrix</span>
+                </div>
+                <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>Next Month Cash Flow Forecast & Every Expense Detail</span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-[#8899BB]">
+                  Target Period: <span className="font-bold text-slate-800 dark:text-slate-200">{nextMonthLiquidityData.monthLabel}</span> • Ethiopian Calendar: <span className="font-bold text-indigo-400 font-mono">{nextMonthLiquidityData.ethiopianDateRangeStr}</span>
+                </p>
+              </div>
+
+              {/* View Mode Toggle */}
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-[#1C2333] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40] self-start md:self-auto">
+                <button
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setNextMonthViewMode('cards');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    nextMonthViewMode === 'cards'
+                      ? 'bg-white dark:bg-[#00D4AA] text-slate-900 dark:text-slate-950 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Grid className="w-3.5 h-3.5" />
+                  <span>Detailed Cards</span>
+                </button>
+                <button
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setNextMonthViewMode('table');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    nextMonthViewMode === 'table'
+                      ? 'bg-white dark:bg-[#00D4AA] text-slate-900 dark:text-slate-950 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <List className="w-3.5 h-3.5" />
+                  <span>Ledger Table</span>
+                </button>
+                <button
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setNextMonthViewMode('weekly');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    nextMonthViewMode === 'weekly'
+                      ? 'bg-white dark:bg-[#00D4AA] text-slate-900 dark:text-slate-950 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Weekly Buckets</span>
+                </button>
+              </div>
             </div>
 
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] space-y-2">
-              <span className="text-xs font-bold text-slate-500 dark:text-[#8899BB]">Quick Ratio (Acid Test)</span>
-              <p className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-                {quickRatio.toFixed(2)}x
-              </p>
-              <p className="text-[11px] text-slate-500">
-                Liquid Cash / Immediate Liabilities. <span className="font-bold text-emerald-500">Benchmark: &gt;1.0x</span>
-              </p>
+            {/* Next Month 4-Step Cashflow Trajectory Waterfall */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Step 1: Starting Cash */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] space-y-1">
+                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                  <Wallet className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>1. Opening Cash Balance</span>
+                </span>
+                <p className="text-xl font-black text-slate-900 dark:text-white font-mono">
+                  {formatETB(nextMonthLiquidityData.startingLiquidity)}
+                </p>
+                <p className="text-[10px] text-slate-400">Total liquid reserves across all wallets</p>
+              </div>
+
+              {/* Step 2: Projected Inflow */}
+              <div className="p-4 rounded-2xl bg-emerald-500/5 dark:bg-[#1C2333] border border-emerald-500/30 space-y-1">
+                <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-1">
+                  <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>2. Projected Inflow</span>
+                </span>
+                <p className="text-xl font-black text-emerald-500 font-mono">
+                  +{formatETB(nextMonthLiquidityData.projectedInflows)}
+                </p>
+                <p className="text-[10px] text-emerald-600 dark:text-emerald-400">Income</p>
+              </div>
+
+              {/* Step 3: Total Scheduled Outflows */}
+              <div className="p-4 rounded-2xl bg-rose-500/5 dark:bg-[#1C2333] border border-rose-500/30 space-y-1">
+                <span className="text-[10px] font-bold text-rose-500 uppercase tracking-wider flex items-center gap-1">
+                  <ArrowDownRight className="w-3.5 h-3.5 text-rose-500" />
+                  <span>3. Total Scheduled Outflows</span>
+                </span>
+                <p className="text-xl font-black text-rose-500 font-mono">
+                  -{formatETB(nextMonthLiquidityData.totalOutflows)}
+                </p>
+                <p className="text-[10px] text-rose-600 dark:text-rose-400">{nextMonthLiquidityData.items.length} itemized commitments</p>
+              </div>
+
+              {/* Step 4: Net Cash Flow & Ending Liquidity */}
+              <div className={`p-4 rounded-2xl border space-y-1 ${
+                nextMonthLiquidityData.netCashflow >= 0
+                  ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-500'
+                  : 'bg-rose-500/10 border-rose-500/40 text-rose-500'
+              }`}>
+                <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>4. Net Cashflow / Ending</span>
+                </span>
+                <p className="text-xl font-black font-mono">
+                  {nextMonthLiquidityData.netCashflow >= 0 ? '+' : ''}{formatETB(nextMonthLiquidityData.netCashflow)}
+                </p>
+                <p className="text-[10px] text-slate-600 dark:text-slate-300 font-mono">
+                  Ending: {formatETB(nextMonthLiquidityData.endingLiquidity)} ({nextMonthLiquidityData.nextMonthRunway.toFixed(1)} mo)
+                </p>
+              </div>
             </div>
 
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] space-y-2">
-              <span className="text-xs font-bold text-slate-500 dark:text-[#8899BB]">Solvency Buffer Runway</span>
-              <p className="text-2xl font-black text-amber-500 font-mono">
-                {runwayMonths.toFixed(1)} Months
-              </p>
-              <p className="text-[11px] text-slate-500">
-                Months of cash buffer assuming $0 income at current burn rate
-              </p>
+            {/* Outflow Category Breakdown Bar & Wallet Share */}
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Layers className="w-4 h-4 text-[#00D4AA]" />
+                  <span>Next Month Expense Category Distribution</span>
+                </span>
+                <span className="text-[11px] font-mono text-slate-500">
+                  Total Outflow: <span className="font-extrabold text-slate-900 dark:text-white">{formatETB(nextMonthLiquidityData.totalOutflows)}</span>
+                </span>
+              </div>
+
+              {/* Multi-segment visual bar */}
+              <div className="w-full h-3.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden flex">
+                {Object.entries(nextMonthLiquidityData.catMap).map(([cat, data], idx) => {
+                  const pct = (data.total / Math.max(1, nextMonthLiquidityData.totalOutflows)) * 100;
+                  const colors = [
+                    'bg-indigo-500',
+                    'bg-cyan-500',
+                    'bg-emerald-500',
+                    'bg-amber-500',
+                    'bg-purple-500',
+                    'bg-rose-500',
+                    'bg-pink-500'
+                  ];
+                  return (
+                    <div
+                      key={cat}
+                      className={`h-full ${colors[idx % colors.length]} transition-all cursor-pointer`}
+                      style={{ width: `${pct}%` }}
+                      title={`${cat}: ${formatETB(data.total)} (${pct.toFixed(1)}%)`}
+                      onClick={() => setNextMonthCatFilter(cat)}
+                    />
+                  );
+                })}
+              </div>
+
+              {/* Category Legend Chips */}
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {Object.entries(nextMonthLiquidityData.catMap).map(([cat, data], idx) => {
+                  const pct = (data.total / Math.max(1, nextMonthLiquidityData.totalOutflows)) * 100;
+                  const dotColors = [
+                    'bg-indigo-500',
+                    'bg-cyan-500',
+                    'bg-emerald-500',
+                    'bg-amber-500',
+                    'bg-purple-500',
+                    'bg-rose-500',
+                    'bg-pink-500'
+                  ];
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => setNextMonthCatFilter(nextMonthCatFilter === cat ? 'ALL' : cat)}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-mono border flex items-center gap-1.5 transition-all cursor-pointer ${
+                        nextMonthCatFilter === cat
+                          ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-extrabold border-slate-900 dark:border-white shadow-sm'
+                          : 'bg-white dark:bg-[#141C2B] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-[#1E2D40] hover:border-slate-400'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${dotColors[idx % dotColors.length]}`} />
+                      <span>{cat}</span>
+                      <span className="font-extrabold opacity-80">{formatETB(data.total)}</span>
+                      <span className="text-[10px] text-slate-400">({pct.toFixed(0)}%)</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+
+            {/* Interactive Search & Filter Controls */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
+              {/* Search Bar */}
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search next month expenses by title, payee, wallet, or purpose..."
+                  value={nextMonthSearch}
+                  onChange={e => setNextMonthSearch(e.target.value)}
+                  className="w-full pl-9.5 pr-4 py-2 rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-xs text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-[#00D4AA]"
+                />
+                {nextMonthSearch && (
+                  <button
+                    onClick={() => setNextMonthSearch('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-200 cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {/* Category Quick Filter */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                <button
+                  onClick={() => setNextMonthCatFilter('ALL')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer border ${
+                    nextMonthCatFilter === 'ALL'
+                      ? 'bg-[#00D4AA] text-slate-950 border-[#00D4AA] shadow-sm'
+                      : 'bg-slate-100 dark:bg-[#1C2333] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-[#1E2D40]'
+                  }`}
+                >
+                  All ({nextMonthLiquidityData.items.length})
+                </button>
+                {['UTILITIES', 'TRANSPORT', 'EQUB', 'OPERATIONS', 'TAX', 'MAINTENANCE', 'LOAN'].map(type => {
+                  const count = nextMonthLiquidityData.items.filter(i => i.categoryType === type).length;
+                  if (count === 0) return null;
+                  const labels: Record<string, string> = {
+                    UTILITIES: '⚡ Utilities',
+                    TRANSPORT: '🚗 Transport',
+                    EQUB: '🤝 Equb',
+                    OPERATIONS: '👥 Staff & Ops',
+                    TAX: '🏛️ Fixed Tax',
+                    MAINTENANCE: '🔧 Maintenance',
+                    LOAN: '💳 Loans'
+                  };
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => setNextMonthCatFilter(type)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer border ${
+                        nextMonthCatFilter === type
+                          ? 'bg-[#00D4AA] text-slate-950 border-[#00D4AA] shadow-sm'
+                          : 'bg-slate-100 dark:bg-[#1C2333] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-[#1E2D40]'
+                      }`}
+                    >
+                      {labels[type] || type} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Filtered Expenses Renderer */}
+            {(() => {
+              const filtered = nextMonthLiquidityData.items.filter(item => {
+                // Category Filter
+                if (nextMonthCatFilter !== 'ALL') {
+                  if (item.categoryType !== nextMonthCatFilter && item.category !== nextMonthCatFilter) {
+                    return false;
+                  }
+                }
+                // Text Search
+                if (nextMonthSearch.trim()) {
+                  const q = nextMonthSearch.toLowerCase();
+                  const match =
+                    item.title.toLowerCase().includes(q) ||
+                    item.category.toLowerCase().includes(q) ||
+                    item.walletName.toLowerCase().includes(q) ||
+                    (item.beneficiary && item.beneficiary.toLowerCase().includes(q)) ||
+                    item.reason.toLowerCase().includes(q) ||
+                    (item.notes && item.notes.toLowerCase().includes(q)) ||
+                    item.amount.toString().includes(q);
+                  if (!match) return false;
+                }
+                return true;
+              });
+
+              if (filtered.length === 0) {
+                return (
+                  <div className="p-8 text-center rounded-2xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] space-y-2">
+                    <AlertCircle className="w-8 h-8 text-slate-400 mx-auto" />
+                    <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">No matching expense items found</h4>
+                    <p className="text-xs text-slate-500">Try changing or clearing your search and category filters</p>
+                    <button
+                      onClick={() => {
+                        setNextMonthCatFilter('ALL');
+                        setNextMonthSearch('');
+                      }}
+                      className="mt-2 px-3 py-1.5 rounded-xl bg-indigo-500 text-white font-extrabold text-xs cursor-pointer"
+                    >
+                      Reset Filters
+                    </button>
+                  </div>
+                );
+              }
+
+              // VIEW MODE 1: DETAILED CARDS VIEW (DEFAULT)
+              if (nextMonthViewMode === 'cards') {
+                return (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 px-1">
+                      <span>Showing {filtered.length} of {nextMonthLiquidityData.items.length} Expense Commitments</span>
+                      <span>Total: {formatETB(filtered.reduce((s, i) => s + i.amount, 0))}</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3">
+                      {filtered.map(item => {
+                        const isExpanded = expandedExpenseId === item.id;
+                        const pctOfTotal = (item.amount / Math.max(1, nextMonthLiquidityData.totalOutflows)) * 100;
+
+                        return (
+                          <div
+                            key={item.id}
+                            className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] hover:border-slate-300 dark:hover:border-[#00D4AA]/40 transition-all space-y-3 shadow-sm"
+                          >
+                            {/* Card Top Row: Title, Date, Amount */}
+                            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                              <div className="space-y-1.5 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h4 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                                    {item.categoryType === 'TRANSPORT' ? (
+                                      <Car className="w-4 h-4 text-emerald-500 shrink-0" />
+                                    ) : item.categoryType === 'UTILITIES' ? (
+                                      <Zap className="w-4 h-4 text-cyan-500 shrink-0" />
+                                    ) : item.categoryType === 'EQUB' ? (
+                                      <Users className="w-4 h-4 text-amber-500 shrink-0" />
+                                    ) : item.categoryType === 'LOAN' ? (
+                                      <CreditCard className="w-4 h-4 text-rose-500 shrink-0" />
+                                    ) : item.categoryType === 'TAX' ? (
+                                      <Calendar className="w-4 h-4 text-purple-500 shrink-0" />
+                                    ) : (
+                                      <DollarSign className="w-4 h-4 text-indigo-500 shrink-0" />
+                                    )}
+                                    <span>{item.title}</span>
+                                  </h4>
+
+                                  {/* Category Badge */}
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold font-mono bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                    {item.category}
+                                  </span>
+
+                                  {/* Frequency */}
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-slate-200 dark:bg-[#141C2B] text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-[#1E2D40]">
+                                    {item.frequency}
+                                  </span>
+
+                                  {/* Essential Tag */}
+                                  {item.isEssential && (
+                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 flex items-center gap-1">
+                                      <ShieldCheck className="w-3 h-3" />
+                                      <span>Mandatory</span>
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Calendar Dates */}
+                                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400 pt-0.5">
+                                  <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                                    <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                                    <span>{item.calendarDateLabel}</span>
+                                  </span>
+                                  <span className="font-mono text-indigo-500 dark:text-indigo-400 bg-indigo-500/5 dark:bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-500/20">
+                                    {item.ethiopianDateStr}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Amount Display */}
+                              <div className="text-right shrink-0">
+                                <p className="text-lg font-black text-rose-500 font-mono">
+                                  -{formatETB(item.amount)}
+                                </p>
+                                <p className="text-[11px] text-slate-400 font-mono">
+                                  {pctOfTotal.toFixed(1)}% of next mo outflow
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Middle Meta: Payee & Wallet */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                              <div className="p-2.5 rounded-xl bg-white dark:bg-[#141C2B] border border-slate-200 dark:border-[#1E2D40] text-xs space-y-0.5">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                                  <User className="w-3 h-3 text-[#00D4AA]" />
+                                  <span>Designated Payee / Beneficiary</span>
+                                </span>
+                                <p className="font-bold text-slate-800 dark:text-slate-200 font-mono truncate">
+                                  {item.beneficiary || 'Vendor Desk'}
+                                </p>
+                              </div>
+
+                              <div className="p-2.5 rounded-xl bg-white dark:bg-[#141C2B] border border-slate-200 dark:border-[#1E2D40] text-xs space-y-0.5">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                                  <Wallet className="w-3 h-3 text-indigo-400" />
+                                  <span>Disbursing Account / Wallet</span>
+                                </span>
+                                <p className="font-bold text-slate-800 dark:text-slate-200 font-mono truncate">
+                                  {item.walletName}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Reason & Calculation Formula Cards */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                              <div className="p-3 rounded-xl bg-white dark:bg-[#141C2B] border border-slate-200 dark:border-[#1E2D40] space-y-1">
+                                <span className="text-[10px] font-bold text-[#00D4AA] uppercase font-mono flex items-center gap-1">
+                                  <Info className="w-3 h-3" />
+                                  <span>Operational Purpose & Financial Reason</span>
+                                </span>
+                                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                  {item.reason}
+                                </p>
+                              </div>
+
+                              <div className="p-3 rounded-xl bg-white dark:bg-[#141C2B] border border-slate-200 dark:border-[#1E2D40] space-y-1">
+                                <span className="text-[10px] font-bold text-indigo-400 uppercase font-mono flex items-center gap-1">
+                                  <Calculator className="w-3 h-3" />
+                                  <span>Calculation Basis & Policy Formula</span>
+                                </span>
+                                <p className="text-xs text-slate-600 dark:text-slate-300 font-mono leading-relaxed">
+                                  {item.calculationBasis}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Collapsible Action Notes */}
+                            {item.notes && (
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-[#101622] p-2.5 rounded-xl border border-slate-200 dark:border-[#1E2D40] flex items-center justify-between">
+                                <span className="font-mono">📌 {item.notes}</span>
+                                <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                                  Status: Scheduled
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              }
+
+              // VIEW MODE 2: LEDGER TABLE VIEW
+              if (nextMonthViewMode === 'table') {
+                return (
+                  <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-[#1E2D40]">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-100 dark:bg-[#141C2B] border-b border-slate-200 dark:border-[#1E2D40] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                          <th className="p-3">Date (G.C. / E.C.)</th>
+                          <th className="p-3">Expense Title & Purpose</th>
+                          <th className="p-3">Category</th>
+                          <th className="p-3">Payee / Beneficiary</th>
+                          <th className="p-3">Wallet</th>
+                          <th className="p-3 text-right">Amount (ETB)</th>
+                          <th className="p-3 text-right">Share %</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-[#1E2D40] bg-white dark:bg-[#131926]">
+                        {filtered.map(item => {
+                          const pctOfTotal = (item.amount / Math.max(1, nextMonthLiquidityData.totalOutflows)) * 100;
+                          return (
+                            <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-[#1C2333]/80 transition-colors">
+                              <td className="p-3 font-mono">
+                                <div className="font-bold text-slate-900 dark:text-white">{item.calendarDateLabel}</div>
+                                <div className="text-[10px] text-indigo-400">{item.ethiopianDateStr}</div>
+                              </td>
+                              <td className="p-3">
+                                <div className="font-bold text-slate-900 dark:text-white">{item.title}</div>
+                                <div className="text-[11px] text-slate-500 line-clamp-1">{item.reason}</div>
+                              </td>
+                              <td className="p-3">
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                  {item.category}
+                                </span>
+                              </td>
+                              <td className="p-3 font-mono text-slate-700 dark:text-slate-300">
+                                {item.beneficiary || '—'}
+                              </td>
+                              <td className="p-3 font-mono text-slate-700 dark:text-slate-300">
+                                {item.walletName}
+                              </td>
+                              <td className="p-3 text-right font-mono font-black text-rose-500">
+                                -{formatETB(item.amount)}
+                              </td>
+                              <td className="p-3 text-right font-mono text-slate-500">
+                                {pctOfTotal.toFixed(1)}%
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-50 dark:bg-[#141C2B] font-bold border-t border-slate-200 dark:border-[#1E2D40] text-slate-900 dark:text-white">
+                          <td colSpan={5} className="p-3 uppercase text-[10px]">
+                            Total Filtered Next Month Outflows ({filtered.length} Items)
+                          </td>
+                          <td className="p-3 text-right font-mono font-black text-rose-500 text-sm">
+                            -{formatETB(filtered.reduce((s, i) => s + i.amount, 0))}
+                          </td>
+                          <td className="p-3 text-right font-mono text-xs">
+                            {((filtered.reduce((s, i) => s + i.amount, 0) / Math.max(1, nextMonthLiquidityData.totalOutflows)) * 100).toFixed(1)}%
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                );
+              }
+
+              // VIEW MODE 3: WEEKLY BREAKDOWN
+              return (
+                <div className="space-y-4">
+                  {nextMonthLiquidityData.weeks.map((wk, wIdx) => {
+                    const weekItems = wk.items.filter(item => {
+                      if (nextMonthCatFilter !== 'ALL') {
+                        if (item.categoryType !== nextMonthCatFilter && item.category !== nextMonthCatFilter) return false;
+                      }
+                      if (nextMonthSearch.trim()) {
+                        const q = nextMonthSearch.toLowerCase();
+                        return (
+                          item.title.toLowerCase().includes(q) ||
+                          item.category.toLowerCase().includes(q) ||
+                          item.walletName.toLowerCase().includes(q) ||
+                          (item.beneficiary && item.beneficiary.toLowerCase().includes(q)) ||
+                          item.reason.toLowerCase().includes(q)
+                        );
+                      }
+                      return true;
+                    });
+
+                    if (weekItems.length === 0) return null;
+
+                    const weekTotal = weekItems.reduce((s, i) => s + i.amount, 0);
+
+                    return (
+                      <div
+                        key={wk.label}
+                        className="p-4 rounded-2xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] space-y-3"
+                      >
+                        <div className="flex items-center justify-between border-b border-slate-200 dark:border-[#1E2D40] pb-2">
+                          <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                            <span>{wk.label}</span>
+                            <span className="text-[10px] font-normal text-slate-400 font-mono">({weekItems.length} expenses)</span>
+                          </h4>
+                          <span className="text-xs font-black text-rose-500 font-mono">
+                            Subtotal: -{formatETB(weekTotal)}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {weekItems.map(item => (
+                            <div
+                              key={item.id}
+                              className="p-3 rounded-xl bg-white dark:bg-[#141C2B] border border-slate-200 dark:border-[#1E2D40] text-xs space-y-1.5"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-slate-900 dark:text-white text-xs">{item.title}</span>
+                                <span className="font-mono font-black text-rose-500 text-xs">-{formatETB(item.amount)}</span>
+                              </div>
+                              <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+                                <span>{item.calendarDateLabel}</span>
+                                <span className="text-[#00D4AA]">{item.walletName}</span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">{item.reason}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

@@ -28,7 +28,13 @@ import {
   Check,
   X,
   Archive,
-  Layers
+  Layers,
+  Sparkles,
+  LayoutGrid,
+  List,
+  Table,
+  PiggyBank,
+  Wallet as WalletIcon
 } from 'lucide-react';
 import { Equb, Wallet, UserProfile, Loan, Receivable, LoanType, LoanDirection, AdminApprovalRequest } from '../../types';
 import { formatETB } from '../../lib/store';
@@ -40,6 +46,7 @@ import {
   formatEthiopianDate,
   formatDateByCalendar
 } from '../../lib/ethiopianCalendar';
+import { ModernDateInput } from '../common/ModernDateInput';
 
 interface EqubViewProps {
   equbs: Equb[];
@@ -52,7 +59,7 @@ interface EqubViewProps {
   hideBalances: boolean;
   calendarType?: 'ETHIOPIAN' | 'GREGORIAN';
   onToggleCalendarType?: (type: 'ETHIOPIAN' | 'GREGORIAN') => void;
-  onPayRound: (equbId: string, splits: Array<{ walletId: string; amount: number }>) => void;
+  onPayRound: (equbId: string, splits: Array<{ walletId: string; amount: number }>, date?: string) => void;
   onClaimPayout: (equbId: string, walletId: string, netPool: number) => void;
   onCreateEqub: (equb: Omit<Equb, 'id' | 'currentRound' | 'computedEndingDate' | 'status'>) => void;
   onUpdateEqub?: (equbId: string, updates: Partial<Equb>) => void;
@@ -60,14 +67,21 @@ interface EqubViewProps {
   onCreateLoan?: (loan: Omit<Loan, 'id' | 'outstandingBalance' | 'status' | 'payments'>) => void;
   onUpdateLoan?: (loanId: string, updates: Partial<Loan>) => void;
   onDeleteLoan?: (loanId: string) => void;
-  onRepayLoan?: (loanId: string, walletId: string, amount: number) => void;
-  onCreateReceivable?: (receivable: Omit<Receivable, 'id' | 'amountCollected' | 'status' | 'createdDate'>) => void;
+  onRepayLoan?: (
+    loanId: string,
+    walletId: string,
+    amount: number,
+    splits?: Array<{ walletId: string; amount: number }>,
+    paymentDate?: string
+  ) => void;
+  onCreateReceivable?: (receivable: Omit<Receivable, 'id' | 'amountCollected' | 'status'> & { createdDate?: string }) => void;
   onUpdateReceivable?: (receivableId: string, updates: Partial<Receivable>) => void;
   onCollectReceivable?: (receivableId: string, walletId: string, amount: number) => void;
   onDeleteReceivable?: (receivableId: string) => void;
   onRequestApproval?: (req: Omit<AdminApprovalRequest, 'id' | 'createdAt' | 'requestedBy' | 'requestedByName' | 'status'>) => void;
   onApproveRequest?: (reqId: string) => void;
   onRejectRequest?: (reqId: string) => void;
+  onOpenAiAdvisor?: (prompt?: string) => void;
 }
 
 export const EqubView: React.FC<EqubViewProps> = ({
@@ -79,7 +93,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
   users = [],
   approvalRequests = [],
   hideBalances,
-  calendarType = 'ETHIOPIAN',
+  calendarType = 'GREGORIAN',
   onToggleCalendarType,
   onPayRound,
   onClaimPayout,
@@ -96,18 +110,21 @@ export const EqubView: React.FC<EqubViewProps> = ({
   onDeleteReceivable,
   onRequestApproval,
   onApproveRequest,
-  onRejectRequest
+  onRejectRequest,
+  onOpenAiAdvisor
 }) => {
   // Main Module Tab State: EQUB CIRCLES vs LOANS vs RECEIVABLES
   const [mainTab, setMainTab] = useState<'CIRCLES' | 'LOANS' | 'RECEIVABLES'>('CIRCLES');
 
   // --- EQUB CIRCLES STATE ---
   const [equbStatusFilter, setEqubStatusFilter] = useState<'ALL' | 'ACTIVE' | 'COMPLETED'>('ALL');
+  const [equbViewMode, setEqubViewMode] = useState<'table' | 'cards'>('table');
   const [isFinishedEqubExpanded, setIsFinishedEqubExpanded] = useState(false);
   const [expandedEqubId, setExpandedEqubId] = useState<string | null>(null);
   const [activeEqubModal, setActiveEqubModal] = useState<Equb | null>(null);
   const [paymentMode, setPaymentMode] = useState<'single' | 'split'>('single');
   const [payWalletId, setPayWalletId] = useState(wallets[0]?.id || '');
+  const [payRoundDate, setPayRoundDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [splitRows, setSplitRows] = useState<Array<{ walletId: string; amount: string }>>([]);
   const [showPayoutModal, setShowPayoutModal] = useState<Equb | null>(null);
   const [payoutWalletId, setPayoutWalletId] = useState(wallets[0]?.id || '');
@@ -123,9 +140,11 @@ export const EqubView: React.FC<EqubViewProps> = ({
   // --- LOANS STATE ---
   const [loanCategoryFilter, setLoanCategoryFilter] = useState<'ALL' | 'LENT' | 'BORROWED'>('ALL');
   const [loanStatusFilter, setLoanStatusFilter] = useState<'ALL' | 'ACTIVE' | 'SETTLED'>('ALL');
+  const [loanViewMode, setLoanViewMode] = useState<'table' | 'cards'>('table');
   const [isFinishedLoansExpanded, setIsFinishedLoansExpanded] = useState(false);
   const [showCreateLoanModal, setShowCreateLoanModal] = useState(false);
   const [newLoanDirection, setNewLoanDirection] = useState<LoanDirection>('LENT');
+  const [newLoanRepaymentType, setNewLoanRepaymentType] = useState<'ONE_TIME' | 'INSTALLMENT'>('ONE_TIME');
   const [newLoanTitle, setNewLoanTitle] = useState('');
   const [newLoanCounterparty, setNewLoanCounterparty] = useState('');
   const [newLoanType, setNewLoanType] = useState<LoanType>('PARTNER');
@@ -136,8 +155,16 @@ export const EqubView: React.FC<EqubViewProps> = ({
 
   // Loan Repayment / Collection Modal
   const [activeLoanActionModal, setActiveLoanActionModal] = useState<Loan | null>(null);
+  const [loanPaymentMode, setLoanPaymentMode] = useState<'single' | 'split'>('single');
   const [loanActionWalletId, setLoanActionWalletId] = useState(wallets[0]?.id || '');
   const [loanActionAmount, setLoanActionAmount] = useState('');
+  const [loanPaymentDate, setLoanPaymentDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [loanSplitRows, setLoanSplitRows] = useState<Array<{ walletId: string; amount: string }>>([
+    { walletId: wallets[0]?.id || '', amount: '' },
+    { walletId: wallets[1]?.id || wallets[0]?.id || '', amount: '' }
+  ]);
+  const [loanActionError, setLoanActionError] = useState('');
+  const [createLoanError, setCreateLoanError] = useState('');
 
   // --- SUPERADMIN / ADMIN EDIT & DELETE STATE ---
   const [editingEqub, setEditingEqub] = useState<Equb | null>(null);
@@ -151,6 +178,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
   const [editLoanCounterparty, setEditLoanCounterparty] = useState('');
   const [editLoanAmount, setEditLoanAmount] = useState('');
   const [editLoanDueDate, setEditLoanDueDate] = useState('');
+  const [editLoanError, setEditLoanError] = useState('');
 
   const [editingReceivable, setEditingReceivable] = useState<Receivable | null>(null);
   const [editReceivableCustomerName, setEditReceivableCustomerName] = useState('');
@@ -190,6 +218,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
     setEditLoanCounterparty(ln.counterparty);
     setEditLoanAmount(ln.outstandingBalance.toString());
     setEditLoanDueDate(ln.dueDate.split('T')[0]);
+    setEditLoanError('');
   };
 
   const startEditReceivable = (rcv: Receivable) => {
@@ -288,18 +317,21 @@ export const EqubView: React.FC<EqubViewProps> = ({
   const [newRcvCustomer, setNewRcvCustomer] = useState('');
   const [newRcvDescription, setNewRcvDescription] = useState('');
   const [newRcvAmount, setNewRcvAmount] = useState('');
+  const [newRcvCreatedDate, setNewRcvCreatedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [newRcvDueDate, setNewRcvDueDate] = useState(new Date(Date.now() + 86400000 * 14).toISOString().split('T')[0]);
 
   // Receivable Collection Modal
   const [activeCollectRcvModal, setActiveCollectRcvModal] = useState<Receivable | null>(null);
   const [collectRcvWalletId, setCollectRcvWalletId] = useState(wallets[0]?.id || '');
   const [collectRcvAmount, setCollectRcvAmount] = useState('');
+  const [isSubmittingCollectRcv, setIsSubmittingCollectRcv] = useState(false);
 
   // --- EQUB CIRCLE HANDLERS ---
   const openPayRoundModal = (eq: Equb) => {
     setActiveEqubModal(eq);
     setPaymentMode('single');
     setPayWalletId(wallets[0]?.id || '');
+    setPayRoundDate(new Date().toISOString().split('T')[0]);
     const userRequired = eq.contributionPerRound * (eq.mySlots || 1);
     const half = (userRequired / 2).toString();
     const w1 = wallets[0]?.id || '';
@@ -344,13 +376,20 @@ export const EqubView: React.FC<EqubViewProps> = ({
   const handlePayRoundSubmit = (equb: Equb) => {
     triggerHaptic('success');
     const userRequired = equb.contributionPerRound * (equb.mySlots || 1);
+    let chosenIsoDate: string;
+    try {
+      chosenIsoDate = payRoundDate ? new Date(`${payRoundDate}T12:00:00.000Z`).toISOString() : new Date().toISOString();
+    } catch {
+      chosenIsoDate = new Date().toISOString();
+    }
+
     if (paymentMode === 'single') {
-      onPayRound(equb.id, [{ walletId: payWalletId, amount: userRequired }]);
+      onPayRound(equb.id, [{ walletId: payWalletId, amount: userRequired }], chosenIsoDate);
     } else {
       const validSplits = splitRows
         .map(r => ({ walletId: r.walletId, amount: parseFloat(r.amount) || 0 }))
         .filter(r => r.amount > 0);
-      onPayRound(equb.id, validSplits);
+      onPayRound(equb.id, validSplits, chosenIsoDate);
     }
     setActiveEqubModal(null);
   };
@@ -443,10 +482,24 @@ export const EqubView: React.FC<EqubViewProps> = ({
   // --- LOAN HANDLERS ---
   const handleCreateLoanSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setCreateLoanError('');
     if (!newLoanTitle.trim() || !newLoanCounterparty.trim() || !newLoanAmount) return;
 
     const amt = parseFloat(newLoanAmount);
     if (isNaN(amt) || amt <= 0) return;
+
+    if (amt < 1000) {
+      setCreateLoanError('Loan principal amount cannot be less than ETB 1,000 (1k).');
+      return;
+    }
+
+    if (newLoanInstallment) {
+      const inst = parseFloat(newLoanInstallment);
+      if (inst < 1000) {
+        setCreateLoanError('Monthly loan repayment installment cannot be less than ETB 1,000 (1k).');
+        return;
+      }
+    }
 
     triggerHaptic('success');
     if (onCreateLoan) {
@@ -455,6 +508,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
         counterparty: newLoanCounterparty.trim(),
         type: newLoanType,
         direction: newLoanDirection,
+        repaymentType: newLoanRepaymentType || (newLoanInstallment ? 'INSTALLMENT' : 'ONE_TIME'),
         initialAmount: amt,
         monthlyInstallment: parseFloat(newLoanInstallment) || undefined,
         dueDate: new Date(newLoanDueDate).toISOString(),
@@ -467,22 +521,104 @@ export const EqubView: React.FC<EqubViewProps> = ({
     setNewLoanCounterparty('');
     setNewLoanAmount('');
     setNewLoanInstallment('');
+    setCreateLoanError('');
+  };
+
+  const handleAddLoanSplitRow = () => {
+    const usedWallets = loanSplitRows.map(r => r.walletId);
+    const nextWallet = wallets.find(w => !usedWallets.includes(w.id)) || wallets[0];
+    if (nextWallet) {
+      setLoanSplitRows(prev => [...prev, { walletId: nextWallet.id, amount: '' }]);
+    }
+  };
+
+  const handleRemoveLoanSplitRow = (idx: number) => {
+    if (loanSplitRows.length <= 1) return;
+    setLoanSplitRows(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleLoanSplitRowChange = (idx: number, field: 'walletId' | 'amount', value: string) => {
+    setLoanSplitRows(prev => {
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], [field]: value };
+      return copy;
+    });
+  };
+
+  const handleAutoBalanceLoanSplit = (loan: Loan) => {
+    if (loanSplitRows.length === 0) return;
+    triggerHaptic('medium');
+    const targetAmt = parseFloat(loanActionAmount) || loan.monthlyInstallment || Math.min(1000, loan.outstandingBalance);
+    const filledSumExceptLast = loanSplitRows.slice(0, -1).reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+    const remainder = Math.max(0, targetAmt - filledSumExceptLast);
+    setLoanSplitRows(prev => {
+      const next = [...prev];
+      next[next.length - 1] = { ...next[next.length - 1], amount: remainder > 0 ? remainder.toString() : '' };
+      return next;
+    });
   };
 
   const handleLoanActionSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setLoanActionError('');
     if (!activeLoanActionModal) return;
 
-    const amt = parseFloat(loanActionAmount);
-    if (isNaN(amt) || amt <= 0) return;
+    let totalAmt = 0;
+    let splits: Array<{ walletId: string; amount: number }> | undefined = undefined;
+
+    if (loanPaymentMode === 'single') {
+      totalAmt = parseFloat(loanActionAmount);
+      if (isNaN(totalAmt) || totalAmt <= 0) {
+        setLoanActionError('Please enter a valid repayment amount.');
+        return;
+      }
+      splits = [{ walletId: loanActionWalletId, amount: totalAmt }];
+    } else {
+      const parsedSplits = loanSplitRows.map(r => ({
+        walletId: r.walletId,
+        amount: parseFloat(r.amount) || 0
+      })).filter(s => s.amount > 0);
+
+      totalAmt = parsedSplits.reduce((acc, s) => acc + s.amount, 0);
+      if (parsedSplits.length === 0 || totalAmt <= 0) {
+        setLoanActionError('Please enter valid amounts for the split wallets.');
+        return;
+      }
+      splits = parsedSplits;
+    }
+
+    const currentBal = activeLoanActionModal.outstandingBalance;
+
+    // Repayment rule: cannot be less than 1k unless the entire remaining balance is less than 1k
+    if (currentBal >= 1000 && totalAmt < 1000) {
+      setLoanActionError('Loan repayment cannot be less than ETB 1,000 (1k).');
+      return;
+    }
+
+    if (currentBal < 1000 && totalAmt < currentBal) {
+      setLoanActionError(`Remaining balance is ETB ${currentBal.toLocaleString()}. Repayment must be at least ETB ${currentBal.toLocaleString()} to settle the loan.`);
+      return;
+    }
+
+    if (totalAmt > currentBal) {
+      setLoanActionError(`Repayment cannot exceed current outstanding balance of ETB ${currentBal.toLocaleString()}.`);
+      return;
+    }
 
     triggerHaptic('success');
     if (onRepayLoan) {
-      onRepayLoan(activeLoanActionModal.id, loanActionWalletId, amt);
+      onRepayLoan(
+        activeLoanActionModal.id,
+        splits[0].walletId,
+        totalAmt,
+        splits,
+        loanPaymentDate ? new Date(loanPaymentDate).toISOString() : new Date().toISOString()
+      );
     }
 
     setActiveLoanActionModal(null);
     setLoanActionAmount('');
+    setLoanActionError('');
   };
 
   // --- RECEIVABLE HANDLERS ---
@@ -499,6 +635,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
         customerName: newRcvCustomer.trim(),
         description: newRcvDescription.trim() || 'Customer Credit / Sales Invoice',
         amountOwed: amt,
+        createdDate: newRcvCreatedDate ? new Date(newRcvCreatedDate).toISOString() : new Date().toISOString(),
         dueDate: new Date(newRcvDueDate).toISOString()
       });
     }
@@ -507,17 +644,19 @@ export const EqubView: React.FC<EqubViewProps> = ({
     setNewRcvCustomer('');
     setNewRcvDescription('');
     setNewRcvAmount('');
+    setNewRcvCreatedDate(new Date().toISOString().split('T')[0]);
   };
 
   const handleCollectRcvSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeCollectRcvModal) return;
+    if (!activeCollectRcvModal || isSubmittingCollectRcv) return;
 
     const amt = parseFloat(collectRcvAmount);
     if (isNaN(amt) || amt <= 0) return;
 
-    const resolvedWalletId = collectRcvWalletId || wallets.find(w => w.isDefault)?.id || wallets[0]?.id || 'w-cash';
+    const resolvedWalletId = collectRcvWalletId || activeCollectRcvModal.walletId || wallets.find(w => w.isDefault)?.id || wallets[0]?.id || 'w-cash';
 
+    setIsSubmittingCollectRcv(true);
     triggerHaptic('success');
     if (onCollectReceivable) {
       onCollectReceivable(activeCollectRcvModal.id, resolvedWalletId, amt);
@@ -525,11 +664,36 @@ export const EqubView: React.FC<EqubViewProps> = ({
 
     setActiveCollectRcvModal(null);
     setCollectRcvAmount('');
+    setTimeout(() => {
+      setIsSubmittingCollectRcv(false);
+    }, 1500);
   };
 
   // Derived Equb Grouping & Calculations
-  const activeEqubsList = equbs.filter(e => e.status === 'ACTIVE' && e.currentRound < e.totalRounds);
-  const finishedEqubsList = equbs.filter(e => e.status === 'COMPLETED' || e.currentRound >= e.totalRounds);
+  const getEqubCompletedRounds = (e: Equb) => {
+    if (typeof e.completedRounds === 'number') return e.completedRounds;
+    if (e.status === 'COMPLETED') return e.totalRounds;
+    return Math.max(0, e.currentRound - 1);
+  };
+
+  const getEqubRemainingRounds = (e: Equb) => {
+    const completed = getEqubCompletedRounds(e);
+    return Math.max(0, e.totalRounds - completed);
+  };
+
+  const getEqubRemainingObligation = (e: Equb) => {
+    const remainingRounds = getEqubRemainingRounds(e);
+    return remainingRounds * e.contributionPerRound * (e.mySlots || 1);
+  };
+
+  const activeEqubsList = equbs.filter(e => e.status === 'ACTIVE' && getEqubCompletedRounds(e) < e.totalRounds);
+  const finishedEqubsList = equbs.filter(e => e.status === 'COMPLETED' || getEqubCompletedRounds(e) >= e.totalRounds);
+
+  // Total obligation across active circles (e.g. 4 remaining rounds * 5,000 ETB = 20,000 ETB)
+  const totalEqubObligation = activeEqubsList.reduce((sum, eq) => sum + getEqubRemainingObligation(eq), 0);
+  const overdueEqubsCount = activeEqubsList.filter(e => e.isOverdue).length;
+  const activeNonOverdueEqubsCount = activeEqubsList.filter(e => !e.isOverdue).length;
+  const completedEqubsCount = finishedEqubsList.length;
 
   const totalActiveEqubCapital = activeEqubsList.reduce((sum, eq) => {
     const membersCount = eq.totalRounds || eq.members.length || 1;
@@ -549,12 +713,12 @@ export const EqubView: React.FC<EqubViewProps> = ({
     .reduce((sum, l) => sum + l.outstandingBalance, 0);
 
   const activeLoansList = loans.filter(l => l.status === 'ACTIVE' && l.outstandingBalance > 0);
-  const finishedLoansList = loans.filter(l => l.status === 'SETTLED' || l.status === 'CLOSED' || l.outstandingBalance <= 0);
+  const finishedLoansList = loans.filter(l => l.status === 'PAID' || (l.status as any) === 'SETTLED' || (l.status as any) === 'CLOSED' || l.outstandingBalance <= 0);
 
   const filteredLoans = loans
     .filter(l => {
       const isLent = l.direction === 'LENT' || l.title.toLowerCase().includes('lent') || l.title.toLowerCase().includes('lend');
-      const isSettled = l.status === 'SETTLED' || l.status === 'CLOSED' || l.outstandingBalance <= 0;
+      const isSettled = l.status === 'PAID' || (l.status as any) === 'SETTLED' || (l.status as any) === 'CLOSED' || l.outstandingBalance <= 0;
 
       // Category filter (All / Lent / Borrowed)
       if (loanCategoryFilter === 'LENT' && !isLent) return false;
@@ -567,8 +731,8 @@ export const EqubView: React.FC<EqubViewProps> = ({
       return true;
     })
     .sort((a, b) => {
-      const isSettledA = a.status === 'SETTLED' || a.status === 'CLOSED' || a.outstandingBalance <= 0;
-      const isSettledB = b.status === 'SETTLED' || b.status === 'CLOSED' || b.outstandingBalance <= 0;
+      const isSettledA = a.status === 'PAID' || (a.status as any) === 'SETTLED' || (a.status as any) === 'CLOSED' || a.outstandingBalance <= 0;
+      const isSettledB = b.status === 'PAID' || (b.status as any) === 'SETTLED' || (b.status as any) === 'CLOSED' || b.outstandingBalance <= 0;
       if (isSettledA !== isSettledB) return isSettledA ? 1 : -1;
       const dateA = new Date(a.dueDate || 0).getTime();
       const dateB = new Date(b.dueDate || 0).getTime();
@@ -768,7 +932,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
           }`}
         >
           <Users className="w-4 h-4" />
-          <span>Equb Circles ({equbs.length})</span>
+          <span>Ekub Groups ({equbs.length})</span>
         </button>
 
         <button
@@ -805,52 +969,165 @@ export const EqubView: React.FC<EqubViewProps> = ({
       {/* ==================== TAB 1: EQUB CIRCLES ==================== */}
       {mainTab === 'CIRCLES' && (
         <div className="space-y-4">
-          
-          {/* Equb Overview KPI Banner */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="bg-gradient-to-br from-indigo-50 via-white to-slate-50 dark:from-indigo-950/40 dark:via-[#131926] dark:to-[#0F172A] border border-indigo-200 dark:border-indigo-800/60 rounded-2xl p-4 space-y-1.5 shadow-sm relative overflow-hidden">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-900/60 border border-indigo-300 dark:border-indigo-700 flex items-center justify-center text-indigo-700 dark:text-indigo-300">
-                    <Landmark className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-900 dark:text-white">Active Equb Capital Pool</h4>
-                    <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">Total combined rotating pools</p>
-                  </div>
-                </div>
-                <span className="text-[9px] bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-200 border border-indigo-300 dark:border-indigo-700 px-2 py-0.5 rounded-full font-mono font-bold">
-                  {activeEqubsList.length} ACTIVE CIRCLES
-                </span>
+
+          {/* AI Partner Equb Strategic Advisor Banner */}
+          <div className="bg-gradient-to-r from-slate-900 via-[#131B2A] to-[#0D1420] border border-[#00D4AA]/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg shadow-[#00D4AA]/5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#00D4AA] to-[#3B82F6] flex items-center justify-center text-slate-950 shrink-0 shadow-md shadow-[#00D4AA]/20 font-black">
+                <Sparkles className="w-5 h-5 text-slate-950" />
               </div>
-              <p className="text-xl font-black font-mono text-indigo-700 dark:text-indigo-300 pt-1">
-                {hideBalances ? '••••••••' : formatETB(totalActiveEqubCapital)}
-              </p>
+              <div>
+                <h4 className="text-xs font-black text-white flex items-center gap-2">
+                  Considering joining a new Equb circle?
+                  <span className="text-[9px] bg-[#00D4AA]/20 text-[#00D4AA] border border-[#00D4AA]/30 px-2 py-0.5 rounded-full font-mono font-bold">
+                    AI PARTNER
+                  </span>
+                </h4>
+                <p className="text-[11px] text-slate-300">
+                  Get a complete pros & cons breakdown with real cashflow numbers, safe limits, and payout rotation strategies.
+                </p>
+              </div>
             </div>
 
-            <div className="bg-gradient-to-br from-purple-50 via-white to-slate-50 dark:from-purple-950/40 dark:via-[#131926] dark:to-[#0F172A] border border-purple-200 dark:border-purple-800/60 rounded-2xl p-4 space-y-1.5 shadow-sm relative overflow-hidden">
-              <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('medium');
+                if (onOpenAiAdvisor) {
+                  onOpenAiAdvisor('If I want to join a new Equb, what will be the pros and cons with detailed explanation and accurate calculations from our current business data?');
+                }
+              }}
+              className="w-full sm:w-auto px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-[#00D4AA] hover:opacity-95 text-slate-950 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-[#00D4AA]/20 shrink-0"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Consult AI Partner</span>
+            </button>
+          </div>
+          
+          {/* Ekub Savings Overview Table (matching official screenshot) */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            {/* Table 1: Ekub Savings Summary */}
+            <div className="lg:col-span-2 bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-4 shadow-sm">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-[#1E2D40]">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-purple-100 dark:bg-purple-900/60 border border-purple-300 dark:border-purple-700 flex items-center justify-center text-purple-700 dark:text-purple-300">
-                    <Banknote className="w-4 h-4" />
+                  <div className="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-700/60 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                    <PiggyBank className="w-4 h-4" />
                   </div>
                   <div>
-                    <h4 className="text-xs font-bold text-slate-900 dark:text-white">Your Round Obligations</h4>
-                    <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">Required payment per round</p>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white">Ekub Savings</h3>
+                    <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">Community Rotating Savings Overview</p>
                   </div>
                 </div>
-                <span className="text-[9px] bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-200 border border-purple-300 dark:border-purple-700 px-2 py-0.5 rounded-full font-mono font-bold">
-                  MY SHARES
+                <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800">
+                  {activeEqubsList.length} Circles Tracked
                 </span>
               </div>
-              <p className="text-xl font-black font-mono text-purple-700 dark:text-purple-300 pt-1">
-                {hideBalances ? '••••••••' : formatETB(myTotalRoundObligation)}
-              </p>
+
+              <div className="overflow-x-auto mt-2">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 dark:border-[#1E2D40] text-slate-500 dark:text-[#8899BB] font-mono text-[11px]">
+                      <th className="py-2.5 px-3 text-left font-bold uppercase tracking-wider">Item</th>
+                      <th className="py-2.5 px-3 text-right font-bold uppercase tracking-wider">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-[#1E2D40]/60">
+                    <tr className="hover:bg-slate-50/50 dark:hover:bg-[#1C2333]/30 transition-colors">
+                      <td className="py-2.5 px-3 font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                        <span>Active circles</span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 dark:text-white">
+                        {activeEqubsList.length}
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-slate-50/50 dark:hover:bg-[#1C2333]/30 transition-colors">
+                      <td className="py-2.5 px-3 font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
+                        <span>Total obligation</span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-black text-indigo-600 dark:text-indigo-400">
+                        {hideBalances ? '••••••••' : formatETB(totalEqubObligation)}
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-slate-50/50 dark:hover:bg-[#1C2333]/30 transition-colors">
+                      <td className="py-2.5 px-3 font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span>Active</span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 dark:text-white">
+                        {activeNonOverdueEqubsCount}
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-slate-50/50 dark:hover:bg-[#1C2333]/30 transition-colors">
+                      <td className="py-2.5 px-3 font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                        <span>Overdue</span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-black text-rose-600 dark:text-rose-400">
+                        {overdueEqubsCount}
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-slate-50/50 dark:hover:bg-[#1C2333]/30 transition-colors">
+                      <td className="py-2.5 px-3 font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-slate-400 dark:bg-slate-500"></span>
+                        <span>Completed</span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 dark:text-white">
+                        {completedEqubsCount}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Quick Metrics Column */}
+            <div className="flex flex-col gap-3">
+              <div className="flex-1 bg-gradient-to-br from-indigo-50 via-white to-slate-50 dark:from-indigo-950/40 dark:via-[#131926] dark:to-[#0F172A] border border-indigo-200 dark:border-indigo-800/60 rounded-2xl p-4 flex flex-col justify-between shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-900/60 border border-indigo-300 dark:border-indigo-700 flex items-center justify-center text-indigo-700 dark:text-indigo-300">
+                      <Landmark className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white">Active Capital Pool</h4>
+                      <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">Combined pool per round</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="pt-2">
+                  <p className="text-xl font-black font-mono text-indigo-700 dark:text-indigo-300">
+                    {hideBalances ? '••••••••' : formatETB(totalActiveEqubCapital)}
+                  </p>
+                  <p className="text-[10px] text-slate-500 dark:text-[#8899BB] mt-0.5">Across {activeEqubsList.length} active circle</p>
+                </div>
+              </div>
+
+              <div className="flex-1 bg-gradient-to-br from-purple-50 via-white to-slate-50 dark:from-purple-950/40 dark:via-[#131926] dark:to-[#0F172A] border border-purple-200 dark:border-purple-800/60 rounded-2xl p-4 flex flex-col justify-between shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-900/60 border border-purple-300 dark:border-purple-700 flex items-center justify-center text-purple-700 dark:text-purple-300">
+                      <Banknote className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white">Round Contribution</h4>
+                      <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">Required payment per round</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="pt-2">
+                  <p className="text-xl font-black font-mono text-purple-700 dark:text-purple-300">
+                    {hideBalances ? '••••••••' : formatETB(myTotalRoundObligation)}
+                  </p>
+                  <p className="text-[10px] text-rose-600 dark:text-rose-400 font-bold mt-0.5">Payment overdue (Round #{activeEqubsList[0]?.currentRound || 24})</p>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Equb Filter Bar: ALL vs ACTIVE vs FINISHED */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* Equb Filter & View Switcher Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
             <div className="flex items-center gap-1.5 bg-slate-200/70 dark:bg-[#131926] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40] w-fit">
               <button
                 onClick={() => {
@@ -897,16 +1174,41 @@ export const EqubView: React.FC<EqubViewProps> = ({
               </button>
             </div>
 
-            {finishedEqubsList.length > 0 && equbStatusFilter === 'ALL' && (
-              <span className="text-[11px] font-semibold text-slate-500 dark:text-[#8899BB] flex items-center gap-1">
-                <span>{activeEqubsList.length} Active</span>
-                <span>•</span>
-                <span className="text-emerald-600 dark:text-emerald-400 font-bold">{finishedEqubsList.length} Finished</span>
-              </span>
-            )}
+            {/* View Mode Toggle: Table View vs Cards View */}
+            <div className="flex items-center gap-1 bg-slate-200/70 dark:bg-[#131926] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40]">
+              <button
+                onClick={() => {
+                  triggerHaptic('light');
+                  setEqubViewMode('table');
+                }}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  equbViewMode === 'table'
+                    ? 'bg-white dark:bg-[#1C2333] text-indigo-600 dark:text-indigo-400 shadow-sm border border-slate-200 dark:border-[#1E2D40]'
+                    : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Table className="w-3.5 h-3.5" />
+                <span>Table View</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  triggerHaptic('light');
+                  setEqubViewMode('cards');
+                }}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  equbViewMode === 'cards'
+                    ? 'bg-white dark:bg-[#1C2333] text-indigo-600 dark:text-indigo-400 shadow-sm border border-slate-200 dark:border-[#1E2D40]'
+                    : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>Cards View</span>
+              </button>
+            </div>
           </div>
 
-          {/* Equb Circles List */}
+          {/* Equb Circles List (Table or Cards) */}
           <div className="space-y-4">
             {equbs.length === 0 ? (
               <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-8 text-center space-y-2 shadow-sm">
@@ -914,7 +1216,205 @@ export const EqubView: React.FC<EqubViewProps> = ({
                 <p className="text-sm font-bold text-slate-900 dark:text-white">No Active Equb Circles</p>
                 <p className="text-xs text-slate-500 dark:text-[#8899BB]">Launch a community savings circle to start rotating partner payouts.</p>
               </div>
+            ) : equbViewMode === 'table' ? (
+              /* ================= TABLE VIEW: MEMBER / EKUB ================= */
+              <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-slate-200 dark:border-[#1E2D40] flex flex-wrap items-center justify-between gap-3 bg-slate-50/60 dark:bg-[#1C2333]/50">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white">Member / Ekub</h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-200/70 dark:bg-[#131926] text-slate-700 dark:text-slate-300 font-bold">
+                      {equbs.filter(eq => {
+                        const completed = getEqubCompletedRounds(eq);
+                        const isFinished = eq.status === 'COMPLETED' || completed >= eq.totalRounds;
+                        if (equbStatusFilter === 'ACTIVE' && isFinished) return false;
+                        if (equbStatusFilter === 'COMPLETED' && !isFinished) return false;
+                        return true;
+                      }).length} Circles
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-[#8899BB] flex items-center gap-1.5">
+                    <span>Click any row to reveal complete round & contribution breakdown</span>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="border-b border-slate-200 dark:border-[#1E2D40] bg-slate-100/70 dark:bg-[#1C2333]/90 text-slate-600 dark:text-[#8899BB] font-mono text-[11px]">
+                        <th className="py-3 px-4 font-bold uppercase tracking-wider">Member</th>
+                        <th className="py-3 px-4 font-bold uppercase tracking-wider">Contribution</th>
+                        <th className="py-3 px-4 font-bold uppercase tracking-wider">Progress</th>
+                        <th className="py-3 px-4 font-bold uppercase tracking-wider">Status</th>
+                        <th className="py-3 px-4 font-bold uppercase tracking-wider text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-[#1E2D40]">
+                      {equbs
+                        .filter(eq => {
+                          const completed = getEqubCompletedRounds(eq);
+                          const isFinished = eq.status === 'COMPLETED' || completed >= eq.totalRounds;
+                          if (equbStatusFilter === 'ACTIVE' && isFinished) return false;
+                          if (equbStatusFilter === 'COMPLETED' && !isFinished) return false;
+                          return true;
+                        })
+                        .map(eq => {
+                          const completed = getEqubCompletedRounds(eq);
+                          const remaining = getEqubRemainingRounds(eq);
+                          const remainingObligation = getEqubRemainingObligation(eq);
+                          const progressPercent = Math.min(100, Math.round((completed / eq.totalRounds) * 100));
+                          const winnerMember = eq.members.find(m => m.isWinner);
+                          const isWinner = Boolean(winnerMember);
+                          const wonRound = winnerMember?.wonRound ?? 1;
+                          const isOverdue = Boolean(eq.isOverdue && eq.status === 'ACTIVE');
+                          const isCompleted = eq.status === 'COMPLETED' || completed >= eq.totalRounds;
+                          const isExpanded = expandedEqubId === eq.id;
+
+                          return (
+                            <React.Fragment key={eq.id}>
+                              <tr
+                                onClick={() => {
+                                  triggerHaptic('light');
+                                  setExpandedEqubId(prev => prev === eq.id ? null : eq.id);
+                                }}
+                                className={`hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20 cursor-pointer transition-colors ${
+                                  isExpanded ? 'bg-indigo-50/60 dark:bg-indigo-950/30' : ''
+                                }`}
+                              >
+                                {/* Member */}
+                                <td className="py-3.5 px-4">
+                                  <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                    <span>{eq.name}</span>
+                                    {isOverdue && (
+                                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" title="Payment Overdue"></span>
+                                    )}
+                                  </div>
+                                  <div className="text-[11px] text-slate-500 dark:text-[#8899BB] flex items-center gap-1.5 mt-0.5">
+                                    <span>{eq.interval.replace(/_/g, ' ').toLowerCase()}</span>
+                                    <span>•</span>
+                                    <span>{eq.mySlots || 1} {eq.mySlots === 1 ? 'slot' : 'slots'}</span>
+                                  </div>
+                                </td>
+
+                                {/* Contribution */}
+                                <td className="py-3.5 px-4 font-mono">
+                                  <span className="font-bold text-slate-900 dark:text-white">{formatETB(eq.contributionPerRound)}</span>
+                                  <span className="text-slate-500 dark:text-[#8899BB] text-[11px]"> per round</span>
+                                </td>
+
+                                {/* Progress: 23 / 27 rounds (85%) */}
+                                <td className="py-3.5 px-4">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono font-bold text-slate-900 dark:text-white">
+                                      {completed} / {eq.totalRounds} rounds
+                                    </span>
+                                    <span className="text-[11px] font-mono font-semibold text-slate-500 dark:text-[#8899BB]">
+                                      ({progressPercent}%)
+                                    </span>
+                                  </div>
+                                  <div className="w-32 h-1.5 bg-slate-200 dark:bg-[#1E2D40] rounded-full overflow-hidden mt-1.5">
+                                    <div
+                                      className={`h-full rounded-full transition-all ${
+                                        isCompleted ? 'bg-emerald-500' : isOverdue ? 'bg-amber-500' : 'bg-indigo-500'
+                                      }`}
+                                      style={{ width: `${progressPercent}%` }}
+                                    />
+                                  </div>
+                                </td>
+
+                                {/* Status: Won Round 1 • Overdue / Completed */}
+                                <td className="py-3.5 px-4">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    {isWinner && (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-700/60">
+                                        <Trophy className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                                        <span>Won Round {wonRound}</span>
+                                      </span>
+                                    )}
+
+                                    {isOverdue && (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-900 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300 dark:border-rose-700/60">
+                                        <AlertCircle className="w-3 h-3 text-rose-600 dark:text-rose-400" />
+                                        <span>Overdue</span>
+                                      </span>
+                                    )}
+
+                                    {isCompleted && (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/60">
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                        <span>Completed</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+
+                                {/* Actions */}
+                                <td className="py-3.5 px-4 text-right">
+                                  <div className="flex items-center justify-end gap-1.5" onClick={e => e.stopPropagation()}>
+                                    {!isCompleted && (
+                                      <button
+                                        type="button"
+                                        onClick={() => openPayRoundModal(eq)}
+                                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition-colors flex items-center gap-1 shadow-sm cursor-pointer"
+                                      >
+                                        <Banknote className="w-3.5 h-3.5" />
+                                        <span>Pay Round #{eq.currentRound}</span>
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedEqubId(prev => prev === eq.id ? null : eq.id)}
+                                      className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-[#1E2D40] transition-colors cursor-pointer"
+                                      title="Toggle Details"
+                                    >
+                                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+
+                              {/* Detailed Breakdown Row */}
+                              {isExpanded && (
+                                <tr className="bg-slate-50/70 dark:bg-[#101622] border-b border-slate-200 dark:border-[#1E2D40]">
+                                  <td colSpan={5} className="py-4 px-6">
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-xs bg-white dark:bg-[#131926] p-4 rounded-xl border border-slate-200 dark:border-[#1E2D40] shadow-sm">
+                                      <div>
+                                        <div className="text-[10px] text-slate-500 uppercase font-mono font-bold">Total rounds</div>
+                                        <div className="font-mono font-black text-slate-900 dark:text-white text-sm mt-0.5">{eq.totalRounds}</div>
+                                      </div>
+                                      <div>
+                                        <div className="text-[10px] text-slate-500 uppercase font-mono font-bold">Completed</div>
+                                        <div className="font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm mt-0.5">{completed}</div>
+                                      </div>
+                                      <div>
+                                        <div className="text-[10px] text-slate-500 uppercase font-mono font-bold">Remaining</div>
+                                        <div className="font-mono font-black text-amber-600 dark:text-amber-400 text-sm mt-0.5">{remaining} rounds</div>
+                                      </div>
+                                      <div>
+                                        <div className="text-[10px] text-slate-500 uppercase font-mono font-bold">Contribution per round</div>
+                                        <div className="font-mono font-black text-slate-900 dark:text-white text-sm mt-0.5">{formatETB(eq.contributionPerRound)}</div>
+                                      </div>
+                                      <div>
+                                        <div className="text-[10px] text-slate-500 uppercase font-mono font-bold">Remaining contribution</div>
+                                        <div className="font-mono font-black text-indigo-600 dark:text-indigo-400 text-sm mt-0.5">{formatETB(remainingObligation)}</div>
+                                      </div>
+                                      <div>
+                                        <div className="text-[10px] text-slate-500 uppercase font-mono font-bold">Won</div>
+                                        <div className="font-mono font-black text-amber-600 dark:text-amber-400 text-sm mt-0.5">Round {wonRound}</div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             ) : (
+              /* ================= CARDS VIEW ================= */
               <>
                 {/* SECTION 1: ACTIVE EQUB CIRCLES */}
                 {(equbStatusFilter === 'ALL' || equbStatusFilter === 'ACTIVE') && (
@@ -926,7 +1426,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
                           <span>Active Rotating Circles ({activeEqubsList.length})</span>
                         </h3>
                         <span className="text-[10px] text-slate-500 font-mono font-bold">
-                          Per Round: {formatETB(myTotalRoundObligation)}
+                          Total Obligation: {formatETB(totalEqubObligation)}
                         </span>
                       </div>
                     )}
@@ -944,11 +1444,17 @@ export const EqubView: React.FC<EqubViewProps> = ({
                         const totalMembersOrRounds = eq.totalRounds || eq.members.length || 1;
                         const netPool = eq.contributionPerRound * totalMembersOrRounds;
                         const myContributionPerRound = eq.contributionPerRound * mySlots;
-                        const isFinished = false;
-                        const progressPercent = Math.min(100, Math.round((eq.currentRound / eq.totalRounds) * 100));
+                        const completed = getEqubCompletedRounds(eq);
+                        const remaining = getEqubRemainingRounds(eq);
+                        const remainingObligation = getEqubRemainingObligation(eq);
+                        const progressPercent = Math.min(100, Math.round((completed / eq.totalRounds) * 100));
+                        const winnerMember = eq.members.find(m => m.isWinner);
+                        const isWinner = Boolean(winnerMember);
+                        const wonRound = winnerMember?.wonRound ?? 1;
+                        const isOverdue = Boolean(eq.isOverdue);
 
-                        const startDateFormatted = formatDateByCalendar(eq.startDate || Date.now(), calendarType, true);
-                        const endDateFormatted = formatDateByCalendar(eq.computedEndingDate || Date.now(), calendarType, true);
+                        const startDateFormatted = formatDateByCalendar(eq.startDate || new Date().toISOString(), calendarType, true);
+                        const endDateFormatted = formatDateByCalendar(eq.computedEndingDate || new Date().toISOString(), calendarType, true);
 
                         const isExpanded = expandedEqubId === eq.id;
 
@@ -976,10 +1482,17 @@ export const EqubView: React.FC<EqubViewProps> = ({
                                     {mySlots} {mySlots === 1 ? 'Slot' : 'Slots'}
                                   </span>
 
-                                  {eq.members.some(m => m.isWinner && m.name.includes('Yegeta')) && (
+                                  {isWinner && (
                                     <span className="text-[10px] bg-amber-100 text-amber-950 dark:bg-amber-900/60 dark:text-amber-200 px-2.5 py-0.5 rounded-full font-extrabold border border-amber-300 dark:border-amber-700 flex items-center gap-1">
                                       <Trophy className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                                      <span>WON ROUND #{eq.members.find(m => m.isWinner && m.name.includes('Yegeta'))?.wonRound}</span>
+                                      <span>WON ROUND #{wonRound}</span>
+                                    </span>
+                                  )}
+
+                                  {isOverdue && (
+                                    <span className="text-[10px] bg-rose-100 text-rose-950 dark:bg-rose-900/60 dark:text-rose-200 px-2.5 py-0.5 rounded-full font-extrabold border border-rose-300 dark:border-rose-700 flex items-center gap-1">
+                                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                                      <span>OVERDUE</span>
                                     </span>
                                   )}
                                 </div>
@@ -1030,9 +1543,9 @@ export const EqubView: React.FC<EqubViewProps> = ({
                             {/* Progress Bar */}
                             <div>
                               <div className="flex justify-between text-[11px] font-mono font-bold text-slate-600 dark:text-[#8899BB] mb-1">
-                                <span>Round #{eq.currentRound} of {eq.totalRounds}</span>
+                                <span>{completed} / {eq.totalRounds} rounds ({progressPercent}%)</span>
                                 <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">
-                                  {progressPercent}% Completed
+                                  Remaining Obligation: {formatETB(remainingObligation)}
                                 </span>
                               </div>
                               <div className="w-full h-2.5 bg-slate-200 dark:bg-[#1C2333] rounded-full overflow-hidden">
@@ -1043,10 +1556,38 @@ export const EqubView: React.FC<EqubViewProps> = ({
                               </div>
                             </div>
 
+                            {/* 6 Key Metrics Breakdown matching screenshot */}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 text-xs bg-slate-50 dark:bg-[#1C2333]/90 p-3 rounded-xl border border-slate-200/80 dark:border-[#1E2D40]">
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Total rounds</span>
+                                <p className="font-mono font-bold text-slate-900 dark:text-white mt-0.5">{eq.totalRounds}</p>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Completed</span>
+                                <p className="font-mono font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">{completed}</p>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Remaining</span>
+                                <p className="font-mono font-bold text-amber-600 dark:text-amber-400 mt-0.5">{remaining} rounds</p>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Contribution / round</span>
+                                <p className="font-mono font-bold text-slate-900 dark:text-white mt-0.5">{formatETB(eq.contributionPerRound)}</p>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Remaining contribution</span>
+                                <p className="font-mono font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">{formatETB(remainingObligation)}</p>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-500 dark:text-[#8899BB] uppercase">Won</span>
+                                <p className="font-mono font-bold text-amber-600 dark:text-amber-400 mt-0.5">{isWinner ? `Round ${wonRound}` : 'Pending'}</p>
+                              </div>
+                            </div>
+
                             {/* General Mode Hint when Collapsed */}
                             {!isExpanded && (
                               <div className="pt-1 flex items-center justify-between text-xs text-indigo-600 dark:text-indigo-400 font-bold border-t border-slate-100 dark:border-[#1E2D40]/60">
-                                <span>Tap to view details & actions</span>
+                                <span>Tap to view full cycle dates & payment actions</span>
                                 <ChevronDown className="w-3.5 h-3.5" />
                               </div>
                             )}
@@ -1196,8 +1737,8 @@ export const EqubView: React.FC<EqubViewProps> = ({
                           const mySlots = eq.mySlots || 1;
                           const totalMembersOrRounds = eq.totalRounds || eq.members.length || 1;
                           const netPool = eq.contributionPerRound * totalMembersOrRounds;
-                          const startDateFormatted = formatDateByCalendar(eq.startDate || Date.now(), calendarType, true);
-                          const endDateFormatted = formatDateByCalendar(eq.computedEndingDate || Date.now(), calendarType, true);
+                          const startDateFormatted = formatDateByCalendar(eq.startDate || new Date().toISOString(), calendarType, true);
+                          const endDateFormatted = formatDateByCalendar(eq.computedEndingDate || new Date().toISOString(), calendarType, true);
 
                           return (
                             <div
@@ -1402,20 +1943,272 @@ export const EqubView: React.FC<EqubViewProps> = ({
                 <span>Finished ({finishedLoansList.length})</span>
               </button>
             </div>
+
+            {/* View Mode Toggle: Table vs Cards */}
+            <div className="flex items-center gap-1 bg-slate-200/70 dark:bg-[#131926] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40]">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setLoanViewMode('table');
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  loanViewMode === 'table'
+                    ? 'bg-white dark:bg-[#1C2333] text-slate-900 dark:text-white shadow-sm border border-slate-200 dark:border-[#1E2D40]'
+                    : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                }`}
+                title="Table View (Person, Original, Remaining, Type, Due Date, Status)"
+              >
+                <List className="w-3.5 h-3.5" />
+                <span>Table</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setLoanViewMode('cards');
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  loanViewMode === 'cards'
+                    ? 'bg-white dark:bg-[#1C2333] text-slate-900 dark:text-white shadow-sm border border-slate-200 dark:border-[#1E2D40]'
+                    : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                }`}
+                title="Cards View"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>Cards</span>
+              </button>
+            </div>
           </div>
 
-          {/* Loan List Organized by Active vs Finished */}
+          {/* Money I Owe — Payables Summary Banner */}
+          {loanCategoryFilter !== 'LENT' && (
+            <div className="bg-gradient-to-r from-amber-500/10 via-amber-50/60 to-slate-50 dark:from-amber-500/15 dark:via-[#161D2B] dark:to-[#0F172A] border border-amber-300/80 dark:border-amber-500/40 rounded-2xl p-3.5 px-4 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-700 dark:text-amber-400 font-black text-xs font-mono">
+                    ETB
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-2">
+                      <span>Money I Owe — Payables</span>
+                      <span className="text-[10px] px-2 py-0.2 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-500/25 dark:text-amber-300 font-mono font-bold border border-amber-300 dark:border-amber-500/40">
+                        {loans.filter(l => l.direction !== 'LENT' && l.status === 'ACTIVE' && l.outstandingBalance > 0).length} Active Agreements
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-slate-600 dark:text-[#8899BB] mt-0.5">
+                      Total remaining debt: <strong className="text-amber-700 dark:text-amber-400 font-mono font-black text-sm">{hideBalances ? '••••••••' : formatETB(totalBorrowedAmount)}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 text-xs bg-white/70 dark:bg-[#131926]/70 p-2 rounded-xl border border-amber-200 dark:border-amber-500/20 font-mono">
+                  <div>
+                    <span className="text-[10px] text-slate-500 dark:text-[#8899BB] block">Overdue</span>
+                    <span className="font-bold text-rose-600 dark:text-rose-400">
+                      {formatETB(loans.filter(l => l.direction !== 'LENT' && l.status === 'ACTIVE' && l.outstandingBalance > 0 && new Date(l.dueDate).getTime() < Date.now()).reduce((sum, l) => sum + l.outstandingBalance, 0))}
+                    </span>
+                  </div>
+                  <div className="w-px h-6 bg-slate-200 dark:bg-[#1E2D40]"></div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 dark:text-[#8899BB] block">Settled</span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                      {loans.filter(l => l.direction !== 'LENT' && (l.status === 'PAID' || l.outstandingBalance <= 0)).length} Debts (0 ETB)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Loan List Display (Table View vs Card View) */}
           <div className="space-y-4">
             {filteredLoans.length === 0 ? (
               <p className="text-xs text-slate-500 dark:text-[#8899BB] py-8 text-center bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl shadow-sm">
                 No loans found matching the current filter.
               </p>
+            ) : loanViewMode === 'table' ? (
+              /* TABULAR REPRESENTATION MATCHING USER SCREENSHOTS */
+              <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs min-w-[720px]">
+                    <thead>
+                      <tr className="border-b border-slate-200 dark:border-[#1E2D40] bg-slate-50/80 dark:bg-[#1C2333]/70 text-slate-600 dark:text-[#8899BB] font-mono text-[11px] uppercase tracking-wider">
+                        <th className="py-3 px-4 font-bold">Person</th>
+                        <th className="py-3 px-4 font-bold text-right">Original Amount</th>
+                        <th className="py-3 px-4 font-bold text-right">Remaining</th>
+                        <th className="py-3 px-4 font-bold">Type</th>
+                        <th className="py-3 px-4 font-bold">Due Date</th>
+                        <th className="py-3 px-4 font-bold">Status</th>
+                        <th className="py-3 px-4 font-bold text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-[#1E2D40]">
+                      {filteredLoans.map((loan) => {
+                        const isLent = loan.direction === 'LENT' || loan.title.toLowerCase().includes('lent') || loan.title.toLowerCase().includes('lend');
+                        const isSettled = loan.status === 'PAID' || (loan.status as any) === 'SETTLED' || (loan.status as any) === 'CLOSED' || loan.outstandingBalance <= 0;
+                        const isOverdue = !isSettled && new Date(loan.dueDate).getTime() < Date.now();
+                        const statusLabel = isSettled ? 'Settled' : isOverdue ? 'Overdue' : 'Active';
+                        const statusBadgeClass = isSettled
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700'
+                          : isOverdue
+                          ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-200 border-rose-300 dark:border-rose-700'
+                          : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-200 border-indigo-300 dark:border-indigo-700';
+
+                        const repaymentTypeLabel = loan.repaymentType === 'INSTALLMENT' || (loan.monthlyInstallment && loan.monthlyInstallment > 0)
+                          ? 'Installment'
+                          : 'One-time';
+
+                        const isoDueDate = loan.dueDate ? loan.dueDate.split('T')[0] : '—';
+
+                        return (
+                          <tr
+                            key={loan.id}
+                            className={`hover:bg-slate-50/70 dark:hover:bg-[#1C2333]/40 transition-colors ${
+                              isSettled ? 'opacity-70 bg-slate-50/30 dark:bg-transparent' : ''
+                            }`}
+                          >
+                            {/* Person */}
+                            <td className="py-3 px-4">
+                              <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                <span>{loan.title || loan.counterparty}</span>
+                                {isLent && (
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 dark:bg-[#00D4AA]/20 dark:text-[#00D4AA] font-mono">
+                                    Lent Out
+                                  </span>
+                                )}
+                              </div>
+                              {loan.counterparty && loan.counterparty !== loan.title && (
+                                <p className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono">
+                                  {loan.counterparty}
+                                </p>
+                              )}
+                            </td>
+
+                            {/* Original Amount */}
+                            <td className="py-3 px-4 text-right font-mono font-bold text-slate-900 dark:text-white">
+                              {formatETB(loan.initialAmount)}
+                            </td>
+
+                            {/* Remaining */}
+                            <td className="py-3 px-4 text-right font-mono font-black">
+                              {hideBalances ? (
+                                '••••••'
+                              ) : isSettled ? (
+                                <span className="text-slate-400 dark:text-slate-500 font-normal">0 ETB</span>
+                              ) : (
+                                <span className={isLent ? 'text-emerald-600 dark:text-[#00D4AA]' : isOverdue ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'}>
+                                  {formatETB(loan.outstandingBalance)}
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Type */}
+                            <td className="py-3 px-4">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                                repaymentTypeLabel === 'Installment'
+                                  ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border-purple-300 dark:border-purple-700'
+                                  : 'bg-slate-100 text-slate-700 dark:bg-[#1C2333] dark:text-[#8899BB] border-slate-300 dark:border-[#1E2D40]'
+                              }`}>
+                                {repaymentTypeLabel}
+                              </span>
+                              {loan.monthlyInstallment && (
+                                <p className="text-[9px] text-slate-500 dark:text-[#8899BB] font-mono mt-0.5">
+                                  {formatETB(loan.monthlyInstallment)}/mo
+                                </p>
+                              )}
+                            </td>
+
+                            {/* Due Date */}
+                            <td className="py-3 px-4 font-mono text-slate-700 dark:text-slate-300">
+                              <div>{isoDueDate}</div>
+                              {calendarType === 'ETHIOPIAN' && (
+                                <div className="text-[9px] text-slate-500 dark:text-[#8899BB]">
+                                  {formatDateByCalendar(loan.dueDate, 'ETHIOPIAN', false)}
+                                </div>
+                              )}
+                            </td>
+
+                            {/* Status */}
+                            <td className="py-3 px-4">
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${statusBadgeClass}`}>
+                                {isSettled ? (
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                ) : isOverdue ? (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>
+                                ) : (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                                )}
+                                <span>{statusLabel}</span>
+                              </span>
+                            </td>
+
+                            {/* Actions */}
+                            <td className="py-3 px-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {loan.status === 'ACTIVE' && loan.outstandingBalance > 0 ? (
+                                  <button
+                                    onClick={() => {
+                                      triggerHaptic('medium');
+                                      setActiveLoanActionModal(loan);
+                                      setLoanActionAmount(loan.monthlyInstallment ? loan.monthlyInstallment.toString() : loan.outstandingBalance.toString());
+                                      setLoanActionWalletId(wallets[0]?.id || '');
+                                    }}
+                                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer ${
+                                      isLent
+                                        ? 'bg-emerald-600 dark:bg-[#00D4AA] text-white dark:text-[#0A0E1A] hover:bg-emerald-700'
+                                        : 'bg-amber-500 text-white dark:text-[#0A0E1A] hover:bg-amber-600'
+                                    }`}
+                                  >
+                                    <DollarSign className="w-3 h-3" />
+                                    <span>{isLent ? 'Collect' : 'Repay'}</span>
+                                  </button>
+                                ) : (
+                                  <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800">
+                                    Settled
+                                  </span>
+                                )}
+
+                                {(currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
+                                  <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-[#1C2333] p-0.5 rounded-lg border border-slate-200 dark:border-[#1E2D40]">
+                                    <button
+                                      onClick={() => {
+                                        triggerHaptic('light');
+                                        startEditLoan(loan);
+                                      }}
+                                      title="Edit Loan Contract"
+                                      className="p-1 text-slate-500 dark:text-[#8899BB] hover:text-indigo-600 dark:hover:text-indigo-400 rounded transition-colors"
+                                    >
+                                      <Edit className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        triggerHaptic('warning');
+                                        executeOrConfirmAction('DELETE_LOAN', loan.id, loan.title);
+                                      }}
+                                      title="Delete Loan Contract"
+                                      className="p-1 text-slate-500 dark:text-[#8899BB] hover:text-rose-600 dark:hover:text-rose-400 rounded transition-colors"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             ) : (
+              /* CARD VIEW */
               <>
                 {/* SECTION 1: ACTIVE LOANS */}
                 {(() => {
                   const currentActiveFilteredLoans = filteredLoans.filter(l => l.status === 'ACTIVE' && l.outstandingBalance > 0);
-                  const currentFinishedFilteredLoans = filteredLoans.filter(l => l.status === 'SETTLED' || l.status === 'CLOSED' || l.outstandingBalance <= 0);
+                  const currentFinishedFilteredLoans = filteredLoans.filter(l => l.status === 'PAID' || (l.status as any) === 'SETTLED' || (l.status as any) === 'CLOSED' || l.outstandingBalance <= 0);
 
                   return (
                     <>
@@ -1503,14 +2296,22 @@ export const EqubView: React.FC<EqubViewProps> = ({
                                   </div>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 dark:bg-[#1C2333] p-2.5 rounded-xl border border-slate-100 dark:border-transparent">
+                                <div className="grid grid-cols-3 gap-2 text-xs bg-slate-50 dark:bg-[#1C2333] p-2.5 rounded-xl border border-slate-100 dark:border-transparent">
                                   <div>
-                                    <span className="text-[10px] text-slate-500 dark:text-[#8899BB]">Initial Principal</span>
+                                    <span className="text-[10px] text-slate-500 dark:text-[#8899BB] block">Original Amount</span>
                                     <p className="font-mono font-bold text-slate-900 dark:text-white">{formatETB(loan.initialAmount)}</p>
                                   </div>
                                   <div>
-                                    <span className="text-[10px] text-slate-500 dark:text-[#8899BB]">Due Date</span>
-                                    <p className="font-mono font-bold text-slate-900 dark:text-white">{formatDateByCalendar(loan.dueDate, calendarType, true)}</p>
+                                    <span className="text-[10px] text-slate-500 dark:text-[#8899BB] block">Type</span>
+                                    <p className="font-bold text-slate-900 dark:text-white">
+                                      {loan.repaymentType === 'INSTALLMENT' || (loan.monthlyInstallment && loan.monthlyInstallment > 0)
+                                        ? 'Installment'
+                                        : 'One-time'}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <span className="text-[10px] text-slate-500 dark:text-[#8899BB] block">Due Date</span>
+                                    <p className="font-mono font-bold text-slate-900 dark:text-white">{loan.dueDate ? loan.dueDate.split('T')[0] : '—'}</p>
                                   </div>
                                 </div>
 
@@ -1694,6 +2495,15 @@ export const EqubView: React.FC<EqubViewProps> = ({
                         </span>
                         <h4 className="text-sm font-bold text-slate-900 dark:text-white mt-1">{rcv.customerName}</h4>
                         <p className="text-[11px] text-slate-500 dark:text-[#8899BB]">{rcv.description}</p>
+
+                        {/* Deposit Wallet info when collected */}
+                        {rcv.status === 'COLLECTED' && rcv.walletId && (
+                          <div className="flex items-center gap-1.5 text-[10px] mt-1.5 px-2 py-0.5 rounded-lg border w-fit bg-emerald-50/80 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200 border-emerald-200/60 dark:border-emerald-800/50">
+                            <WalletIcon className="w-3 h-3 shrink-0 text-emerald-500" />
+                            <span className="font-medium">Collected to:</span>
+                            <span className="font-bold">{wallets.find(w => w.id === rcv.walletId)?.name || 'Wallet'}</span>
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-2">
@@ -1756,7 +2566,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
                           triggerHaptic('medium');
                           setActiveCollectRcvModal(rcv);
                           setCollectRcvAmount(outstanding.toString());
-                          setCollectRcvWalletId(wallets[0]?.id || '');
+                          setCollectRcvWalletId(rcv.walletId && wallets.some(w => w.id === rcv.walletId) ? rcv.walletId : (wallets.find(w => w.isDefault)?.id || wallets[0]?.id || 'w-cash'));
                         }}
                         className="w-full py-2 rounded-xl bg-blue-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:bg-blue-700 transition-colors"
                       >
@@ -1856,13 +2666,13 @@ export const EqubView: React.FC<EqubViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="text-xs font-bold text-slate-700 dark:text-[#8899BB] block mb-1">Starting Date</label>
-                    <input
-                      type="date"
+                    <ModernDateInput
+                      label="Starting Date"
                       required
                       value={equbStartDate}
-                      onChange={e => setEqubStartDate(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-300 dark:border-[#1E2D40] focus:border-indigo-500 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-bold outline-none"
+                      onChange={val => setEqubStartDate(val)}
+                      accentColor="indigo"
+                      size="sm"
                     />
                   </div>
                 </div>
@@ -1936,7 +2746,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
 
       {/* Modal: Pay Equb Round (Supports Single & Split Payments) */}
       {activeEqubModal && (() => {
-        const requiredTotal = activeEqubModal.contributionPerRound;
+        const requiredTotal = activeEqubModal.contributionPerRound * (activeEqubModal.mySlots || 1);
         const currentSplitSum = splitRows.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
         const remainingToAllocate = requiredTotal - currentSplitSum;
         const isValidSplit = paymentMode === 'single' || Math.abs(remainingToAllocate) < 0.01;
@@ -1956,6 +2766,20 @@ export const EqubView: React.FC<EqubViewProps> = ({
                 <span className="text-xs font-mono font-black text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800/80">
                   Total: {formatETB(requiredTotal)}
                 </span>
+              </div>
+
+              {/* Payment Date Selection */}
+              <div>
+                <ModernDateInput
+                  label="Payment Date"
+                  sublabel="Select payment recording date"
+                  value={payRoundDate}
+                  onChange={val => setPayRoundDate(val)}
+                  accentColor="indigo"
+                  size="sm"
+                  calendarType={calendarType}
+                  required
+                />
               </div>
 
               {/* Payment Mode Selector Tabs */}
@@ -2242,6 +3066,13 @@ export const EqubView: React.FC<EqubViewProps> = ({
                 />
               </div>
 
+              {createLoanError && (
+                <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{createLoanError}</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Category</label>
@@ -2262,12 +3093,18 @@ export const EqubView: React.FC<EqubViewProps> = ({
                   <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Principal Amount (ETB)</label>
                   <input
                     type="number"
+                    min={1000}
+                    step={100}
                     required
                     value={newLoanAmount}
-                    onChange={e => setNewLoanAmount(e.target.value)}
-                    placeholder="50000"
+                    onChange={e => {
+                      setNewLoanAmount(e.target.value);
+                      if (createLoanError) setCreateLoanError('');
+                    }}
+                    placeholder="Min 1,000 ETB"
                     className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none"
                   />
+                  <p className="text-[10px] text-slate-500 dark:text-[#8899BB] mt-0.5 font-mono">Min ETB 1,000</p>
                 </div>
               </div>
 
@@ -2276,20 +3113,30 @@ export const EqubView: React.FC<EqubViewProps> = ({
                   <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Monthly Installment (ETB)</label>
                   <input
                     type="number"
+                    min={1000}
+                    step={100}
                     value={newLoanInstallment}
-                    onChange={e => setNewLoanInstallment(e.target.value)}
-                    placeholder="10000"
+                    onChange={e => {
+                      setNewLoanInstallment(e.target.value);
+                      if (createLoanError) setCreateLoanError('');
+                    }}
+                    placeholder="Min 1,000 ETB"
                     className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none"
                   />
+                  <p className="text-[10px] text-slate-500 dark:text-[#8899BB] mt-0.5 font-mono">Min ETB 1,000 / mo</p>
                 </div>
 
                 <div>
-                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Due Date</label>
-                  <input
-                    type="date"
+                  <ModernDateInput
+                    label="Due Date"
                     value={newLoanDueDate}
-                    onChange={e => setNewLoanDueDate(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none"
+                    onChange={val => setNewLoanDueDate(val)}
+                    accentColor="indigo"
+                    size="sm"
+                    presets={[
+                      { label: '+1m', value: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0] },
+                      { label: '+3m', value: new Date(Date.now() + 90 * 86400000).toISOString().split('T')[0] }
+                    ]}
                   />
                 </div>
               </div>
@@ -2334,14 +3181,26 @@ export const EqubView: React.FC<EqubViewProps> = ({
       {/* Modal: Process Loan Repayment / Collection */}
       {activeLoanActionModal && (() => {
         const isLent = activeLoanActionModal.direction === 'LENT' || activeLoanActionModal.title.toLowerCase().includes('lent') || activeLoanActionModal.title.toLowerCase().includes('lend');
+        const currentBal = activeLoanActionModal.outstandingBalance;
+        const minRepayment = Math.min(1000, currentBal);
+
+        const currentSplitSum = loanSplitRows.reduce((acc, r) => acc + (parseFloat(r.amount) || 0), 0);
+        const targetRepayAmt = parseFloat(loanActionAmount) || 0;
+        const remainingToAllocate = targetRepayAmt - currentSplitSum;
+        const isSplitSumValid = Math.abs(remainingToAllocate) < 0.01 && currentSplitSum >= minRepayment && currentSplitSum <= currentBal;
 
         return (
-          <div className="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] w-full max-w-sm p-5 rounded-2xl space-y-4 text-slate-900 dark:text-white shadow-2xl">
-              <h3 className="text-sm font-bold flex items-center gap-2">
-                <DollarSign className={`w-4 h-4 ${isLent ? 'text-emerald-600 dark:text-[#00D4AA]' : 'text-amber-600 dark:text-amber-400'}`} />
-                <span>{isLent ? 'Collect Loan Repayment' : 'Pay Loan Installment'}</span>
-              </h3>
+          <div className="fixed inset-0 z-50 bg-slate-900/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+            <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] w-full max-w-md p-5 rounded-2xl space-y-4 text-slate-900 dark:text-white shadow-2xl max-h-[92vh] overflow-y-auto">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold flex items-center gap-2">
+                  <DollarSign className={`w-4 h-4 ${isLent ? 'text-emerald-600 dark:text-[#00D4AA]' : 'text-amber-600 dark:text-amber-400'}`} />
+                  <span>{isLent ? 'Collect Loan Repayment' : 'Pay Loan Installment'}</span>
+                </h3>
+                <span className="text-[10px] font-mono font-bold bg-slate-100 dark:bg-[#1C2333] px-2 py-0.5 rounded text-slate-600 dark:text-[#8899BB]">
+                  Bal: {formatETB(currentBal)}
+                </span>
+              </div>
 
               <p className="text-xs text-slate-500 dark:text-[#8899BB]">
                 {isLent
@@ -2349,35 +3208,194 @@ export const EqubView: React.FC<EqubViewProps> = ({
                   : `Paying installment to ${activeLoanActionModal.counterparty}`}
               </p>
 
-              <form onSubmit={handleLoanActionSubmit} className="space-y-3">
-                <div>
-                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">
-                    {isLent ? 'Deposit Into Wallet' : 'Pay From Wallet'}
-                  </label>
-                  <select
-                    value={loanActionWalletId}
-                    onChange={e => setLoanActionWalletId(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none"
-                  >
-                    {wallets.map(w => (
-                      <option key={w.id} value={w.id}>{w.name}</option>
-                    ))}
-                  </select>
-                </div>
+              {/* Payment Date Selection */}
+              <div>
+                <ModernDateInput
+                  label="Repayment Date"
+                  value={loanPaymentDate}
+                  onChange={val => setLoanPaymentDate(val)}
+                  accentColor={isLent ? 'emerald' : 'amber'}
+                  size="sm"
+                  presets={[
+                    { label: 'Today', value: new Date().toISOString().split('T')[0] },
+                    { label: 'Yesterday', value: new Date(Date.now() - 86400000).toISOString().split('T')[0] },
+                    { label: '-3d', value: new Date(Date.now() - 3 * 86400000).toISOString().split('T')[0] }
+                  ]}
+                />
+              </div>
 
+              {/* Payment Mode Selector Tabs */}
+              <div className="grid grid-cols-2 gap-1 bg-slate-100 dark:bg-[#1C2333] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setLoanPaymentMode('single');
+                  }}
+                  className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    loanPaymentMode === 'single'
+                      ? isLent
+                        ? 'bg-emerald-600 dark:bg-[#00D4AA] text-white dark:text-[#0A0E1A] shadow-md'
+                        : 'bg-amber-500 text-white dark:text-[#0A0E1A] shadow-md'
+                      : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Single Wallet
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setLoanPaymentMode('split');
+                  }}
+                  className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    loanPaymentMode === 'split'
+                      ? 'bg-blue-600 dark:bg-blue-500 text-white shadow-md'
+                      : 'text-slate-600 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <span>Split Payment</span>
+                  <span className="text-[9px] bg-black/20 px-1.5 py-0.2 rounded font-mono font-bold">MULTI</span>
+                </button>
+              </div>
+
+              <form onSubmit={handleLoanActionSubmit} className="space-y-3">
+                {loanActionError && (
+                  <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{loanActionError}</span>
+                  </div>
+                )}
+
+                {/* Target Repayment Amount */}
                 <div>
-                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Repayment Amount (ETB)</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs text-slate-600 dark:text-[#8899BB]">
+                      Total Repayment Target (ETB)
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      Min: ETB {minRepayment.toLocaleString()}
+                    </span>
+                  </div>
                   <input
                     type="number"
+                    min={minRepayment}
+                    max={currentBal}
+                    step={100}
                     required
                     value={loanActionAmount}
-                    onChange={e => setLoanActionAmount(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none"
+                    onChange={e => {
+                      setLoanActionAmount(e.target.value);
+                      if (loanActionError) setLoanActionError('');
+                    }}
+                    placeholder={`Min ${minRepayment.toLocaleString()} ETB`}
+                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-mono font-bold outline-none"
                   />
-                  <p className="text-[10px] text-slate-500 dark:text-[#8899BB] mt-1 font-mono">
-                    Current Outstanding: {formatETB(activeLoanActionModal.outstandingBalance)}
-                  </p>
+                  <div className="flex items-center justify-between mt-1 text-[10px] text-slate-500 dark:text-[#8899BB] font-mono">
+                    <span>Monthly Due: {activeLoanActionModal.monthlyInstallment ? formatETB(activeLoanActionModal.monthlyInstallment) : 'N/A'}</span>
+                    <span>Remaining Bal: {formatETB(currentBal)}</span>
+                  </div>
                 </div>
+
+                {/* Single Wallet Selection */}
+                {loanPaymentMode === 'single' && (
+                  <div>
+                    <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">
+                      {isLent ? 'Deposit Into Wallet' : 'Pay From Wallet'}
+                    </label>
+                    <select
+                      value={loanActionWalletId}
+                      onChange={e => setLoanActionWalletId(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none font-semibold"
+                    >
+                      {wallets.map(w => (
+                        <option key={w.id} value={w.id}>{w.name} ({w.type})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Split Payment Breakdown */}
+                {loanPaymentMode === 'split' && (
+                  <div className="space-y-3 pt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-700 dark:text-[#8899BB]">
+                        Wallet Contributions Breakdown
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleAutoBalanceLoanSplit(activeLoanActionModal)}
+                        className="text-[10px] text-blue-700 dark:text-blue-400 hover:underline font-bold bg-blue-50 dark:bg-blue-950/60 px-2.5 py-1 rounded cursor-pointer border border-blue-200 dark:border-blue-800"
+                      >
+                        ⚡ Auto-Fill Balance
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {loanSplitRows.map((row, idx) => (
+                        <div key={idx} className="flex items-center gap-2 bg-slate-50 dark:bg-[#1C2333] p-2 rounded-xl border border-slate-200 dark:border-[#1E2D40]">
+                          <select
+                            value={row.walletId}
+                            onChange={e => handleLoanSplitRowChange(idx, 'walletId', e.target.value)}
+                            className="flex-1 bg-white dark:bg-[#131926] border border-slate-300 dark:border-[#1E2D40] rounded-lg p-1.5 text-xs text-slate-900 dark:text-white font-bold outline-none"
+                          >
+                            {wallets.map(w => (
+                              <option key={w.id} value={w.id}>
+                                {w.name}
+                              </option>
+                            ))}
+                          </select>
+
+                          <div className="w-32 relative">
+                            <span className="absolute left-2 top-2 text-[10px] text-slate-400 dark:text-[#8899BB]">ETB</span>
+                            <input
+                              type="number"
+                              value={row.amount}
+                              onChange={e => handleLoanSplitRowChange(idx, 'amount', e.target.value)}
+                              placeholder="0"
+                              className="w-full bg-white dark:bg-[#131926] border border-slate-300 dark:border-[#1E2D40] rounded-lg pl-8 pr-2 py-1.5 text-xs text-slate-900 dark:text-white text-right font-mono font-bold outline-none"
+                            />
+                          </div>
+
+                          {loanSplitRows.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveLoanSplitRow(idx)}
+                              className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg cursor-pointer"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleAddLoanSplitRow}
+                      className="w-full py-2 rounded-xl border border-dashed border-slate-300 dark:border-[#1E2D40] hover:border-blue-500 text-slate-600 dark:text-[#8899BB] hover:text-blue-600 dark:hover:text-blue-400 text-xs font-bold cursor-pointer transition-colors"
+                    >
+                      + Add Another Wallet Split
+                    </button>
+
+                    <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] space-y-1">
+                      <div className="flex justify-between text-xs font-mono">
+                        <span className="text-slate-500 dark:text-[#8899BB]">Total Allocated:</span>
+                        <span className={`font-bold ${isSplitSumValid ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                          {formatETB(currentSplitSum)} / {formatETB(targetRepayAmt)}
+                        </span>
+                      </div>
+
+                      {!isSplitSumValid && targetRepayAmt > 0 && (
+                        <p className="text-[10px] text-rose-600 dark:text-rose-400 font-bold">
+                          {remainingToAllocate > 0
+                            ? `⚠️ ${formatETB(remainingToAllocate)} remaining to reach target.`
+                            : `⚠️ Exceeds target repayment by ${formatETB(Math.abs(remainingToAllocate))}.`}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex gap-2 pt-2">
                   <button
@@ -2389,11 +3407,16 @@ export const EqubView: React.FC<EqubViewProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold text-white dark:text-[#0A0E1A] ${
-                      isLent ? 'bg-emerald-600 dark:bg-[#00D4AA]' : 'bg-amber-500 dark:bg-amber-400'
+                    disabled={loanPaymentMode === 'split' && !isSplitSumValid}
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                      loanPaymentMode === 'split' && !isSplitSumValid
+                        ? 'bg-slate-200 text-slate-400 dark:bg-gray-700 dark:text-gray-400 cursor-not-allowed opacity-50'
+                        : isLent
+                        ? 'bg-emerald-600 dark:bg-[#00D4AA] text-white dark:text-[#0A0E1A] shadow-md cursor-pointer'
+                        : 'bg-amber-500 dark:bg-amber-400 text-white dark:text-[#0A0E1A] shadow-md cursor-pointer'
                     }`}
                   >
-                    {isLent ? 'Collect Repayment' : 'Confirm Installment'}
+                    {loanPaymentMode === 'split' ? 'Execute Split Repayment' : isLent ? 'Collect Repayment' : 'Confirm Installment'}
                   </button>
                 </div>
               </form>
@@ -2435,26 +3458,46 @@ export const EqubView: React.FC<EqubViewProps> = ({
                 />
               </div>
 
+              <div>
+                <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Amount Owed (ETB)</label>
+                <input
+                  type="number"
+                  required
+                  value={newRcvAmount}
+                  onChange={e => setNewRcvAmount(e.target.value)}
+                  placeholder="25000"
+                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Amount Owed (ETB)</label>
-                  <input
-                    type="number"
-                    required
-                    value={newRcvAmount}
-                    onChange={e => setNewRcvAmount(e.target.value)}
-                    placeholder="25000"
-                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none"
+                  <ModernDateInput
+                    label="Created Date"
+                    value={newRcvCreatedDate}
+                    onChange={val => setNewRcvCreatedDate(val)}
+                    accentColor="indigo"
+                    size="sm"
+                    presets={[
+                      { label: 'Today', value: new Date().toISOString().split('T')[0] },
+                      { label: 'Yesterday', value: new Date(Date.now() - 86400000).toISOString().split('T')[0] },
+                      { label: '-7d', value: new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0] }
+                    ]}
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Due Date</label>
-                  <input
-                    type="date"
+                  <ModernDateInput
+                    label="Due Date"
                     value={newRcvDueDate}
-                    onChange={e => setNewRcvDueDate(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none"
+                    onChange={val => setNewRcvDueDate(val)}
+                    accentColor="indigo"
+                    size="sm"
+                    presets={[
+                      { label: '+7d', value: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0] },
+                      { label: '+14d', value: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0] },
+                      { label: '+30d', value: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0] }
+                    ]}
                   />
                 </div>
               </div>
@@ -2469,7 +3512,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-blue-600 text-xs font-bold text-white shadow-md"
+                  className="flex-1 py-2.5 rounded-xl bg-blue-600 text-xs font-bold text-white shadow-md cursor-pointer"
                 >
                   Post Receivable Invoice
                 </button>
@@ -2485,23 +3528,33 @@ export const EqubView: React.FC<EqubViewProps> = ({
           <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#3B82F6]/40 w-full max-w-sm p-5 rounded-2xl space-y-4 text-slate-900 dark:text-white shadow-2xl">
             <h3 className="text-sm font-bold flex items-center gap-2">
               <DollarSign className="w-4 h-4 text-blue-600 dark:text-[#3B82F6]" />
-              <span>Collect Customer Credit</span>
+              <span>Collect Customer Credit (Daily Income / Collected)</span>
             </h3>
 
             <p className="text-xs text-slate-500 dark:text-[#8899BB]">
-              Collecting payment for <strong className="text-slate-900 dark:text-white">{activeCollectRcvModal.customerName}</strong>
+              Collecting payment for <strong className="text-slate-900 dark:text-white">{activeCollectRcvModal.customerName}</strong> — recorded as <span className="text-purple-600 dark:text-purple-400 font-bold">Daily Income / Collected</span>
             </p>
 
             <form onSubmit={handleCollectRcvSubmit} className="space-y-3">
               <div>
-                <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Deposit To Wallet</label>
+                <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <WalletIcon className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Deposit To Wallet</span>
+                  </span>
+                  {activeCollectRcvModal.walletId && (
+                    <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">
+                      Target: {wallets.find(w => w.id === activeCollectRcvModal.walletId)?.name || 'Designated'}
+                    </span>
+                  )}
+                </label>
                 <select
                   value={collectRcvWalletId}
                   onChange={e => setCollectRcvWalletId(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none"
                 >
                   {wallets.map(w => (
-                    <option key={w.id} value={w.id}>{w.name}</option>
+                    <option key={w.id} value={w.id}>{w.name} ({w.type})</option>
                   ))}
                 </select>
               </div>
@@ -2527,9 +3580,14 @@ export const EqubView: React.FC<EqubViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-blue-600 text-xs font-bold text-white shadow-md"
+                  disabled={isSubmittingCollectRcv}
+                  className={`flex-1 py-2.5 rounded-xl text-xs font-bold text-white shadow-md transition-colors ${
+                    isSubmittingCollectRcv
+                      ? 'bg-blue-400 cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-700 cursor-pointer'
+                  }`}
                 >
-                  Post Collection
+                  {isSubmittingCollectRcv ? 'Processing...' : 'Post Collection'}
                 </button>
               </div>
             </form>
@@ -2608,7 +3666,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
 
               {otherAdmins.length > 0 ? (
                 <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300">
-                  🛡️ <strong>Co-Admin Rule:</strong> Saving changes will prompt co-admin confirmation ({otherAdmins.map(a => a.name).join(', ')}).
+                  🛡️ <strong>Co-Admin Confirmation:</strong> Saving changes will prompt co-admin confirmation ({otherAdmins.map(a => a.name).join(', ')}).
                 </div>
               ) : (
                 <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30 text-[11px] text-purple-800 dark:text-purple-300">
@@ -2652,13 +3710,25 @@ export const EqubView: React.FC<EqubViewProps> = ({
 
             <form onSubmit={(e) => {
               e.preventDefault();
+              const parsedBal = parseFloat(editLoanAmount);
+              if (isNaN(parsedBal) || (parsedBal < 1000 && parsedBal > 0)) {
+                setEditLoanError('Loans cannot be less than ETB 1,000 (1k), unless fully settled to 0.');
+                return;
+              }
+              setEditLoanError('');
               executeOrConfirmAction('EDIT_LOAN', editingLoan.id, editLoanTitle, {
                 title: editLoanTitle,
                 counterparty: editLoanCounterparty,
-                outstandingBalance: parseFloat(editLoanAmount) || editingLoan.outstandingBalance,
+                outstandingBalance: parsedBal >= 0 ? parsedBal : editingLoan.outstandingBalance,
                 dueDate: editLoanDueDate
               });
             }} className="space-y-3">
+              {editLoanError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-xs text-rose-600 dark:text-rose-400 font-medium">
+                  {editLoanError}
+                </div>
+              )}
+
               <div>
                 <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Loan Title / Description</label>
                 <input
@@ -2683,30 +3753,38 @@ export const EqubView: React.FC<EqubViewProps> = ({
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Outstanding Balance (ETB)</label>
+                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">
+                    Outstanding Balance (ETB)
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400 ml-1 font-semibold">(Min 1k or 0)</span>
+                  </label>
                   <input
                     type="number"
                     required
+                    min="0"
+                    step="any"
                     value={editLoanAmount}
-                    onChange={e => setEditLoanAmount(e.target.value)}
+                    onChange={e => {
+                      setEditLoanAmount(e.target.value);
+                      if (editLoanError) setEditLoanError('');
+                    }}
                     className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none font-mono"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Due Date</label>
-                  <input
-                    type="date"
+                  <ModernDateInput
+                    label="Due Date"
                     required
                     value={editLoanDueDate}
-                    onChange={e => setEditLoanDueDate(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none font-mono"
+                    onChange={val => setEditLoanDueDate(val)}
+                    accentColor="indigo"
+                    size="sm"
                   />
                 </div>
               </div>
 
               {otherAdmins.length > 0 ? (
                 <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300">
-                  🛡️ <strong>Co-Admin Rule:</strong> Saving changes will prompt co-admin confirmation.
+                  🛡️ <strong>Co-Admin Confirmation:</strong> Saving changes will prompt co-admin confirmation.
                 </div>
               ) : (
                 <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30 text-[11px] text-purple-800 dark:text-purple-300">
@@ -2758,7 +3836,8 @@ export const EqubView: React.FC<EqubViewProps> = ({
                 description: editReceivableDescription,
                 amountOwed: amt,
                 dueDate: editReceivableDueDate ? new Date(editReceivableDueDate).toISOString() : editingReceivable.dueDate,
-                status: editReceivableStatus
+                status: editReceivableStatus,
+                walletId: editingReceivable.walletId
               });
             }} className="space-y-3">
               <div>
@@ -2797,12 +3876,12 @@ export const EqubView: React.FC<EqubViewProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Due Date</label>
-                  <input
-                    type="date"
+                  <ModernDateInput
+                    label="Due Date"
                     value={editReceivableDueDate}
-                    onChange={e => setEditReceivableDueDate(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none font-mono"
+                    onChange={val => setEditReceivableDueDate(val)}
+                    accentColor="indigo"
+                    size="sm"
                   />
                 </div>
               </div>
@@ -2824,7 +3903,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
 
               {otherAdmins.length > 0 ? (
                 <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300">
-                  🛡️ <strong>Co-Admin Rule:</strong> Saving changes will prompt co-admin confirmation.
+                  🛡️ <strong>Co-Admin Confirmation:</strong> Saving changes will prompt co-admin confirmation.
                 </div>
               ) : (
                 <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30 text-[11px] text-purple-800 dark:text-purple-300">

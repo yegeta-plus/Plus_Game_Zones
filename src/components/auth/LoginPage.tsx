@@ -6,14 +6,11 @@ import {
   ShieldAlert,
   CheckCircle2,
   Key,
-  X,
-  Fingerprint
+  X
 } from 'lucide-react';
 import { UserProfile } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 import { AppLogo } from '../common/AppLogo';
-import { FingerprintModal } from './FingerprintModal';
-import { detectOSBiometricProvider } from '../../lib/biometrics';
 
 interface LoginPageProps {
   allUsers: UserProfile[];
@@ -35,10 +32,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [rememberMe, setRememberMe] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-
-  // Biometric / Touch ID Modal State
-  const [showBiometricModal, setShowBiometricModal] = useState<boolean>(false);
-  const osProvider = detectOSBiometricProvider();
 
   // Temporary Password Change State
   const [isChangingTempPassword, setIsChangingTempPassword] = useState<boolean>(false);
@@ -108,16 +101,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         isTemporaryPassword: false,
         mustChangePassword: false,
         permissions: {
-          Dashboard: { view: true, add: true, edit: true, delete: true, export: true },
-          Income: { view: true, add: true, edit: true, delete: true, export: true },
-          Expenses: { view: true, add: true, edit: true, delete: true, export: true },
-          Equb: { view: true, add: true, edit: true, delete: true, export: true },
-          Loans: { view: true, add: true, edit: true, delete: true, export: true },
-          Reports: { view: true, add: true, edit: true, delete: true, export: true },
-          Analytics: { view: true, add: true, edit: true, delete: true, export: true },
-          Partners: { view: true, add: true, edit: true, delete: true, export: true },
-          Settings: { view: true, add: true, edit: true, delete: true, export: true },
-          UserManagement: { view: true, add: true, edit: true, delete: true, export: true }
+          dashboard: true,
+          income: true,
+          expenses: true,
+          equb: true,
+          loans: true,
+          reports: true,
+          analytics: true,
+          partners: true,
+          settings: true,
+          wallets: true,
+          receivables: true,
+          assets: true,
+          auditLogs: true,
+          canAdd: true,
+          canEdit: true,
+          canDelete: true,
+          canReverse: true,
+          viewOnly: false
         },
         branch: 'Addis Ababa HQ',
         lastActive: 'Just now'
@@ -250,16 +251,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         isTemporaryPassword: false,
         mustChangePassword: false,
         permissions: {
-          Dashboard: { view: true, add: true, edit: true, delete: true, export: true },
-          Income: { view: true, add: true, edit: true, delete: true, export: true },
-          Expenses: { view: true, add: true, edit: true, delete: true, export: true },
-          Equb: { view: true, add: true, edit: true, delete: true, export: true },
-          Loans: { view: true, add: true, edit: true, delete: true, export: true },
-          Reports: { view: true, add: true, edit: true, delete: true, export: true },
-          Analytics: { view: true, add: true, edit: true, delete: true, export: true },
-          Partners: { view: true, add: true, edit: true, delete: true, export: true },
-          Settings: { view: true, add: true, edit: true, delete: true, export: true },
-          UserManagement: { view: true, add: true, edit: true, delete: true, export: true }
+          dashboard: true,
+          income: true,
+          expenses: true,
+          equb: true,
+          loans: true,
+          reports: true,
+          analytics: true,
+          partners: true,
+          settings: true,
+          wallets: true,
+          receivables: true,
+          assets: true,
+          auditLogs: true,
+          canAdd: true,
+          canEdit: true,
+          canDelete: true,
+          canReverse: true,
+          viewOnly: false
         },
         branch: 'Addis Ababa HQ',
         lastActive: 'Just now'
@@ -297,86 +306,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       setShowGoogleModal(false);
       onLogin(matchedUser);
     }, 400);
-  };
-
-  const handleBiometricLoginSuccess = (verifiedEmail: string) => {
-    setShowBiometricModal(false);
-    setErrorMsg(null);
-    const cleanEmail = (verifiedEmail || username || 'ygyegeta@gmail.com').trim().toLowerCase();
-
-    let matchedUser = allUsers.find(
-      (u) =>
-        u.email.toLowerCase() === cleanEmail ||
-        u.name.toLowerCase() === cleanEmail ||
-        (u.username && u.username.toLowerCase() === cleanEmail) ||
-        u.email.toLowerCase().includes(cleanEmail) ||
-        u.name.toLowerCase().includes(cleanEmail)
-    );
-
-    if (
-      !matchedUser &&
-      (cleanEmail.includes('yegeta') ||
-        cleanEmail === 'ygyegeta@gmail.com' ||
-        cleanEmail === 'yegeta.huawei@gmail.com')
-    ) {
-      matchedUser = {
-        id: 'u-1',
-        name: 'Yegeta Huawei',
-        email: cleanEmail.includes('@') ? cleanEmail : 'ygyegeta@gmail.com',
-        username: 'yegeta',
-        role: 'SuperAdmin',
-        active: true,
-        isApproved: true,
-        invitationCode: 'PZ-SUPER-TOUCHID',
-        hasSetPassword: true,
-        password: 'password123',
-        isTemporaryPassword: false,
-        mustChangePassword: false,
-        permissions: {
-          Dashboard: { view: true, add: true, edit: true, delete: true, export: true },
-          Income: { view: true, add: true, edit: true, delete: true, export: true },
-          Expenses: { view: true, add: true, edit: true, delete: true, export: true },
-          Equb: { view: true, add: true, edit: true, delete: true, export: true },
-          Loans: { view: true, add: true, edit: true, delete: true, export: true },
-          Reports: { view: true, add: true, edit: true, delete: true, export: true },
-          Analytics: { view: true, add: true, edit: true, delete: true, export: true },
-          Partners: { view: true, add: true, edit: true, delete: true, export: true },
-          Settings: { view: true, add: true, edit: true, delete: true, export: true },
-          UserManagement: { view: true, add: true, edit: true, delete: true, export: true }
-        },
-        branch: 'Addis Ababa HQ',
-        lastActive: 'Just now'
-      };
-    }
-
-    if (!matchedUser) {
-      matchedUser = allUsers[0] || {
-        id: 'u-1',
-        name: 'Yegeta Huawei',
-        email: cleanEmail,
-        username: 'yegeta',
-        role: 'SuperAdmin',
-        active: true,
-        isApproved: true,
-        hasSetPassword: true,
-        password: 'password123',
-        permissions: {
-          Dashboard: { view: true, add: true, edit: true, delete: true, export: true },
-          Income: { view: true, add: true, edit: true, delete: true, export: true },
-          Expenses: { view: true, add: true, edit: true, delete: true, export: true },
-          Equb: { view: true, add: true, edit: true, delete: true, export: true },
-          Loans: { view: true, add: true, edit: true, delete: true, export: true },
-          Reports: { view: true, add: true, edit: true, delete: true, export: true },
-          Analytics: { view: true, add: true, edit: true, delete: true, export: true },
-          Partners: { view: true, add: true, edit: true, delete: true, export: true },
-          Settings: { view: true, add: true, edit: true, delete: true, export: true },
-          UserManagement: { view: true, add: true, edit: true, delete: true, export: true }
-        }
-      };
-    }
-
-    triggerHaptic('heavy');
-    onLogin(matchedUser as UserProfile);
   };
 
   return (
@@ -497,23 +426,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
-                </button>
-
-                {/* Login with Touch ID / Fingerprint Primary Option */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('medium');
-                    setShowBiometricModal(true);
-                  }}
-                  disabled={isSubmitting}
-                  className="w-full py-3 rounded-2xl bg-[#00D4AA]/10 hover:bg-[#00D4AA]/20 border border-[#00D4AA]/40 hover:border-[#00D4AA] text-[#00D4AA] font-bold text-xs flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-lg shadow-[#00D4AA]/10 group"
-                >
-                  <Fingerprint className="w-4 h-4 text-[#00D4AA] group-hover:scale-110 transition-transform animate-pulse" />
-                  <span>Login with Touch ID / Fingerprint</span>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-[#00D4AA]/20 text-[#00D4AA] font-mono border border-[#00D4AA]/30">
-                    {osProvider.label.split(' ')[0]}
-                  </span>
                 </button>
               </form>
 
@@ -793,19 +705,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           </div>
         </div>
       )}
-
-      {/* Biometric Touch ID Authentication Modal */}
-      <FingerprintModal
-        isOpen={showBiometricModal}
-        onClose={() => setShowBiometricModal(false)}
-        userEmail={username || 'ygyegeta@gmail.com'}
-        userName={username.split('@')[0] || 'Yegeta Huawei'}
-        currentUserPassword={password || 'password123'}
-        mode="LOGIN"
-        actionTitle="Touch ID & Biometric Login"
-        actionSubtitle={`Authenticate using ${osProvider.label} to securely sign in to Plus Game Zone ERP`}
-        onSuccess={handleBiometricLoginSuccess}
-      />
     </div>
   );
 };

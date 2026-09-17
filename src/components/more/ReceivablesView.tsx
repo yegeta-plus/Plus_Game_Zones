@@ -19,6 +19,7 @@ import {
 import { Receivable, Wallet, UserProfile } from '../../types';
 import { formatETB, evaluateReceivableStatus } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
+import { ModernDateInput } from '../common/ModernDateInput';
 
 interface ReceivablesViewProps {
   receivables: Receivable[];
@@ -27,7 +28,7 @@ interface ReceivablesViewProps {
   onCollect: (receivableId: string, walletId: string, amount: number) => void;
   onUpdate?: (receivableId: string, updates: Partial<Receivable>) => void;
   onDelete?: (receivableId: string) => void;
-  onCreate?: (data: Omit<Receivable, 'id' | 'amountCollected' | 'status' | 'createdDate'>) => void;
+  onCreate?: (data: Omit<Receivable, 'id' | 'amountCollected' | 'status' | 'createdDate'> & { createdDate?: string }) => void;
 }
 
 export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
@@ -46,15 +47,16 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
   const [activeCollectModal, setActiveCollectModal] = useState<Receivable | null>(null);
   const [collectWalletId, setCollectWalletId] = useState(wallets[0]?.id || '');
   const [collectAmount, setCollectAmount] = useState('');
+  const [isSubmittingCollect, setIsSubmittingCollect] = useState(false);
 
   // Edit Modal State
   const [editingReceivable, setEditingReceivable] = useState<Receivable | null>(null);
   const [editCustomerName, setEditCustomerName] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editAmountOwed, setEditAmountOwed] = useState('');
+  const [editCreatedDate, setEditCreatedDate] = useState('');
   const [editDueDate, setEditDueDate] = useState('');
   const [editStatus, setEditStatus] = useState<Receivable['status']>('OUTSTANDING');
-  const [editWalletId, setEditWalletId] = useState(wallets[0]?.id || '');
 
   // Delete Confirmation Modal State
   const [deletingReceivable, setDeletingReceivable] = useState<Receivable | null>(null);
@@ -64,7 +66,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
   const [createCustomerName, setCreateCustomerName] = useState('');
   const [createDescription, setCreateDescription] = useState('');
   const [createAmountOwed, setCreateAmountOwed] = useState('');
-  const [createWalletId, setCreateWalletId] = useState(wallets[0]?.id || '');
+  const [createCreatedDate, setCreateCreatedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [createDueDate, setCreateDueDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 14);
@@ -72,13 +74,19 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
   });
 
   const handleCollectSubmit = (rcv: Receivable) => {
+    if (isSubmittingCollect) return;
     const amt = parseFloat(collectAmount);
     if (isNaN(amt) || amt <= 0) return;
 
+    setIsSubmittingCollect(true);
     triggerHaptic('success');
-    onCollect(rcv.id, collectWalletId, amt);
+    const finalCollectWalletId = collectWalletId || rcv.walletId || wallets.find(w => w.isDefault)?.id || wallets[0]?.id || 'w-cash';
+    onCollect(rcv.id, finalCollectWalletId, amt);
     setActiveCollectModal(null);
     setCollectAmount('');
+    setTimeout(() => {
+      setIsSubmittingCollect(false);
+    }, 1500);
   };
 
   const handleStartEdit = (rcv: Receivable) => {
@@ -87,9 +95,9 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
     setEditCustomerName(rcv.customerName);
     setEditDescription(rcv.description || '');
     setEditAmountOwed(rcv.amountOwed.toString());
+    setEditCreatedDate(rcv.createdDate ? rcv.createdDate.split('T')[0] : new Date().toISOString().split('T')[0]);
     setEditDueDate(rcv.dueDate ? rcv.dueDate.split('T')[0] : '');
     setEditStatus(rcv.status);
-    setEditWalletId(rcv.walletId || wallets[0]?.id || '');
   };
 
   const handleSaveEdit = (e: React.FormEvent) => {
@@ -107,9 +115,10 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
       customerName: editCustomerName.trim() || editingReceivable.customerName,
       description: editDescription.trim(),
       amountOwed: amt,
+      createdDate: editCreatedDate ? new Date(editCreatedDate).toISOString() : editingReceivable.createdDate,
       dueDate: editDueDate ? new Date(editDueDate).toISOString() : editingReceivable.dueDate,
       status: editStatus,
-      walletId: editWalletId
+      walletId: editingReceivable.walletId
     });
 
     setEditingReceivable(null);
@@ -138,8 +147,8 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
       customerName: createCustomerName.trim(),
       description: createDescription.trim() || 'Credit sale invoice',
       amountOwed: amt,
-      dueDate: createDueDate ? new Date(createDueDate).toISOString() : new Date(Date.now() + 86400000 * 14).toISOString(),
-      walletId: createWalletId
+      createdDate: createCreatedDate ? new Date(createCreatedDate).toISOString() : new Date().toISOString(),
+      dueDate: createDueDate ? new Date(createDueDate).toISOString() : new Date(Date.now() + 86400000 * 14).toISOString()
     });
 
     setShowCreateModal(false);
@@ -255,9 +264,9 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
           <p className="text-sm font-black font-mono text-rose-600 dark:text-rose-400">{formatETB(lateTotal)}</p>
         </div>
 
-        <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-3 shadow-sm">
-          <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">Collected</p>
-          <p className="text-sm font-black font-mono text-emerald-600 dark:text-emerald-400">{formatETB(collectedTotal)}</p>
+        <div className="bg-white dark:bg-[#131926] border border-purple-200 dark:border-purple-800/40 rounded-2xl p-3 shadow-sm">
+          <p className="text-[10px] text-purple-600 dark:text-purple-400 font-bold">Collected</p>
+          <p className="text-sm font-black font-mono text-purple-600 dark:text-purple-400">{formatETB(collectedTotal)}</p>
         </div>
       </div>
 
@@ -310,6 +319,8 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
                 filter === tab
                   ? tab === 'LATE'
                     ? 'bg-rose-600 text-white shadow-sm'
+                    : tab === 'COLLECTED'
+                    ? 'bg-purple-600 text-white shadow-sm'
                     : 'bg-blue-600 text-white shadow-sm'
                   : 'bg-slate-100 dark:bg-[#1C2333] text-slate-600 dark:text-[#8899BB] hover:bg-slate-200 dark:hover:bg-[#252E42]'
               }`}
@@ -342,7 +353,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
                 key={r.id}
                 className={`bg-white dark:bg-[#131926] border rounded-2xl p-4 space-y-3 shadow-sm transition-all ${
                   isCollected
-                    ? 'border-purple-300 dark:border-purple-500/40 bg-purple-500/[0.03]'
+                    ? 'border-purple-300 dark:border-purple-500/40 bg-purple-500/[0.04]'
                     : isLate
                     ? 'border-rose-300 dark:border-rose-500/40 bg-rose-500/[0.02]'
                     : 'border-slate-200 dark:border-[#1E2D40]'
@@ -377,22 +388,14 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
                     </div>                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">{r.customerName}</h4>
                     <p className="text-[11px] text-slate-500 dark:text-[#8899BB]">{r.description || 'No description'}</p>
 
-                    {/* Target Collection Wallet Indicator */}
-                    {(() => {
-                      const designatedWallet = wallets.find(w => w.id === r.walletId);
-                      return (
-                        <div className="flex items-center gap-1.5 text-[10px] text-slate-600 dark:text-[#8899BB] mt-1.5 bg-slate-100/80 dark:bg-[#18202F] px-2 py-1 rounded-lg border border-slate-200/50 dark:border-[#1E2D40]/50 w-fit">
-                          <WalletIcon className="w-3 h-3 text-blue-500 shrink-0" />
-                          <span>Deposit Wallet:</span>
-                          <span className="font-bold text-slate-900 dark:text-white">
-                            {designatedWallet ? designatedWallet.name : (wallets[0]?.name || 'Main Cash Drawer')}
-                          </span>
-                          {designatedWallet?.type && (
-                            <span className="text-[9px] text-slate-500 dark:text-slate-400">({designatedWallet.type})</span>
-                          )}
-                        </div>
-                      );
-                    })()}
+                    {/* Deposit Wallet info when collected */}
+                    {r.status === 'COLLECTED' && r.walletId && (
+                      <div className="flex items-center gap-1.5 text-[10px] mt-1.5 px-2.5 py-1 rounded-lg border w-fit bg-emerald-50/80 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200 border-emerald-200/60 dark:border-emerald-800/50">
+                        <WalletIcon className="w-3 h-3 shrink-0 text-emerald-500" />
+                        <span className="font-medium">Collected to:</span>
+                        <span className="font-bold">{wallets.find(w => w.id === r.walletId)?.name || 'Wallet'}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
@@ -509,42 +512,49 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-[#8899BB] block mb-1">Total Owed (ETB)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="any"
-                    required
-                    value={editAmountOwed}
-                    onChange={(e) => setEditAmountOwed(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-[#8899BB] block mb-1">Due Date</label>
-                  <input
-                    type="date"
-                    value={editDueDate}
-                    onChange={(e) => setEditDueDate(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
-                  />
-                </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-[#8899BB] block mb-1">Total Owed (ETB)</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="any"
+                  required
+                  value={editAmountOwed}
+                  onChange={(e) => setEditAmountOwed(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                />
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-[#8899BB] block mb-1">Target Collection Wallet</label>
-                <select
-                  value={editWalletId}
-                  onChange={(e) => setEditWalletId(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
-                >
-                  {wallets.map(w => (
-                    <option key={w.id} value={w.id}>{w.name} ({w.type}) - {formatETB(w.balance)}</option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <ModernDateInput
+                    label="Created Date"
+                    value={editCreatedDate}
+                    onChange={(val) => setEditCreatedDate(val)}
+                    accentColor="emerald"
+                    size="sm"
+                    presets={[
+                      { label: 'Today', value: new Date().toISOString().split('T')[0] },
+                      { label: 'Yesterday', value: new Date(Date.now() - 86400000).toISOString().split('T')[0] },
+                      { label: '-7d', value: new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0] }
+                    ]}
+                  />
+                </div>
+
+                <div>
+                  <ModernDateInput
+                    label="Due Date"
+                    value={editDueDate}
+                    onChange={(val) => setEditDueDate(val)}
+                    accentColor="blue"
+                    size="sm"
+                    presets={[
+                      { label: '+7d', value: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0] },
+                      { label: '+14d', value: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0] },
+                      { label: '+30d', value: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0] }
+                    ]}
+                  />
+                </div>
               </div>
 
               <div>
@@ -646,16 +656,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
                   required
                   placeholder="e.g. Abebe Bikila"
                   value={createCustomerName}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setCreateCustomerName(val);
-                    if (val.toLowerCase().includes('weframu')) {
-                      const telebirrWallet = wallets.find(w => w.type === 'TELEBIRR' || w.id === 'w-telebirr' || w.name.toLowerCase().includes('telebirr'));
-                      if (telebirrWallet) {
-                        setCreateWalletId(telebirrWallet.id);
-                      }
-                    }
-                  }}
+                  onChange={(e) => setCreateCustomerName(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
@@ -671,43 +672,51 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-[#8899BB] block mb-1">Amount Owed (ETB)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="any"
-                    required
-                    placeholder="e.g. 1500"
-                    value={createAmountOwed}
-                    onChange={(e) => setCreateAmountOwed(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-[#8899BB] block mb-1">Expected Due Date</label>
-                  <input
-                    type="date"
-                    value={createDueDate}
-                    onChange={(e) => setCreateDueDate(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
-                  />
-                </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-[#8899BB] block mb-1">Amount Owed (ETB)</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="any"
+                  required
+                  placeholder="e.g. 1500"
+                  value={createAmountOwed}
+                  onChange={(e) => setCreateAmountOwed(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                />
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-[#8899BB] block mb-1">Target Collection Wallet</label>
-                <select
-                  value={createWalletId}
-                  onChange={(e) => setCreateWalletId(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
-                >
-                  {wallets.map(w => (
-                    <option key={w.id} value={w.id}>{w.name} ({w.type}) - {formatETB(w.balance)}</option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <ModernDateInput
+                    label="Created Date"
+                    value={createCreatedDate}
+                    onChange={(val) => setCreateCreatedDate(val)}
+                    accentColor="emerald"
+                    size="sm"
+                    presets={[
+                      { label: 'Today', value: new Date().toISOString().split('T')[0] },
+                      { label: 'Yesterday', value: new Date(Date.now() - 86400000).toISOString().split('T')[0] },
+                      { label: '-7d', value: new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0] },
+                      { label: '-30d', value: new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0] }
+                    ]}
+                  />
+                </div>
+
+                <div>
+                  <ModernDateInput
+                    label="Expected Due Date"
+                    value={createDueDate}
+                    onChange={(val) => setCreateDueDate(val)}
+                    accentColor="blue"
+                    size="sm"
+                    presets={[
+                      { label: '+7d', value: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0] },
+                      { label: '+14d', value: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0] },
+                      { label: '+30d', value: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0] }
+                    ]}
+                  />
+                </div>
               </div>
 
               <div className="flex gap-2 pt-2">
@@ -733,7 +742,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
       {/* Collect Payment Modal */}
       {activeCollectModal && (() => {
         const selectedWallet = wallets.find(w => w.id === collectWalletId) || wallets[0];
-        const currentBal = selectedWallet?.balance || 0;
+        const currentBal = selectedWallet ? selectedWallet.openingBalance + selectedWallet.totalIn - selectedWallet.totalOut : 0;
         const enteredAmt = parseFloat(collectAmount) || 0;
         const afterBal = currentBal + enteredAmt;
 
@@ -743,7 +752,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold flex items-center gap-1.5">
                   <DollarSign className="w-4 h-4 text-emerald-500" />
-                  <span>Collect Customer Credit</span>
+                  <span>Collect Receivable (Daily Income / Collected)</span>
                 </h3>
                 <button
                   type="button"
@@ -755,7 +764,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
               </div>
 
               <p className="text-xs text-slate-500 dark:text-[#8899BB]">
-                Collecting payment for <span className="text-slate-900 dark:text-white font-bold">{activeCollectModal.customerName}</span>
+                Collecting payment for <span className="text-slate-900 dark:text-white font-bold">{activeCollectModal.customerName}</span> — recorded in ledger as <span className="text-purple-600 dark:text-purple-400 font-bold">Daily Income / Collected</span>
               </p>
 
               <div>
@@ -769,7 +778,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
                   className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
                 >
                   {wallets.map(w => (
-                    <option key={w.id} value={w.id}>{w.name} ({w.type}) - Current: {formatETB(w.balance)}</option>
+                    <option key={w.id} value={w.id}>{w.name} ({w.type}) - Current: {formatETB(w.openingBalance + w.totalIn - w.totalOut)}</option>
                   ))}
                 </select>
               </div>
@@ -817,10 +826,15 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
                 </button>
                 <button
                   type="button"
+                  disabled={isSubmittingCollect}
                   onClick={() => handleCollectSubmit(activeCollectModal)}
-                  className="flex-1 py-2 rounded-xl bg-blue-600 text-xs font-bold text-white shadow-md hover:bg-blue-700 cursor-pointer transition-colors"
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold text-white shadow-md transition-colors ${
+                    isSubmittingCollect
+                      ? 'bg-blue-400 cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-700 cursor-pointer'
+                  }`}
                 >
-                  Post Collection
+                  {isSubmittingCollect ? 'Processing...' : 'Post Collection'}
                 </button>
               </div>
             </div>
