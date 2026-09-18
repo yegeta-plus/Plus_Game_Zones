@@ -1,0 +1,573 @@
+HABESHABIZ TRANSACTIONS — DATES AND WALLETS
+Source: HabeshaBiz_2026-09-17 (1).xlsx
+==========================================================================================
+Wallet mapping: acc-...9486323-1 = Telebirr | acc-...9511888-2 = CBE | acc-...9523492-3 = Ebirr
+
+DATE: 2026-07-01
+  Income | income | Wallet: CBE | Amount: 130.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 750.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 1,095.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-07-02
+  Expenses |  | Wallet: Telebirr | Amount: 1,010.00 ETB | internet bill (Phone & Internet)
+  Income | income | Wallet: CBE | Amount: 60.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 2,690.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 380.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-07-03
+  Expenses |  | Wallet: Cash | Amount: 2,050.00 ETB | electricity bill (Utilities (Electricity, Water))
+  Income | income | Wallet: CBE | Amount: 80.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,780.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Ebirr | Amount: 60.00 ETB | Daily Sales collection (Ebirr split)
+  Income | income | Wallet: Telebirr | Amount: 1,010.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-07-04
+  Expenses |  | Wallet: Cash | Amount: 2,600.00 ETB | Ye suk eda (home expense)
+  Income | income | Wallet: CBE | Amount: 510.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,765.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 135.00 ETB | Daily Sales collection (Telebirr split)
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 580.00 ETB | Bale'da credit for Weframu lij
+
+DATE: 2026-07-05
+  Income | income | Wallet: CBE | Amount: 555.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,870.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 480.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-07-06
+  Income | income | Wallet: CBE | Amount: 70.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,325.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 665.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-07-07
+  Expenses |  | Wallet: Cash | Amount: 300.00 ETB | Power cable purchase for the ps4 pro (Equipment / Asset Purchase)
+  Expenses |  | Wallet: Cash | Amount: 310.00 ETB | 3 month water bill (Utilities (Electricity, Water))
+  Expenses |  | Wallet: Cash | Amount: 49,500.00 ETB | Ps4 pro purchase (Equipment / Asset Purchase)
+  Expenses |  | Wallet: Telebirr | Amount: 970.00 ETB | Kurs ena erat (Food & Refreshments) (Split: 720 ETB from Telebirr, 250 ETB from Cash)
+  Expenses |  | Wallet: Telebirr | Amount: 70.00 ETB | 2.5 daily gb for ps4 pro (Phone & Internet)
+  Expenses |  | Wallet: Telebirr | Amount: 6,880.00 ETB | Tax & License (Split: 4,110 ETB from Telebirr, 2,390 ETB from CBE, 380 ETB from Cash)
+  Expenses |  | Wallet: Telebirr | Amount: 200.00 ETB | Transport
+  Income | income | Wallet: CBE | Amount: 100.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,330.00 ETB | Daily Sales collection (Cash split)
+  Income | loan_received | Wallet: Cash | Amount: 25,500.00 ETB | Disbursed and logged new liability: [Gg]
+  Income | loan_received | Wallet: Cash | Amount: 9,000.00 ETB | Disbursed and logged new liability: [Gg sister 2]
+  Income | loan_received | Wallet: Cash | Amount: 15,000.00 ETB | Disbursed and logged new liability: [Hermi]
+  Income | income | Wallet: Telebirr | Amount: 370.00 ETB | Daily Sales collection (Telebirr split)
+  Income | receivable_collected | Wallet: Telebirr | Amount: 580.00 ETB | Split repayment on receivable [Weframu lij]
+  Loans & Credit | loan_received | Wallet: Cash | Amount: 25,500.00 ETB | Disbursed and logged new liability: [Gg]
+  Loans & Credit | loan_received | Wallet: Cash | Amount: 9,000.00 ETB | Disbursed and logged new liability: [Gg sister 2]
+  Loans & Credit | loan_received | Wallet: Cash | Amount: 15,000.00 ETB | Disbursed and logged new liability: [Hermi]
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 520.00 ETB | Bale'da credit for weframu lij
+  Loans & Credit | receivable_collected | Wallet: Telebirr | Amount: 580.00 ETB | Split repayment on receivable [Weframu lij]
+
+DATE: 2026-07-08
+  Ekub Savings | ekub_contribution | Wallet: Cash | Amount: 3,000.00 ETB | Ekub round contribution: Leli (Round 8) - Split
+  Income | income | Wallet: CBE | Amount: 230.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,445.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 160.00 ETB | Daily Sales collection (Telebirr split)
+  Income | receivable_collected | Wallet: Telebirr | Amount: 520.00 ETB | Split repayment on receivable [weframu lij]
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 400.00 ETB | Bale'da credit for weframu lj
+  Loans & Credit | receivable_collected | Wallet: Telebirr | Amount: 520.00 ETB | Split repayment on receivable [weframu lij]
+
+DATE: 2026-07-09
+  Ekub Savings | ekub_contribution | Wallet: Cash | Amount: 5,000.00 ETB | Ekub round contribution: Agerye (Round 17) - Split
+  Expenses |  | Wallet: Cash | Amount: 320.00 ETB | Asbeza (home expense)
+  Income | income | Wallet: CBE | Amount: 75.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 2,630.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 265.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-07-10
+  Expenses |  | Wallet: Cash | Amount: 100.00 ETB | Transport
+  Income | income | Wallet: CBE | Amount: 80.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,730.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 1,110.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-07-11
+  Expenses |  | Wallet: Telebirr | Amount: 2,000.00 ETB | Chair transportation for gg father's car (Miscellaneous)
+  Income | income | Wallet: CBE | Amount: 60.00 ETB | Daily Sales collection (CBE split)
+  Income | capital_injection | Wallet: Cash | Amount: 10,800.00 ETB | Ps sales 8000 plus previous 2800 hermi loan counted as sales income for the math * (Capital injected by Owner)
+  Income | loan_received | Wallet: Cash | Amount: 1,200.00 ETB | Disbursed and logged new liability: [Zerubabel]
+  Income | income | Wallet: Cash | Amount: 1,055.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 420.00 ETB | Daily Sales collection (Telebirr split)
+  Income | receivable_collected | Wallet: Telebirr | Amount: 400.00 ETB | Split repayment on receivable [weframu lj]
+  Loans & Credit | loan_received | Wallet: Cash | Amount: 1,200.00 ETB | Disbursed and logged new liability: [Zerubabel]
+  Loans & Credit | loan_repayment | Wallet: Cash | Amount: 1,000.00 ETB | Split repayment on loan [Zerubabel]
+  Loans & Credit | loan_repayment | Wallet: Cash | Amount: 15,000.00 ETB | Split repayment on loan [Hermi father]
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 615.00 ETB | Bale'da credit for Weframu lij
+  Loans & Credit | receivable_collected | Wallet: Telebirr | Amount: 400.00 ETB | Split repayment on receivable [weframu lj]
+  Loans & Credit | loan_repayment | Wallet: Telebirr | Amount: 200.00 ETB | Split repayment on loan [Zerubabel]
+  Owner Activity | capital_injection | Wallet: Cash | Amount: 10,800.00 ETB | Ps sales 8000 plus previous 2800 hermi loan counted as sales income for the math * (Capital injected by Owner)
+  Owner Activity | owner_withdrawal | Wallet: Telebirr | Amount: 250.00 ETB | Saturday day dinner zeru (Personal Expense)
+
+DATE: 2026-07-12
+  Income | income | Wallet: CBE | Amount: 75.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,990.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 385.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 1,700.00 ETB | Tsom mefcha zeru and gg dinner (Food & Refreshments)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 180.00 ETB | home expense
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 1,000.00 ETB | Gg transport (Transport)
+
+DATE: 2026-07-13
+  Income | income | Wallet: CBE | Amount: 395.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,870.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 360.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 1,000.00 ETB | Zeru last month transport (Transport)
+  Owner Activity | owner_withdrawal | Wallet: Telebirr | Amount: 1,000.00 ETB | Hemri transport (Transport) (Split: 400 ETB from Telebirr, 600 ETB from CBE)
+
+DATE: 2026-07-14
+  Income | income | Wallet: CBE | Amount: 280.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,420.00 ETB | Daily Sales collection (Cash split)
+  Income | receivable_collected | Wallet: Cash | Amount: 615.00 ETB | Split repayment on receivable [Weframu lij]
+  Income | income | Wallet: Telebirr | Amount: 505.00 ETB | Daily Sales collection (Telebirr split)
+  Loans & Credit | receivable_collected | Wallet: Cash | Amount: 615.00 ETB | Split repayment on receivable [Weframu lij]
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 150.00 ETB | Bale'da credit for Solomon 
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 220.00 ETB | Bale'da credit for Weframu lij
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 160.00 ETB | Dinner (home expense)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 510.00 ETB | Lunch zeru and gg (Food & Refreshments)
+
+DATE: 2026-07-15
+  Income | income | Wallet: CBE | Amount: 230.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,750.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 710.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 175.00 ETB | Dinner (home expense)
+
+DATE: 2026-07-16
+  Expenses |  | Wallet: Cash | Amount: 400.00 ETB | Toilet Detergent  (Cleaning & Supplies)
+  Income | income | Wallet: CBE | Amount: 530.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 2,260.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 420.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 400.00 ETB | Rice, jar and other items... (home expense)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 510.00 ETB | gg & hermi Lunch (Food & Refreshments)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 1,000.00 ETB | Zeru transport (Transport)
+
+DATE: 2026-07-17
+  Ekub Savings | ekub_contribution | Wallet: CBE | Amount: 1,810.00 ETB | Ekub round contribution: Agerye (Round 18) - Split
+  Ekub Savings | ekub_contribution | Wallet: Cash | Amount: 3,190.00 ETB | Ekub round contribution: Agerye (Round 18) - Split
+  Income | income | Wallet: CBE | Amount: 795.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,515.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 635.00 ETB | Daily Sales collection (Telebirr split)
+  Income | receivable_collected | Wallet: Telebirr | Amount: 200.00 ETB | Split repayment on receivable [Weframu lij]
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 740.00 ETB | Bale'da credit for Weframu lij
+  Loans & Credit | receivable_collected | Wallet: Telebirr | Amount: 200.00 ETB | Split repayment on receivable [Weframu lij]
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 600.00 ETB | home expense
+
+DATE: 2026-07-18
+  Ekub Savings | ekub_contribution | Wallet: CBE | Amount: 1,650.00 ETB | Ekub round contribution: Leli (Round 9) - Split
+  Ekub Savings | ekub_contribution | Wallet: Cash | Amount: 700.00 ETB | Ekub round contribution: Leli (Round 9) - Split
+  Ekub Savings | ekub_contribution | Wallet: Telebirr | Amount: 650.00 ETB | Ekub round contribution: Leli (Round 9) - Split
+  Expenses |  | Wallet: Cash | Amount: 150.00 ETB | Cleaning & Supplies
+  Income | income | Wallet: CBE | Amount: 285.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,085.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 100.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: CBE | Amount: 900.00 ETB | Zeru , gg and hermi Lunch (Food & Refreshments)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 65.00 ETB | home expense
+
+DATE: 2026-07-19
+  Income | income | Wallet: Cash | Amount: 2,105.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 700.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: CBE | Amount: 800.00 ETB | World cup final Southgate  (Food & Refreshments) (Split: 300 ETB from CBE, 500 ETB from Telebirr)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 135.00 ETB | home expense
+
+DATE: 2026-07-20
+  Income | income | Wallet: CBE | Amount: 200.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 2,220.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 245.00 ETB | Daily Sales collection (Telebirr split)
+  Income | receivable_collected | Wallet: Telebirr | Amount: 715.00 ETB | Split repayment on receivable [Weframu lij]
+  Loans & Credit | loan_repayment | Wallet: Cash | Amount: 3,000.00 ETB | Split repayment on loan [Zerubabel ]
+  Loans & Credit | receivable_collected | Wallet: Telebirr | Amount: 715.00 ETB | Split repayment on receivable [Weframu lij]
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 150.00 ETB | home expense
+
+DATE: 2026-07-21
+  Income | income | Wallet: CBE | Amount: 300.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,590.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 435.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 100.00 ETB | home expense
+
+DATE: 2026-07-22
+  Income | income | Wallet: CBE | Amount: 555.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 425.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 535.00 ETB | Daily Sales collection (Telebirr split)
+  Loans & Credit | loan_repayment | Wallet: Cash | Amount: 4,730.00 ETB | Repayment on loan [Gg sister] (Split: 2,250 ETB from Cash, 630 ETB from CBE, 1,850 ETB from Telebirr)
+  Loans & Credit | loan_repayment | Wallet: Telebirr | Amount: 770.00 ETB | Repayment on loan [Gg sister] (Split: 410 ETB from Telebirr, 360 ETB from CBE)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 120.00 ETB | Dinner (home expense)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 340.00 ETB | lunch (home expense)
+
+DATE: 2026-07-23
+  Expenses |  | Wallet: Cash | Amount: 1,150.00 ETB | Utilities (Electricity, Water)
+  Income | income | Wallet: CBE | Amount: 160.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,430.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 330.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: CBE | Amount: 200.00 ETB | gg transport  (Transport)
+
+DATE: 2026-07-24
+  Income | income | Wallet: CBE | Amount: 610.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 2,145.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 300.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-07-25
+  Income | income | Wallet: CBE | Amount: 75.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 700.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 165.00 ETB | Daily Sales collection (Telebirr split)
+  Loans & Credit | loan_repayment | Wallet: Cash | Amount: 2,000.00 ETB | Repayment on loan [Zerubabel ]
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 200.00 ETB | home expense
+
+DATE: 2026-07-26
+  Income | income | Wallet: Cash | Amount: 2,635.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 770.00 ETB | Daily Sales collection (Telebirr split)
+  Income | income | Wallet: Telebirr | Amount: 40.00 ETB | Daily Sales collection (Telebirr split)
+  Income | receivable_collected | Wallet: Telebirr | Amount: 500.00 ETB | Repayment on receivable [Weferamu lij]
+  Loans & Credit | receivable_collected | Wallet: Telebirr | Amount: 500.00 ETB | Repayment on receivable [Weferamu lij]
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 100.00 ETB | lunch hermi (home expense)
+
+DATE: 2026-07-27
+  Income | income | Wallet: Cash | Amount: 1,200.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Ebirr | Amount: 280.00 ETB | Daily Sales collection (Ebirr split)
+  Income | income | Wallet: Telebirr | Amount: 285.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 200.00 ETB | home expense
+
+DATE: 2026-07-28
+  Ekub Savings | ekub_contribution | Wallet: Cash | Amount: 5,000.00 ETB | Ekub round contribution: Agerye (Round 19)
+  Ekub Savings | ekub_contribution | Wallet: Telebirr | Amount: 3,100.00 ETB | Ekub round contribution: Leli (Round 10) (Split: 2,300 ETB from Telebirr, 800 ETB from CBE)
+  Income | income | Wallet: CBE | Amount: 50.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,715.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 75.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 500.00 ETB | dinner he &ze (Food & Refreshments)
+
+DATE: 2026-07-29
+  Expenses |  | Wallet: Telebirr | Amount: 1,020.00 ETB | Phone & Internet (Split: 800 ETB from Telebirr, 220 ETB from Cash)
+  Income | income | Wallet: Cash | Amount: 665.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 590.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-07-30
+  Income | income | Wallet: CBE | Amount: 100.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,345.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 440.00 ETB | Daily Sales collection (Telebirr split)
+  Income | receivable_collected | Wallet: Telebirr | Amount: 480.00 ETB | Repayment on receivable [weframu lj]
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 380.00 ETB | Bale'da credit for Weframu lij
+  Loans & Credit | receivable_collected | Wallet: Telebirr | Amount: 480.00 ETB | Repayment on receivable [weframu lj]
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 260.00 ETB | home expense
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 150.00 ETB | home expense
+
+DATE: 2026-07-31
+  Income | income | Wallet: CBE | Amount: 520.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,150.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 480.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 250.00 ETB | Dinner (home expense)
+
+DATE: 2026-08-01
+  Expenses |  | Wallet: Cash | Amount: 200.00 ETB | Jar and other (home expense)
+  Expenses |  | Wallet: Telebirr | Amount: 1,600.00 ETB | 2 Ps5 joysticks: Ribbon cable 2 each 500 & Analogue 600  (Equipment Maintenance)
+  Income | income | Wallet: CBE | Amount: 100.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 2,555.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 365.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-08-02
+  Income | income | Wallet: CBE | Amount: 140.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,455.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 555.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 50.00 ETB | home expense
+
+DATE: 2026-08-03
+  Income | income | Wallet: CBE | Amount: 585.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,300.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 940.00 ETB | Daily Sales collection (Telebirr split)
+  Loans & Credit | loan_repayment | Wallet: Cash | Amount: 3,000.00 ETB | Repayment on loan [Leli]
+  Loans & Credit | loan_repayment | Wallet: Cash | Amount: 5,000.00 ETB | Repayment on loan [Hermi sister]
+
+DATE: 2026-08-04
+  Income | income | Wallet: CBE | Amount: 420.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 2,085.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 70.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 200.00 ETB | Gg transport (Transport)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 230.00 ETB | Gg lunch (home expense)
+
+DATE: 2026-08-05
+  Income | income | Wallet: CBE | Amount: 415.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,605.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 880.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 350.00 ETB | Zeru kurs and erat (home expense)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 2,050.00 ETB | Utilities (Electricity, Water)
+
+DATE: 2026-08-06
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 850.00 ETB | Zeru som meyaza (Food & Refreshments)
+
+DATE: 2026-08-07
+  Expenses |  | Wallet: Cash | Amount: 41,500.00 ETB | Tax & License
+  Income | income | Wallet: CBE | Amount: 240.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,800.00 ETB | Daily Sales collection (Cash split)
+  Income | loan_received | Wallet: Cash | Amount: 27,000.00 ETB | Disbursed and logged new liability: [Zerubabel ]
+  Income | loan_received | Wallet: Cash | Amount: 25,500.00 ETB | Disbursed and logged new liability: [Zerubabel 2]
+  Income | income | Wallet: Telebirr | Amount: 600.00 ETB | Daily Sales collection (Telebirr split)
+  Loans & Credit | loan_received | Wallet: Cash | Amount: 27,000.00 ETB | Disbursed and logged new liability: [Zerubabel ]
+  Loans & Credit | loan_received | Wallet: Cash | Amount: 25,500.00 ETB | Disbursed and logged new liability: [Zerubabel 2]
+  Loans & Credit | loan_repayment | Wallet: Cash | Amount: 11,000.00 ETB | Repayment on loan [Zerubabel ]
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 230.00 ETB | Zeru dinner (home expense)
+
+DATE: 2026-08-08
+  Income | income | Wallet: CBE | Amount: 250.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 2,850.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 210.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-08-09
+  Income | income | Wallet: CBE | Amount: 575.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 2,235.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 795.00 ETB | Daily Sales collection (Telebirr split)
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 345.00 ETB | Bale'da credit for weframu lj
+
+DATE: 2026-08-10
+  Ekub Savings | ekub_contribution | Wallet: Cash | Amount: 5,000.00 ETB | Ekub round contribution: Agerye (Round 20)
+  Income | income | Wallet: CBE | Amount: 250.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,700.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 1,085.00 ETB | Daily Sales collection (Telebirr split)
+  Loans & Credit | loan_repayment | Wallet: Cash | Amount: 5,000.00 ETB | Repayment on loan [Hermi father] (Split: 3,800 ETB from Cash, 1,200 ETB from CBE)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 200.00 ETB | Gg transport  (Transport)
+
+DATE: 2026-08-11
+  Income | income | Wallet: CBE | Amount: 365.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,620.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 1,095.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 130.00 ETB | Food & Refreshments
+
+DATE: 2026-08-12
+  Income | income | Wallet: CBE | Amount: 30.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,365.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 825.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 150.00 ETB | home expense
+
+DATE: 2026-08-13
+  Income | income | Wallet: CBE | Amount: 715.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,150.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 120.00 ETB | gg lunch (Telebirr split)
+  Income | income | Wallet: Telebirr | Amount: 340.00 ETB | Daily Sales collection (Telebirr split)
+  Income | loan_received | Wallet: Telebirr | Amount: 1,500.00 ETB | Disbursed and logged new liability: [Zerubabel]
+  Income | receivable_collected | Wallet: Telebirr | Amount: 345.00 ETB | Repayment on receivable [weframu lj]
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 160.00 ETB | Bale'da credit for weframu lj
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 220.00 ETB | Bale'da credit for fikadu
+  Loans & Credit | loan_received | Wallet: Telebirr | Amount: 1,500.00 ETB | Disbursed and logged new liability: [Zerubabel]
+  Loans & Credit | receivable_collected | Wallet: Telebirr | Amount: 345.00 ETB | Repayment on receivable [weframu lj]
+  Loans & Credit | loan_repayment | Wallet: Telebirr | Amount: 5,500.00 ETB | Repayment on loan [Gg sister]
+  Loans & Credit | loan_repayment | Wallet: Telebirr | Amount: 1,501.00 ETB | Repayment on loan [Gg sister 2]
+  Loans & Credit | loan_repayment | Wallet: Telebirr | Amount: 7,499.00 ETB | Repayment on loan [Gg sister 2] (Split: 830 ETB from Telebirr, 2,889 ETB from CBE, 280 ETB from Ebirr, 3,500 ETB from Cash)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 85.00 ETB | home expense
+
+DATE: 2026-08-14
+  Income | income | Wallet: Cash | Amount: 2,110.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 315.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 780.00 ETB | home expense
+
+DATE: 2026-08-15
+  Expenses |  | Wallet: Cash | Amount: 50.00 ETB | Cleaning & Supplies
+  Income | income | Wallet: CBE | Amount: 30.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,550.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 1,085.00 ETB | Daily Sales collection (Telebirr split)
+  Income | receivable_collected | Wallet: Telebirr | Amount: 160.00 ETB | Repayment on receivable [weframu lj]
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 420.00 ETB | Bale'da credit for Weframu lij
+  Loans & Credit | receivable_collected | Wallet: Telebirr | Amount: 160.00 ETB | Repayment on receivable [weframu lj]
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 50.00 ETB | home expense
+
+DATE: 2026-08-16
+  Income | income | Wallet: CBE | Amount: 590.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,490.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 400.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 430.00 ETB | Kurs (Food & Refreshments)
+
+DATE: 2026-08-17
+  Ekub Savings | ekub_contribution | Wallet: Telebirr | Amount: 5,000.00 ETB | Ekub round contribution: Agerye (Round 21) (Split: 2,615 ETB from Telebirr, 1,335 ETB from CBE, 1,050 ETB from Cash)
+  Income | income | Wallet: CBE | Amount: 105.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 2,010.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 780.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-08-18
+  Income | income | Wallet: CBE | Amount: 100.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 2,770.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 1,050.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 1,000.00 ETB | Zerubabel (Transport)
+
+DATE: 2026-08-19
+  Income | income | Wallet: CBE | Amount: 105.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 2,830.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 1,050.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 100.00 ETB | hermi dinner (home expense)
+
+DATE: 2026-08-20
+  Income | income | Wallet: CBE | Amount: 60.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 2,130.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 1,080.00 ETB | Daily Sales collection (Telebirr split)
+  Income | receivable_collected | Wallet: Telebirr | Amount: 420.00 ETB | Repayment on receivable [Weframu lij]
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 440.00 ETB | Bale'da credit for Weframu lij
+  Loans & Credit | receivable_collected | Wallet: Telebirr | Amount: 420.00 ETB | Repayment on receivable [Weframu lij]
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 400.00 ETB | Berbere (home expense)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 300.00 ETB | Zeru misa ena erat (Food & Refreshments)
+
+DATE: 2026-08-21
+  Income | income | Wallet: CBE | Amount: 100.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 2,150.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 375.00 ETB | Daily Sales collection (Telebirr split)
+  Loans & Credit | loan_repayment | Wallet: Cash | Amount: 10,000.00 ETB | Repayment on loan [Hermi father]
+  Loans & Credit | loan_repayment | Wallet: Cash | Amount: 1,500.00 ETB | Repayment on loan [Zerubabel 3]
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 125.00 ETB | home expense
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 1,000.00 ETB | Hermi (Transport)
+
+DATE: 2026-08-22
+  Expenses |  | Wallet: Cash | Amount: 800.00 ETB | home expense
+  Income | income | Wallet: CBE | Amount: 100.00 ETB | Daily Sales collection (CBE split)
+  Income | receivable_collected | Wallet: CBE | Amount: 220.00 ETB | Repayment on receivable [fikadu]
+  Income | income | Wallet: Cash | Amount: 1,260.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 495.00 ETB | Daily Sales collection (Telebirr split)
+  Income | receivable_collected | Wallet: Telebirr | Amount: 440.00 ETB | Repayment on receivable [Weframu lij]
+  Loans & Credit | receivable_collected | Wallet: CBE | Amount: 220.00 ETB | Repayment on receivable [fikadu]
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 220.00 ETB | Bale'da credit for Weframu lij
+  Loans & Credit | loan_repayment | Wallet: Telebirr | Amount: 5,000.00 ETB | Repayment on loan [Hermi father] (Split: 4,700 ETB from Telebirr, 300 ETB from Cash)
+  Loans & Credit | receivable_collected | Wallet: Telebirr | Amount: 440.00 ETB | Repayment on receivable [Weframu lij]
+
+DATE: 2026-08-23
+  Income | income | Wallet: CBE | Amount: 830.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 2,065.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 350.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-08-24
+  Expenses |  | Wallet: Cash | Amount: 2,500.00 ETB | Mop (Cleaning & Supplies)
+  Income | income | Wallet: CBE | Amount: 340.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,470.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 650.00 ETB | Daily Sales collection (Telebirr split)
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 180.00 ETB | Bale'da credit for Solomon keyu
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 200.00 ETB | home expenses  (home expense)
+
+DATE: 2026-08-25
+  Expenses |  | Wallet: Cash | Amount: 200.00 ETB | Habte yewesedew ke cbe income ga misaf yeweta cash (Miscellaneous)
+  Income | income | Wallet: CBE | Amount: 320.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,620.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 920.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 1,000.00 ETB | Lunch yebalefew 200 and yezare 800 (Food & Refreshments)
+
+DATE: 2026-08-26
+  Ekub Savings | ekub_contribution | Wallet: Telebirr | Amount: 5,000.00 ETB | Ekub round contribution: Agerye (Round 22) (Split: 3,000 ETB from Telebirr, 2,000 ETB from CBE)
+  Income | income | Wallet: CBE | Amount: 100.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,170.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 695.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 500.00 ETB | home expense
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 120.00 ETB | ዘሩ ምሳ Food & Refreshments
+
+DATE: 2026-08-27
+  Expenses |  | Wallet: Cash | Amount: 2,050.00 ETB | Utilities (Electricity, Water)
+  Income | income | Wallet: CBE | Amount: 320.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,400.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 1,285.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-08-28
+  Income | income | Wallet: CBE | Amount: 180.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,525.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 860.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 120.00 ETB | gg lunch (Food & Refreshments)
+
+DATE: 2026-08-29
+  Income | income | Wallet: CBE | Amount: 420.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 520.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 1,255.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 100.00 ETB | home expense
+  Owner Activity | owner_withdrawal | Wallet: Telebirr | Amount: 415.00 ETB | hermi dinner (home expense)
+
+DATE: 2026-08-30
+  Expenses |  | Wallet: Cash | Amount: 385.00 ETB | jar, rice and others (home expense)
+  Income | income | Wallet: CBE | Amount: 345.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 2,025.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 325.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-08-31
+  Expenses |  | Wallet: Cash | Amount: 200.00 ETB | Police support  (Miscellaneous)
+  Income | income | Wallet: Cash | Amount: 750.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 1,415.00 ETB | Daily Sales collection (Telebirr split)
+  Loans & Credit | loan_repayment | Wallet: Telebirr | Amount: 5,100.00 ETB | Repayment on loan [Zerubabel 2] (Split: 3,700 ETB from Telebirr, 1,400 ETB from CBE)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 450.00 ETB | home expense
+  Owner Activity | owner_withdrawal | Wallet: Telebirr | Amount: 1,000.00 ETB | gg transport
+
+DATE: 2026-09-01
+  Income | income | Wallet: CBE | Amount: 330.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,285.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Ebirr | Amount: 180.00 ETB | Daily Sales collection (Ebirr split)
+  Income | income | Wallet: Telebirr | Amount: 505.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Telebirr | Amount: 1,000.00 ETB | Dinner Tertibega (Food & Refreshments)
+
+DATE: 2026-09-02
+  Expenses |  | Wallet: Telebirr | Amount: 1,450.00 ETB | 2 ps5 joystick: 2 L1 buttons = 600, film = 700, transport = 150 (Equipment Maintenance)
+  Income | income | Wallet: CBE | Amount: 190.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 525.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 1,095.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 200.00 ETB | zeru transport (Transport)
+  Owner Activity | owner_withdrawal | Wallet: Telebirr | Amount: 670.00 ETB | gg and hermi Lunch  (home expense)
+
+DATE: 2026-09-03
+  Expenses |  | Wallet: Cash | Amount: 1,000.00 ETB | internet bill (Phone & Internet)
+  Income | income | Wallet: CBE | Amount: 295.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 865.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 1,110.00 ETB | Daily Sales collection (Telebirr split)
+  Income | receivable_collected | Wallet: Telebirr | Amount: 220.00 ETB | Repayment on receivable [Weframu lij]
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 380.00 ETB | Bale'da credit for Weferamu lij
+  Loans & Credit | receivable_collected | Wallet: Telebirr | Amount: 220.00 ETB | Repayment on receivable [Weframu lij]
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 200.00 ETB | gg transport (Transport)
+  Owner Activity | owner_withdrawal | Wallet: Telebirr | Amount: 280.00 ETB | Hermi Lunch (Food & Refreshments)
+
+DATE: 2026-09-04
+  Income | income | Wallet: CBE | Amount: 120.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 895.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Ebirr | Amount: 150.00 ETB | Daily Sales collection (Ebirr split)
+  Income | income | Wallet: Telebirr | Amount: 850.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 230.00 ETB | home expense
+
+DATE: 2026-09-05
+  Income | income | Wallet: CBE | Amount: 200.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 900.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 855.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 1,000.00 ETB | Zeru and hermi breakfast and dinner (Food & Refreshments)
+
+DATE: 2026-09-06
+  Income | income | Wallet: CBE | Amount: 270.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,235.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 525.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-09-07
+  Income | income | Wallet: CBE | Amount: 195.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,715.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 245.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-09-08
+  Ekub Savings | ekub_contribution | Wallet: Cash | Amount: 5,000.00 ETB | Ekub round contribution: Agerye (Round 23)
+  Income | income | Wallet: CBE | Amount: 555.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,510.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 185.00 ETB | Daily Sales collection (Telebirr split)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 135.00 ETB | dinner hermi (home expense)
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 400.00 ETB | home expense
+
+DATE: 2026-09-09
+  Income | income | Wallet: CBE | Amount: 540.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,300.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 210.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-09-13
+  Expenses |  | Wallet: Cash | Amount: 150.00 ETB | Ps4 socket repair  (Equipment Maintenance)
+  Expenses |  | Wallet: Cash | Amount: 120.00 ETB | Ps5 socket pin (Equipment / Asset Purchase)
+  Income | income | Wallet: CBE | Amount: 150.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 2,210.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 740.00 ETB | Daily Sales collection (Telebirr split)
+
+DATE: 2026-09-14
+  Expenses |  | Wallet: Cash | Amount: 470.00 ETB | gg and zeru dinner (Food & Refreshments)
+  Income | income | Wallet: CBE | Amount: 540.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Cash | Amount: 1,395.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 480.00 ETB | Daily Sales collection (Telebirr split)
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 520.00 ETB | Bale'da credit for Fike
+  Loans & Credit | receivable_created | Wallet: Pending | Amount: 150.00 ETB | Bale'da credit for Solomon 
+
+DATE: 2026-09-15
+  Income | income | Wallet: CBE | Amount: 40.00 ETB | Daily Sales collection (CBE split)
+  Income | income | Wallet: Telebirr | Amount: 610.00 ETB | Daily Sales collection (Telebirr split)
+  Income | receivable_collected | Wallet: Telebirr | Amount: 130.00 ETB | Repayment on receivable [Solomon]
+  Loans & Credit | receivable_collected | Wallet: Telebirr | Amount: 130.00 ETB | Repayment on receivable [Solomon]
+  Owner Activity | owner_withdrawal | Wallet: Telebirr | Amount: 980.00 ETB | Tertibega dinner (Food & Refreshments)
+
+DATE: 2026-09-16
+  Income | receivable_collected | Wallet: CBE | Amount: 500.00 ETB | Repayment on receivable [Fike]
+  Income | income | Wallet: Cash | Amount: 1,745.00 ETB | Daily Sales collection (Cash split)
+  Income | income | Wallet: Telebirr | Amount: 175.00 ETB | Daily Sales collection (Telebirr split)
+  Loans & Credit | receivable_collected | Wallet: CBE | Amount: 500.00 ETB | Repayment on receivable [Fike]
+  Owner Activity | owner_withdrawal | Wallet: Cash | Amount: 180.00 ETB | gg Lunch
+  Owner Activity | owner_withdrawal | Wallet: Telebirr | Amount: 300.00 ETB | Gg and hermi Dinner (Food & Refreshments)

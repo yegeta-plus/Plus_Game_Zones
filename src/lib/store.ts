@@ -22,18 +22,24 @@ import {
 } from '../types';
 import { triggerHaptic } from './haptics';
 import { DEFAULT_ROLE_PERMISSIONS, getEffectivePermissions } from './auth';
-import { INITIAL_DATASET_JULY_AUG } from '../data/importedDataset';
+import { INITIAL_DATASET_JULY_AUG, COMBINED_TRANSACTIONS } from '../data/importedDataset';
 import {
   NEW_AUGUST_SEPTEMBER_TRANSACTIONS,
   NEW_SEPTEMBER_TRANSFERS,
   NEW_SEPTEMBER_RECEIVABLES
 } from '../data/newAugustSeptemberTransactions';
+import {
+  VERIFIED_OPENING_BALANCES,
+  VERIFIED_TRANSACTIONS,
+  VERIFIED_TRANSFERS,
+  VERIFIED_RECEIVABLES
+} from '../data/verifiedLedgerTransactions';
 import { normalizeTransactionScopes, isPersonalExpense, resolveExpenseScope } from './expenseClassifier';
 
 export type { ERPState } from '../types';
 export { isPersonalExpense, resolveExpenseScope, normalizeTransactionScopes };
 
-const STORAGE_KEY = 'pluszone_fin_erp_state_v26_cash_available';
+const STORAGE_KEY = 'pluszone_fin_erp_state_v29_restored_history';
 
 export const DEFAULT_AUTOMATED_EMAIL_REPORTS: AutomatedEmailReportsSettings = {
   enabled: true,
@@ -523,61 +529,18 @@ export function loadInitialState(): ERPState {
             }
           }
         }
-        // Ensure new Aug 18 - Sep 16 transactions are always seamlessly merged in and updated with canonical timestamps
-        const existingTxIds = new Set(parsed.transactions.map((t: Transaction) => t.id));
-        const canonicalTxMap = new Map(NEW_AUGUST_SEPTEMBER_TRANSACTIONS.map(t => [t.id, t]));
-        parsed.transactions = parsed.transactions.map((t: Transaction) => {
-          const canonical = canonicalTxMap.get(t.id);
-          if (canonical) {
-            return {
-              ...t,
-              date: canonical.date,
-              amount: canonical.amount,
-              walletId: canonical.walletId,
-              description: canonical.description,
-              type: canonical.type,
-              category: canonical.category,
-              expenseScope: canonical.expenseScope || t.expenseScope
-            };
-          }
-          return t;
-        });
-        for (const newTx of NEW_AUGUST_SEPTEMBER_TRANSACTIONS) {
-          if (!existingTxIds.has(newTx.id)) {
-            parsed.transactions.push(newTx);
-            existingTxIds.add(newTx.id);
-          }
-        }
-        if (!existingTxIds.has('tx-20260831-police-support')) {
-          parsed.transactions.push({
-            id: 'tx-20260831-police-support',
-            date: '2026-08-31T14:00:00.000Z',
-            type: 'EXPENSE',
-            category: 'Community & Security',
-            amount: 200,
-            walletId: 'w-cash',
-            description: 'Police support',
-            creatorName: 'Yegeta Huawei'
+        // Strictly load verified transactions, transfers, receivables, and opening balances requested by user
+        parsed.transactions = COMBINED_TRANSACTIONS;
+        parsed.transfers = VERIFIED_TRANSFERS;
+        parsed.receivables = VERIFIED_RECEIVABLES;
+        if (Array.isArray(parsed.wallets)) {
+          parsed.wallets = parsed.wallets.map((w: Wallet) => {
+            if (w.id === 'w-cash' || w.type === 'CASH') return { ...w, openingBalance: VERIFIED_OPENING_BALANCES.cash };
+            if (w.id === 'w-telebirr' || w.type === 'TELEBIRR') return { ...w, openingBalance: VERIFIED_OPENING_BALANCES.telebirr };
+            if (w.id === 'w-cbe' || w.type === 'CBE_BANK') return { ...w, openingBalance: VERIFIED_OPENING_BALANCES.cbe };
+            if (w.id === 'w-ebirr' || w.type === 'EBIRR') return { ...w, openingBalance: VERIFIED_OPENING_BALANCES.ebirr };
+            return w;
           });
-        }
-
-        // Ensure new transfers are seamlessly merged in if missing
-        parsed.transfers = Array.isArray(parsed.transfers) ? parsed.transfers : [];
-        const existingTrIds = new Set(parsed.transfers.map((t: Transfer) => t.id));
-        for (const tr of NEW_SEPTEMBER_TRANSFERS) {
-          if (!existingTrIds.has(tr.id)) {
-            parsed.transfers.push(tr);
-            existingTrIds.add(tr.id);
-          }
-        }
-
-        // Ensure new receivables are seamlessly merged in if missing
-        const existingRcvIds = new Set((parsed.receivables || []).map((r: Receivable) => r.id));
-        for (const rcv of NEW_SEPTEMBER_RECEIVABLES) {
-          if (!existingRcvIds.has(rcv.id)) {
-            parsed.receivables.push(rcv);
-            existingRcvIds.add(rcv.id);
-          }
         }
         // Preserve existing classified transaction scopes without re-applying the automated keyword rule
         parsed.transactions = (parsed.transactions || []).map((t: Transaction) => ({
@@ -817,7 +780,13 @@ export function saveStateToStorage(state: ERPState) {
 export function calculateWalletBalance(wallet: Wallet, transactions: Transaction[], transfers: Transfer[]): number {
   let balance = wallet.openingBalance || 0;
 
-  for (const tx of transactions) {
+  // Active ledger period begins on 2026-09-07 where the user defined verified opening balances.
+  // Prior period transactions (July 1 - Sep 6) are preserved for historical audit & reporting.
+  const activePeriodStart = '2026-09-07T00:00:00.000Z';
+  const activeTransactions = transactions.filter(tx => tx.date >= activePeriodStart);
+  const activeTransfers = transfers.filter(tr => tr.date >= activePeriodStart);
+
+  for (const tx of activeTransactions) {
     if (tx.reversed) continue;
     if (tx.splits && tx.splits.length > 0) {
       const split = tx.splits.find(s => s.walletId === wallet.id);
@@ -837,7 +806,7 @@ export function calculateWalletBalance(wallet: Wallet, transactions: Transaction
     }
   }
 
-  for (const tr of transfers) {
+  for (const tr of activeTransfers) {
     if (tr.toWalletId === wallet.id) {
       balance += Math.abs(tr.amount);
     }
@@ -990,9 +959,13 @@ export function computeAllWalletRunningBalances(
   transfers: Transfer[] = []
 ): Record<string, Record<string, number>> {
   const walletBalances: Record<string, number> = {};
+  // Prior historical period (before Sep 7) starts from genesis setup
   wallets.forEach(w => {
-    walletBalances[w.id] = w.openingBalance || 0;
+    walletBalances[w.id] = 0;
   });
+
+  const activePeriodStartTime = new Date('2026-09-07T00:00:00.000Z').getTime();
+  let periodResetDone = false;
 
   type LedgerEvent =
     | { kind: 'tx'; date: number; id: string; tx: Transaction }
@@ -1028,6 +1001,14 @@ export function computeAllWalletRunningBalances(
   const txToWalletBalances: Record<string, Record<string, number>> = {};
 
   for (const ev of events) {
+    // When reaching the verified active period (Sep 7 onwards), initialize with verified opening balances
+    if (!periodResetDone && ev.date >= activePeriodStartTime) {
+      wallets.forEach(w => {
+        walletBalances[w.id] = w.openingBalance || 0;
+      });
+      periodResetDone = true;
+    }
+
     if (ev.kind === 'tx') {
       const tx = ev.tx;
       if (!tx.reversed) {
@@ -1037,7 +1018,7 @@ export function computeAllWalletRunningBalances(
               if (tx.type === 'INCOME') {
                 walletBalances[s.walletId] += Math.abs(s.amount);
               } else {
-                walletBalances[s.walletId] -= Math.abs(s.amount);
+                walletBalances[s.walletId] = Math.max(0, walletBalances[s.walletId] - Math.abs(s.amount));
               }
             }
           }
@@ -1045,7 +1026,7 @@ export function computeAllWalletRunningBalances(
           if (tx.type === 'INCOME') {
             walletBalances[tx.walletId] += Math.abs(tx.amount);
           } else {
-            walletBalances[tx.walletId] -= Math.abs(tx.amount);
+            walletBalances[tx.walletId] = Math.max(0, walletBalances[tx.walletId] - Math.abs(tx.amount));
           }
         }
       }
@@ -1053,7 +1034,7 @@ export function computeAllWalletRunningBalances(
     } else if (ev.kind === 'transfer') {
       const tr = ev.transfer;
       if (walletBalances[tr.fromWalletId] !== undefined) {
-        walletBalances[tr.fromWalletId] -= Math.abs(tr.amount);
+        walletBalances[tr.fromWalletId] = Math.max(0, walletBalances[tr.fromWalletId] - Math.abs(tr.amount));
       }
       if (walletBalances[tr.toWalletId] !== undefined) {
         walletBalances[tr.toWalletId] += Math.abs(tr.amount);

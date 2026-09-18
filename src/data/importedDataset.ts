@@ -5,6 +5,12 @@ import {
   NEW_SEPTEMBER_TRANSFERS,
   NEW_SEPTEMBER_RECEIVABLES
 } from './newAugustSeptemberTransactions';
+import {
+  VERIFIED_OPENING_BALANCES,
+  VERIFIED_TRANSACTIONS,
+  VERIFIED_TRANSFERS,
+  VERIFIED_RECEIVABLES
+} from './verifiedLedgerTransactions';
 
 export interface DatasetResult {
   openingBalances: {
@@ -23,10 +29,10 @@ export interface DatasetResult {
 
 export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
   openingBalances: {
-    cash: 0,
-    telebirr: 1360,
-    cbe: 730,
-    ebirr: 200
+    cash: VERIFIED_OPENING_BALANCES.cash,
+    telebirr: VERIFIED_OPENING_BALANCES.telebirr,
+    cbe: VERIFIED_OPENING_BALANCES.cbe,
+    ebirr: VERIFIED_OPENING_BALANCES.ebirr
   },
   equbs: [
     {
@@ -583,80 +589,14 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
       status: 'OUTSTANDING',
       walletId: 'w-telebirr'
     },
-    ...NEW_SEPTEMBER_RECEIVABLES
+    ...VERIFIED_RECEIVABLES
   ],
-  transfers: [
-    {
-      id: 'tr-1',
-      date: '2026-07-06T12:00:00.000Z',
-      fromWalletId: 'w-ebirr',
-      toWalletId: 'w-cbe',
-      amount: 260,
-      reason: 'For tax',
-      creatorId: 'u-1',
-      creatorName: 'Yegeta Huawei'
-    },
-    {
-      id: 'tr-2',
-      date: '2026-07-12T12:00:00.000Z',
-      fromWalletId: 'w-cash',
-      toWalletId: 'w-telebirr',
-      amount: 50,
-      reason: 'Habte transfer',
-      creatorId: 'u-1',
-      creatorName: 'Yegeta Huawei'
-    },
-    {
-      id: 'tr-3',
-      date: '2026-07-13T12:00:00.000Z',
-      fromWalletId: 'w-telebirr',
-      toWalletId: 'w-cash',
-      amount: 210,
-      reason: 'Solomon transfer',
-      creatorId: 'u-1',
-      creatorName: 'Yegeta Huawei'
-    },
-    {
-      id: 'tr-4',
-      date: '2026-07-14T12:00:00.000Z',
-      fromWalletId: 'w-telebirr',
-      toWalletId: 'w-cash',
-      amount: 100,
-      reason: 'Solomon transfer',
-      creatorId: 'u-1',
-      creatorName: 'Yegeta Huawei'
-    },
-    {
-      id: 'tr-5',
-      date: '2026-07-16T12:00:00.000Z',
-      fromWalletId: 'w-telebirr',
-      toWalletId: 'w-cbe',
-      amount: 2200,
-      reason: 'Transfer including 9 ETB fee',
-      creatorId: 'u-1',
-      creatorName: 'Yegeta Huawei'
-    },
-    {
-      id: 'tr-6',
-      date: '2026-08-03T12:00:00.000Z',
-      fromWalletId: 'w-telebirr',
-      toWalletId: 'w-cash',
-      amount: 1000,
-      reason: 'Moved 1,000 ETB',
-      creatorId: 'u-1',
-      creatorName: 'Yegeta Huawei'
-    },
-    {
-      id: 'tr-7-ebirr-settle',
-      date: '2026-08-14T12:00:00.000Z',
-      fromWalletId: 'w-ebirr',
-      toWalletId: 'w-cbe',
-      amount: 340,
-      reason: 'eBirr digital tax settlement transfer to CBE account',
-      creatorId: 'u-1',
-      creatorName: 'Yegeta Huawei'
-    },
-    ...NEW_SEPTEMBER_TRANSFERS
-  ],
-  transactions: [...CANONICAL_PDF_TRANSACTIONS, ...NEW_AUGUST_SEPTEMBER_TRANSACTIONS]
+  transfers: VERIFIED_TRANSFERS,
+  transactions: [
+    ...CANONICAL_PDF_TRANSACTIONS.filter(t => t.date < '2026-08-18'),
+    ...NEW_AUGUST_SEPTEMBER_TRANSACTIONS.filter(t => t.date >= '2026-08-18' && t.date < '2026-09-07'),
+    ...VERIFIED_TRANSACTIONS
+  ]
 };
+
+export const COMBINED_TRANSACTIONS: Transaction[] = INITIAL_DATASET_JULY_AUG.transactions;

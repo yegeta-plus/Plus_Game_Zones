@@ -1353,62 +1353,17 @@ const RAW_NEW_AUGUST_SEPTEMBER_TRANSACTIONS: Transaction[] = [
     walletId: 'w-cash',
     description: 'GG Lunch (Edited)',
     creatorName: 'Yegeta Huawei'
-  },
-  // Cash Available Reconciliation Entries
-  {
-    id: 'tx-20260825-exp-hermi-father-loan',
-    date: '2026-08-25T14:00:00.000Z',
-    type: 'EXPENSE',
-    category: 'Loan Repayment',
-    amount: 15000,
-    walletId: 'w-cash',
-    description: 'Hermi father loan repayment installment (Cash)',
-    creatorName: 'Yegeta Huawei',
-    expenseScope: 'PERSONAL'
-  },
-  {
-    id: 'tx-20260908-exp-cash-ops-adj',
-    date: '2026-09-08T18:00:00.000Z',
-    type: 'EXPENSE',
-    category: 'Other & Home Expenses',
-    amount: 150,
-    walletId: 'w-cash',
-    description: 'Cash vault balance reconciliation adjustment',
-    creatorName: 'Yegeta Huawei',
-    expenseScope: 'PERSONAL'
-  },
-  {
-    id: 'tx-20260910-exp-cbe-tax-settlement',
-    date: '2026-09-10T11:00:00.000Z',
-    type: 'EXPENSE',
-    category: 'Tax & License',
-    amount: 2180,
-    walletId: 'w-cbe',
-    description: 'CBE tax settlement & account service reconciliation',
-    creatorName: 'Yegeta Huawei',
-    expenseScope: 'BUSINESS'
-  },
-  {
-    id: 'tx-20260912-exp-telebirr-equb-settlement',
-    date: '2026-09-12T15:30:00.000Z',
-    type: 'EXPENSE',
-    category: 'Equb Contribution',
-    amount: 13039,
-    walletId: 'w-telebirr',
-    description: 'Telebirr merchant equb rotation & settlement reconciliation',
-    creatorName: 'Yegeta Huawei',
-    expenseScope: 'BUSINESS'
   }
 ];
 
 export const NEW_SEPTEMBER_TRANSFERS: Transfer[] = [
   {
     id: 'tr-20260909-cbe-to-cash',
-    date: '2026-09-09T13:25:00.000Z',
+    date: '2026-09-08T12:00:00.000Z',
     fromWalletId: 'w-cbe',
     toWalletId: 'w-cash',
     amount: 700,
-    reason: 'Transfer — moved 700 ETB from account',
+    reason: 'Transfer — moved 700 ETB from CBE to Cash',
     creatorId: 'u-1',
     creatorName: 'Yegeta Huawei'
   }
@@ -1416,28 +1371,29 @@ export const NEW_SEPTEMBER_TRANSFERS: Transfer[] = [
 
 export const NEW_SEPTEMBER_RECEIVABLES: Receivable[] = [
   {
-    id: 'rcv-20260914-fike',
-    customerName: 'Fike...',
-    description: "Receivable created — Bale’da credit for Fike...",
+    id: 'rcv-20260913-fike',
+    customerName: 'Fike',
+    description: "Bale'da credit for Fike",
     amountOwed: 520,
-    amountCollected: 0,
-    createdDate: '2026-09-14T01:43:00.000Z',
-    dueDate: '2026-09-28T01:43:00.000Z',
+    amountCollected: 500,
+    createdDate: '2026-09-13T13:00:00.000Z',
+    dueDate: '2026-09-27T13:00:00.000Z',
     status: 'OUTSTANDING',
-    walletId: 'w-cash'
+    walletId: 'w-cbe'
   },
   {
-    id: 'rcv-20260914-so',
-    customerName: 'So...',
-    description: "Receivable created — Bale’da credit for So...",
+    id: 'rcv-20260913-solomon',
+    customerName: 'Solomon',
+    description: "Bale'da credit for Solomon",
     amountOwed: 150,
-    amountCollected: 0,
-    createdDate: '2026-09-14T01:44:00.000Z',
-    dueDate: '2026-09-28T01:44:00.000Z',
+    amountCollected: 130,
+    createdDate: '2026-09-13T13:05:00.000Z',
+    dueDate: '2026-09-27T13:05:00.000Z',
     status: 'OUTSTANDING',
-    walletId: 'w-cash'
+    walletId: 'w-telebirr'
   }
 ];
 
 export const NEW_AUGUST_SEPTEMBER_TRANSACTIONS: Transaction[] = normalizeTransactionScopes(RAW_NEW_AUGUST_SEPTEMBER_TRANSACTIONS);
+
 
