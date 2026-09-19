@@ -76,6 +76,7 @@ import { triggerHaptic } from '../../lib/haptics';
 import { formatRelativeNotifTime } from '../../lib/notifications';
 import { BrandLogo } from '../common/BrandLogo';
 import { FutureCashflowForecast } from './FutureCashflowForecast';
+import { OnboardingTutorialCard } from '../common/OnboardingTutorialCard';
 
 interface DashboardViewProps {
   currentUser: UserProfile;
@@ -97,6 +98,7 @@ interface DashboardViewProps {
   onNavigateTab: (tab: any, subView?: any) => void;
   onAddIncome?: (amount: number, category: string, description: string) => void;
   onOpenAiAssistant?: (prompt?: string, initialMode?: 'chat' | 'simulator') => void;
+  onStartTour?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -118,70 +120,146 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenTransferModal,
   onNavigateTab,
   onAddIncome,
-  onOpenAiAssistant
+  onOpenAiAssistant,
+  onStartTour
 }) => {
   const totalBalance = calculateTotalBusinessBalance(wallets, transactions, transfers);
   const { income, expense, profit } = calculateMonthlyStats(transactions);
   const incomeAverages = calculateIncomeAverages(transactions);
 
   const [reportTimeframe, setReportTimeframe] = useState<'ALL' | 'DAILY' | 'MONTHLY' | 'YEARLY'>('ALL');
+  const [showTutorial, setShowTutorial] = useState<boolean>(false);
 
-  // Comprehensive Income & Expense Summary Report (Daily, Monthly, Yearly)
+  // Comprehensive Income & Expense Summary Report (Daily, Monthly, Yearly, Overview)
   const financialSummaryReport = useMemo(() => {
+    const validTxs = (transactions || []).filter(tx => !tx.reversed && tx.date);
+
     const now = new Date();
     const todayYMD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
 
-    let dailyInc = 0;
-    let dailyExp = 0;
-    let dailyCount = 0;
+    // Group transactions by Date (YYYY-MM-DD), Month (YYYY-MM), and Year (YYYY)
+    const txByDate: Record<string, { income: number; expense: number; count: number; txs: Transaction[] }> = {};
+    const txByMonth: Record<string, { income: number; expense: number; count: number; year: number; month: number }> = {};
+    const txByYear: Record<number, { income: number; expense: number; count: number }> = {};
 
-    let monthlyInc = 0;
-    let monthlyExp = 0;
-    let monthlyCount = 0;
+    let totalAllTimeInc = 0;
+    let totalAllTimeExp = 0;
+    let totalAllTimeCount = 0;
 
-    let yearlyInc = 0;
-    let yearlyExp = 0;
-    let yearlyCount = 0;
-
-    transactions.forEach((tx) => {
-      if (!tx.date) return;
+    validTxs.forEach((tx) => {
       const txDate = new Date(tx.date);
       if (isNaN(txDate.getTime())) return;
 
-      const txYMD = `${txDate.getFullYear()}-${String(txDate.getMonth() + 1).padStart(2, '0')}-${String(txDate.getDate()).padStart(2, '0')}`;
-      const txYear = txDate.getFullYear();
-      const txMonth = txDate.getMonth();
-
+      const ymd = `${txDate.getFullYear()}-${String(txDate.getMonth() + 1).padStart(2, '0')}-${String(txDate.getDate()).padStart(2, '0')}`;
+      const ym = `${txDate.getFullYear()}-${String(txDate.getMonth() + 1).padStart(2, '0')}`;
+      const yr = txDate.getFullYear();
       const amt = Number(tx.amount) || 0;
 
-      // Daily
-      if (txYMD === todayYMD) {
-        dailyCount++;
-        if (tx.type === 'INCOME') dailyInc += amt;
-        else if (tx.type === 'EXPENSE') dailyExp += amt;
+      if (!txByDate[ymd]) {
+        txByDate[ymd] = { income: 0, expense: 0, count: 0, txs: [] };
       }
+      txByDate[ymd].count++;
+      txByDate[ymd].txs.push(tx);
 
-      // Monthly
-      if (txYear === currentYear && txMonth === currentMonth) {
-        monthlyCount++;
-        if (tx.type === 'INCOME') monthlyInc += amt;
-        else if (tx.type === 'EXPENSE') monthlyExp += amt;
+      if (!txByMonth[ym]) {
+        txByMonth[ym] = { income: 0, expense: 0, count: 0, year: yr, month: txDate.getMonth() };
       }
+      txByMonth[ym].count++;
 
-      // Yearly
-      if (txYear === currentYear) {
-        yearlyCount++;
-        if (tx.type === 'INCOME') yearlyInc += amt;
-        else if (tx.type === 'EXPENSE') yearlyExp += amt;
+      if (!txByYear[yr]) {
+        txByYear[yr] = { income: 0, expense: 0, count: 0 };
+      }
+      txByYear[yr].count++;
+
+      if (tx.type === 'INCOME') {
+        txByDate[ymd].income += amt;
+        txByMonth[ym].income += amt;
+        txByYear[yr].income += amt;
+        totalAllTimeInc += amt;
+        totalAllTimeCount++;
+      } else if (tx.type === 'EXPENSE') {
+        txByDate[ymd].expense += amt;
+        txByMonth[ym].expense += amt;
+        txByYear[yr].expense += amt;
+        totalAllTimeExp += amt;
+        totalAllTimeCount++;
       }
     });
 
+    const sortedDatesWithTxs = Object.keys(txByDate).sort();
+    const sortedMonthsWithTxs = Object.keys(txByMonth).sort();
+    const sortedYearsWithTxs = Object.keys(txByYear).map(Number).sort((a, b) => a - b);
+
+    // 1. Resolve DAILY target:
+    // If today has recorded transactions, use today.
+    // If today has no transactions yet, show the latest active recorded day's data so it is never null/empty.
+    const todayHasTxs = Boolean(txByDate[todayYMD] && txByDate[todayYMD].count > 0);
+    const latestRecordedDate = sortedDatesWithTxs.length > 0 ? sortedDatesWithTxs[sortedDatesWithTxs.length - 1] : todayYMD;
+    const effectiveDailyDate = todayHasTxs ? todayYMD : latestRecordedDate;
+    const dailyData = txByDate[effectiveDailyDate] || { income: 0, expense: 0, count: 0, txs: [] };
+    const isDailyToday = effectiveDailyDate === todayYMD;
+
+    // 2. Resolve MONTHLY target:
+    // If current month has transactions, use current month; otherwise fallback to latest recorded month.
+    const currentYM = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
+    const currentMonthHasTxs = Boolean(txByMonth[currentYM] && txByMonth[currentYM].count > 0);
+    const latestRecordedYM = sortedMonthsWithTxs.length > 0 ? sortedMonthsWithTxs[sortedMonthsWithTxs.length - 1] : currentYM;
+    const effectiveYM = currentMonthHasTxs ? currentYM : latestRecordedYM;
+    const monthlyData = txByMonth[effectiveYM] || { income: 0, expense: 0, count: 0, year: currentYear, month: currentMonth };
+    const isMonthlyCurrent = effectiveYM === currentYM;
+
+    const [yStr, mStr] = (effectiveYM || '').split('-');
+    const monthDateObj = yStr && mStr ? new Date(Number(yStr), Number(mStr) - 1, 1) : now;
+    const monthLabel = monthDateObj.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    // 3. Resolve YEARLY target:
+    const currentYearHasTxs = Boolean(txByYear[currentYear] && txByYear[currentYear].count > 0);
+    const latestRecordedYear = sortedYearsWithTxs.length > 0 ? sortedYearsWithTxs[sortedYearsWithTxs.length - 1] : currentYear;
+    const effectiveYear = currentYearHasTxs ? currentYear : latestRecordedYear;
+    const yearlyData = txByYear[effectiveYear] || { income: 0, expense: 0, count: 0 };
+    const isYearlyCurrent = effectiveYear === currentYear;
+
+    // 4. Resolve OVERVIEW metrics:
+    const overviewNet = totalAllTimeInc - totalAllTimeExp;
+    const profitMargin = totalAllTimeInc > 0 ? ((overviewNet / totalAllTimeInc) * 100) : 0;
+
     return {
-      daily: { income: dailyInc, expense: dailyExp, net: dailyInc - dailyExp, count: dailyCount },
-      monthly: { income: monthlyInc, expense: monthlyExp, net: monthlyInc - monthlyExp, count: monthlyCount },
-      yearly: { income: yearlyInc, expense: yearlyExp, net: yearlyInc - yearlyExp, count: yearlyCount }
+      daily: {
+        income: dailyData.income || 0,
+        expense: dailyData.expense || 0,
+        net: (dailyData.income || 0) - (dailyData.expense || 0),
+        count: dailyData.count || 0,
+        date: effectiveDailyDate,
+        isToday: isDailyToday,
+        txs: dailyData.txs || []
+      },
+      monthly: {
+        income: monthlyData.income || 0,
+        expense: monthlyData.expense || 0,
+        net: (monthlyData.income || 0) - (monthlyData.expense || 0),
+        count: monthlyData.count || 0,
+        label: monthLabel,
+        isCurrent: isMonthlyCurrent
+      },
+      yearly: {
+        income: yearlyData.income || 0,
+        expense: yearlyData.expense || 0,
+        net: (yearlyData.income || 0) - (yearlyData.expense || 0),
+        count: yearlyData.count || 0,
+        year: effectiveYear,
+        isCurrent: isYearlyCurrent
+      },
+      overview: {
+        totalIncome: totalAllTimeInc || 0,
+        totalExpense: totalAllTimeExp || 0,
+        netProfit: overviewNet || 0,
+        totalTransactions: totalAllTimeCount || 0,
+        profitMargin: profitMargin,
+        latestDate: latestRecordedDate,
+        activeDaysCount: sortedDatesWithTxs.length
+      }
     };
   }, [transactions]);
 
@@ -464,6 +542,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* Action Buttons */}
         <div className="flex items-center gap-2 pt-1 md:pt-0">
           <button
+            id="btn-open-tutorial-tour"
+            onClick={() => {
+              triggerHaptic('light');
+              if (onStartTour) {
+                onStartTour();
+              } else {
+                setShowTutorial(true);
+              }
+            }}
+            className="px-2.5 py-1.5 sm:py-2 rounded-lg sm:rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#1A2232] dark:hover:bg-[#222C40] border border-slate-200 dark:border-[#243046] text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+            title="App Tutorial & Feature Tour"
+          >
+            <HelpCircle className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+            <span className="hidden sm:inline">Tour</span>
+          </button>
+
+          <button
             onClick={() => {
               triggerHaptic('medium');
               onOpenQuickEntry();
@@ -487,8 +582,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
+      {/* Disposable Onboarding Tutorial Card: Shown automatically on first-time user visit, skippable at any time */}
+      <OnboardingTutorialCard
+        forceShow={showTutorial}
+        onClose={() => setShowTutorial(false)}
+        onNavigateTab={onNavigateTab}
+        onOpenQuickEntry={onOpenQuickEntry}
+      />
+
       {/* 2. Top Metric Cards Row (Hero Ledger + PROMINENT WEEKLY AVERAGE INCOME + Monthly KPIs) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3.5">
+      <div id="tour-dashboard-kpis" data-tour="dashboard-kpis" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3.5">
 
         {/* Hero Business Ledger Card */}
         <div className="md:col-span-2 lg:col-span-2 relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#00E5B8] via-[#00B894] to-[#007A60] p-4 text-slate-950 shadow-lg border border-emerald-300 dark:border-[#00D4AA]/40 flex flex-col justify-between group">
@@ -641,7 +744,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* 3. Cash Available / Active Financial Accounts Section */}
-      <div className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-4 shadow-xs space-y-3">
+      <div id="tour-wallets-overview" data-tour="wallets-overview" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-4 shadow-xs space-y-3">
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#1C2638] pb-2.5">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-[#00D4AA] flex items-center justify-center font-bold">
@@ -987,6 +1090,73 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             </div>
 
+            {/* Overview Executive Summary Banner when 'Overview' (ALL) is active */}
+            {reportTimeframe === 'ALL' && (
+              <div className="p-4 rounded-xl bg-gradient-to-r from-slate-900 to-slate-950 text-white border border-slate-800 shadow-sm space-y-3.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-xs font-black uppercase tracking-wider text-white">
+                      Executive Overview • Cash Flow & Margins
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-mono text-slate-300 bg-slate-800/80 px-2.5 py-0.5 rounded-md border border-slate-700/60 self-start sm:self-auto">
+                    Latest Activity: {formatDateByCalendar(financialSummaryReport.overview.latestDate, calendarType, false)}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+                  {/* Total Inflow */}
+                  <div className="p-3 rounded-lg bg-slate-800/60 border border-slate-700/60">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                      <ArrowDownLeft className="w-3.5 h-3.5" /> Total Inflow
+                    </span>
+                    <p className="text-base sm:text-lg font-black font-mono text-emerald-300 mt-1 truncate">
+                      {hideBalances ? '••••••' : formatETB(financialSummaryReport.overview.totalIncome, true)}
+                    </p>
+                    <span className="text-[10px] text-slate-400 font-medium">All-time revenue</span>
+                  </div>
+
+                  {/* Total Outflow */}
+                  <div className="p-3 rounded-lg bg-slate-800/60 border border-slate-700/60">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-400 flex items-center gap-1">
+                      <ArrowUpRight className="w-3.5 h-3.5" /> Total Outflow
+                    </span>
+                    <p className="text-base sm:text-lg font-black font-mono text-rose-300 mt-1 truncate">
+                      {hideBalances ? '••••••' : formatETB(financialSummaryReport.overview.totalExpense, true)}
+                    </p>
+                    <span className="text-[10px] text-slate-400 font-medium">Operating expenses</span>
+                  </div>
+
+                  {/* Net Cashflow */}
+                  <div className="p-3 rounded-lg bg-slate-800/60 border border-slate-700/60">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-400 flex items-center gap-1">
+                      <TrendingUp className="w-3.5 h-3.5" /> Net Balance
+                    </span>
+                    <p className={`text-base sm:text-lg font-black font-mono mt-1 truncate ${
+                      financialSummaryReport.overview.netProfit >= 0 ? 'text-emerald-300' : 'text-rose-300'
+                    }`}>
+                      {hideBalances ? '••••••' : formatETB(financialSummaryReport.overview.netProfit, true)}
+                    </p>
+                    <span className="text-[10px] text-slate-400 font-medium">Net profit retained</span>
+                  </div>
+
+                  {/* Margin & Volume */}
+                  <div className="p-3 rounded-lg bg-slate-800/60 border border-slate-700/60">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-purple-400 flex items-center gap-1">
+                      <Activity className="w-3.5 h-3.5" /> Margin & Vol
+                    </span>
+                    <p className="text-base sm:text-lg font-black font-mono text-purple-300 mt-1 truncate">
+                      {financialSummaryReport.overview.profitMargin.toFixed(1)}%
+                    </p>
+                    <span className="text-[10px] text-slate-400 font-medium font-mono">
+                      {financialSummaryReport.overview.totalTransactions} verified txs
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 3 Columns Grid: Daily, Monthly, Yearly */}
             <div className={`grid gap-3.5 ${
               reportTimeframe === 'ALL'
@@ -996,16 +1166,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {/* 1. DAILY REPORT CARD */}
               {(reportTimeframe === 'ALL' || reportTimeframe === 'DAILY') && (
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#151C2A] border border-slate-200/80 dark:border-[#1C2638] space-y-3 relative overflow-hidden group hover:border-emerald-500/40 transition-all">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-1 flex-wrap">
                     <div className="flex items-center gap-1.5">
                       <Calendar className="w-4 h-4 text-emerald-600 dark:text-[#00D4AA]" />
                       <span className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
-                        Daily Report (Today)
+                        Daily Report
                       </span>
                     </div>
-                    <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 font-medium bg-slate-200/60 dark:bg-[#1E2D40] px-2 py-0.5 rounded-md">
-                      {financialSummaryReport.daily.count} txs
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-md border ${
+                        financialSummaryReport.daily.isToday
+                          ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
+                          : 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
+                      }`}>
+                        {financialSummaryReport.daily.isToday
+                          ? 'Today'
+                          : `Latest: ${formatDateByCalendar(financialSummaryReport.daily.date, calendarType, false)}`}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 font-medium bg-slate-200/60 dark:bg-[#1E2D40] px-2 py-0.5 rounded-md">
+                        {financialSummaryReport.daily.count} txs
+                      </span>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 pt-1">
@@ -1040,22 +1221,69 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       {hideBalances ? '••••••' : formatETB(financialSummaryReport.daily.net, true)}
                     </span>
                   </div>
+
+                  {/* Detailed Transaction Breakdown for the Day when in Daily timeframe */}
+                  {reportTimeframe === 'DAILY' && financialSummaryReport.daily.txs.length > 0 && (
+                    <div className="pt-2 border-t border-slate-200/70 dark:border-[#1E2D40] space-y-2">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 dark:text-[#8899BB]">
+                        <span>Latest Day Transactions</span>
+                        <span className="font-mono">{financialSummaryReport.daily.txs.length} entries</span>
+                      </div>
+                      <div className="space-y-1.5 max-h-60 overflow-y-auto pr-0.5">
+                        {financialSummaryReport.daily.txs.map((tx) => {
+                          const w = wallets.find(wal => wal.id === tx.walletId);
+                          return (
+                            <div
+                              key={tx.id}
+                              className="p-2 rounded-lg bg-white dark:bg-[#1A2232] border border-slate-100 dark:border-[#223044] flex items-center justify-between text-xs gap-2"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                {w && (
+                                  <BrandLogo type={w.type} size="xs" customLogoUrl={w.customLogoUrl} />
+                                )}
+                                <div className="min-w-0">
+                                  <p className="font-bold text-slate-900 dark:text-white truncate">
+                                    {tx.description || tx.category || 'Transaction'}
+                                  </p>
+                                  <span className="text-[10px] text-slate-400 font-mono">
+                                    {tx.category} • {w ? getWalletNickname(w.name) : 'Wallet'}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className={`font-black font-mono ${
+                                  tx.type === 'INCOME' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                                }`}>
+                                  {tx.type === 'INCOME' ? '+' : '-'}{hideBalances ? '••••' : formatETB(tx.amount, true)}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* 2. MONTHLY REPORT CARD */}
               {(reportTimeframe === 'ALL' || reportTimeframe === 'MONTHLY') && (
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#151C2A] border border-slate-200/80 dark:border-[#1C2638] space-y-3 relative overflow-hidden group hover:border-blue-500/40 transition-all">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-1 flex-wrap">
                     <div className="flex items-center gap-1.5">
                       <PieChart className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                       <span className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
-                        Monthly Report (This Month)
+                        Monthly Report
                       </span>
                     </div>
-                    <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 font-medium bg-slate-200/60 dark:bg-[#1E2D40] px-2 py-0.5 rounded-md">
-                      {financialSummaryReport.monthly.count} txs
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+                        {financialSummaryReport.monthly.label}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 font-medium bg-slate-200/60 dark:bg-[#1E2D40] px-2 py-0.5 rounded-md">
+                        {financialSummaryReport.monthly.count} txs
+                      </span>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 pt-1">
@@ -1096,16 +1324,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {/* 3. YEARLY REPORT CARD */}
               {(reportTimeframe === 'ALL' || reportTimeframe === 'YEARLY') && (
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#151C2A] border border-slate-200/80 dark:border-[#1C2638] space-y-3 relative overflow-hidden group hover:border-purple-500/40 transition-all">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-1 flex-wrap">
                     <div className="flex items-center gap-1.5">
                       <TrendingUp className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                       <span className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
-                        Yearly Report ({new Date().getFullYear()})
+                        Yearly Report
                       </span>
                     </div>
-                    <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 font-medium bg-slate-200/60 dark:bg-[#1E2D40] px-2 py-0.5 rounded-md">
-                      {financialSummaryReport.yearly.count} txs
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
+                        {financialSummaryReport.yearly.year}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 font-medium bg-slate-200/60 dark:bg-[#1E2D40] px-2 py-0.5 rounded-md">
+                        {financialSummaryReport.yearly.count} txs
+                      </span>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 pt-1">

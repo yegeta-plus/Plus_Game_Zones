@@ -34,6 +34,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         {/* Floating Quick Add Button - Elevated Above Nav Bar so it never obscures any tab */}
         <div className="absolute -top-12 left-1/2 -translate-x-1/2 flex flex-col items-center z-20">
           <button
+            id="tour-nav-quick-entry"
+            data-tour="quick-entry"
             onClick={() => {
               triggerHaptic('heavy');
               onOpenQuickEntry();

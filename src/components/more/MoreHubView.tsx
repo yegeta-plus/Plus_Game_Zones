@@ -16,12 +16,14 @@ import {
   Settings,
   Sliders,
   LogOut,
-  MessageSquare
+  MessageSquare,
+  HelpCircle
 } from 'lucide-react';
 import { ERPState, Receivable } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 import { saveStateToStorage } from '../../lib/store';
 import { syncStateToFirebaseNow } from '../../lib/firebase';
+import { TUTORIAL_STORAGE_KEY } from '../common/OnboardingTutorialCard';
 
 // Subviews
 import { GoalsView } from './GoalsView';
@@ -91,6 +93,7 @@ interface MoreHubViewProps {
   initialSubView?: SubViewType;
   onNavigateTab?: (tab: any) => void;
   onCollectReceivable?: (receivableId: string, walletId: string, amount: number) => void;
+  onReplayTour?: () => void;
 }
 
 export const MoreHubView: React.FC<MoreHubViewProps> = ({
@@ -100,7 +103,8 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
   onLogout,
   initialSubView,
   onNavigateTab,
-  onCollectReceivable
+  onCollectReceivable,
+  onReplayTour
 }) => {
   const [subView, setSubView] = useState<SubViewType>(() => normalizeSubView(initialSubView));
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabType | null>(null);
@@ -208,6 +212,24 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
       onClick: () => {
         triggerHaptic('light');
         setSubView('PLAY_STORE_STANDARDS');
+      }
+    },
+    {
+      id: 'FEATURE_TOUR' as any,
+      title: 'App Feature Tour & First-Time Guide',
+      subtitle: 'Review Multi-Wallet Vaults, Split Expenses, Customer Bale\'da & Equb Engine',
+      icon: HelpCircle,
+      color: '#6366F1',
+      onClick: () => {
+        triggerHaptic('light');
+        if (onReplayTour) {
+          onReplayTour();
+        } else {
+          localStorage.removeItem(TUTORIAL_STORAGE_KEY);
+          if (onNavigateTab) {
+            onNavigateTab('dashboard');
+          }
+        }
       }
     },
     {
@@ -354,6 +376,7 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
             state={state}
             onUpdateState={onUpdateState}
             initialTab={settingsInitialTab}
+            onReplayTour={onReplayTour}
           />
         )}
         {subView === 'REPORTS' && <ReportsView state={state} onUpdateState={onUpdateState} />}
@@ -526,6 +549,7 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
             state={state}
             onUpdateState={onUpdateState}
             initialTab="CATEGORIES"
+            onReplayTour={onReplayTour}
           />
         )}
         {subView === 'USERS' && (
@@ -533,6 +557,7 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
             state={state}
             onUpdateState={onUpdateState}
             initialTab="PARTNERS"
+            onReplayTour={onReplayTour}
           />
         )}
         {subView === 'RECURRING' && (
@@ -540,6 +565,7 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
             state={state}
             onUpdateState={onUpdateState}
             initialTab="RECURRING"
+            onReplayTour={onReplayTour}
           />
         )}
         {subView === 'ASSETS' && <AssetsView assets={state.assets} wallets={state.wallets} />}

@@ -46,6 +46,7 @@ import { triggerHaptic } from '../../lib/haptics';
 import { generatePDFReport, generateExcelReport } from '../../lib/exports';
 import { formatDateByCalendar } from '../../lib/ethiopianCalendar';
 import { ModernDateInput } from '../common/ModernDateInput';
+import { BrandLogo } from '../common/BrandLogo';
 
 interface TransactionsViewProps {
   transactions: Transaction[];
@@ -460,7 +461,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       </div>
 
       {/* Search & Filter Controls */}
-      <div className="space-y-2">
+      <div id="tour-split-payments" data-tour="split-payments" className="space-y-2">
         
         {/* Search Bar */}
         <div className="relative">
@@ -849,8 +850,17 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                                   Split ({tx.splits.length} Wallets)
                                 </span>
                               ) : (
-                                <span className={isCreditCollected ? "text-purple-700 dark:text-purple-400 font-mono font-medium" : "text-emerald-700 dark:text-[#00D4AA] font-mono font-medium"}>
-                                  {getWalletNickname(wallet?.name)}
+                                <span className={`inline-flex items-center gap-1 font-mono font-medium ${isCreditCollected ? "text-purple-700 dark:text-purple-400" : "text-emerald-700 dark:text-[#00D4AA]"}`}>
+                                  {wallet && (
+                                    <BrandLogo
+                                      type={wallet.type}
+                                      size="xs"
+                                      customColor={wallet.color}
+                                      customLogoUrl={wallet.customLogoUrl}
+                                      className="inline-flex shadow-none"
+                                    />
+                                  )}
+                                  <span>{getWalletNickname(wallet?.name)}</span>
                                 </span>
                               )}
                             </p>

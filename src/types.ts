@@ -45,6 +45,7 @@ export interface UserProfile {
   branch: string;
   lastActive: string;
   createdBy?: string;
+  has_seen_onboarding?: boolean;
 }
 
 export type WalletType = 'CASH' | 'CBE_BANK' | 'TELEBIRR' | 'EBIRR' | 'SAVINGS' | 'CREDIT_LINE' | 'LOAN' | 'OTHER';

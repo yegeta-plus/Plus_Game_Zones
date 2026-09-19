@@ -12,6 +12,8 @@ import { MoreHubView, SubViewType } from './components/more/MoreHubView';
 import { ChatView } from './components/chat/ChatView';
 import { AiAssistantWidget } from './components/ai/AiAssistantWidget';
 import { LoginPage } from './components/auth/LoginPage';
+import { OnboardingTour, ONBOARDING_STORAGE_KEY } from './components/onboarding/OnboardingTour';
+import { FirestoreQuotaBanner } from './components/common/FirestoreQuotaBanner';
 
 import {
   ERPState,
@@ -35,7 +37,8 @@ import {
   subscribeToFirebaseState,
   syncStateToFirebase,
   syncStateToFirebaseNow,
-  fetchLatestFirebaseState
+  fetchLatestFirebaseState,
+  isFirestoreQuotaExceeded
 } from './lib/firebase';
 import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest, ChatMessage, ChatChannel, AuditLogEntry } from './types';
 import { CheckCircle2, Sparkles } from 'lucide-react';
@@ -103,6 +106,50 @@ export default function App() {
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+
+  // Onboarding Spotlight Tour State
+  const [isTourActive, setIsTourActive] = useState<boolean>(false);
+  const [tourStepIndex, setTourStepIndex] = useState<number>(0);
+
+  const handleStartTour = useCallback(() => {
+    setTourStepIndex(0);
+    setActiveTab('dashboard');
+    setIsTourActive(true);
+  }, []);
+
+  const handleCloseTour = useCallback(() => {
+    setIsTourActive(false);
+  }, []);
+
+  const handleCompleteTour = useCallback(() => {
+    setIsTourActive(false);
+    try {
+      localStorage.setItem(`has_seen_onboarding_${state.currentUser.id}`, 'true');
+      localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+    } catch (e) {}
+    setState(prev => ({
+      ...prev,
+      currentUser: {
+        ...prev.currentUser,
+        has_seen_onboarding: true
+      },
+      users: prev.users.map(u => u.id === prev.currentUser.id ? { ...u, has_seen_onboarding: true } : u)
+    }));
+  }, [state.currentUser.id]);
+
+  // First-time onboarding tour auto-trigger check for newly logged-in users
+  useEffect(() => {
+    if (isLoggedIn && !isSessionLocked && !showSplashScreen) {
+      const storedSeen = localStorage.getItem(`has_seen_onboarding_${state.currentUser.id}`) || localStorage.getItem(ONBOARDING_STORAGE_KEY);
+      if (!state.currentUser.has_seen_onboarding && !storedSeen) {
+        const timer = setTimeout(() => {
+          setIsTourActive(true);
+          setTourStepIndex(0);
+        }, 800);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [isLoggedIn, isSessionLocked, showSplashScreen, state.currentUser.id, state.currentUser.has_seen_onboarding]);
 
   // Specific Confirmation Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -282,6 +329,13 @@ export default function App() {
     setIsRefreshing(true);
     if (isManual) triggerHaptic('light');
 
+    // If Firestore quota is exceeded and this is a background automated refresh, skip remote query
+    if (isFirestoreQuotaExceeded() && !isManual) {
+      setLastRefreshedAt(new Date());
+      setIsRefreshing(false);
+      return;
+    }
+
     // 1. Fetch latest remote state directly from Firebase Firestore on manual refresh
     const remoteState = await fetchLatestFirebaseState();
     if (remoteState && typeof remoteState === 'object') {
@@ -393,7 +447,9 @@ export default function App() {
           auditLogs: updatedAudit
         };
         saveStateToStorage(updated);
-        syncStateToFirebaseNow(updated);
+        if (!isFirestoreQuotaExceeded()) {
+          syncStateToFirebaseNow(updated);
+        }
         return updated;
       }
       return prev;
@@ -403,13 +459,14 @@ export default function App() {
     setIsRefreshing(false);
   };
 
-  // Background Auto-Refresh Timer (every 15 seconds)
+  // Background Auto-Refresh Timer (every 60 seconds, paused during quota limit)
   useEffect(() => {
     if (!autoRefreshEnabled) return;
 
     const interval = setInterval(() => {
+      if (isFirestoreQuotaExceeded()) return;
       performRefresh(false);
-    }, 15000);
+    }, 60000);
 
     return () => clearInterval(interval);
   }, [autoRefreshEnabled]);
@@ -2639,6 +2696,15 @@ export default function App() {
             users: prev.users.map((u) => (u.id === selectedUser.id ? selectedUser : u))
           }));
           setIsLoggedIn(true);
+
+          // Check if first-time onboarding tour should auto-trigger
+          const storedSeen = localStorage.getItem(`has_seen_onboarding_${selectedUser.id}`) || localStorage.getItem(ONBOARDING_STORAGE_KEY);
+          if (!selectedUser.has_seen_onboarding && !storedSeen) {
+            setTimeout(() => {
+              setIsTourActive(true);
+              setTourStepIndex(0);
+            }, 650);
+          }
         }}
         onRegisterUser={(newUser: UserProfile) => {
           setState((prev) => ({
@@ -2676,6 +2742,9 @@ export default function App() {
       
       {/* PWA Install Banner & Offline Alert */}
       <PwaInstallBanner />
+
+      {/* Cloud Firestore Free Tier Quota Alert Banner */}
+      <FirestoreQuotaBanner state={state} />
 
       {/* Specific Confirmation Toast Alert */}
       {toastMessage && (
@@ -2736,6 +2805,7 @@ export default function App() {
             onNavigateTab={(tab, subView) => handleNavigateTab(tab, subView)}
             onAddIncome={handleAddGamingIncome}
             onOpenAiAssistant={handleOpenAiAssistant}
+            onStartTour={handleStartTour}
           />
         )}
 
@@ -2839,6 +2909,7 @@ export default function App() {
             initialSubView={moreSubView}
             onNavigateTab={(tab) => handleNavigateTab(tab)}
             onCollectReceivable={handleCollectReceivable}
+            onReplayTour={handleStartTour}
           />
         )}
       </main>
@@ -2955,6 +3026,18 @@ export default function App() {
           setIsLoggedIn(false);
         }}
         mode="SESSION_UNLOCK"
+      />
+
+      {/* First-Time Interactive Onboarding Coachmark Spotlight Tour */}
+      <OnboardingTour
+        isOpen={isTourActive}
+        onClose={handleCloseTour}
+        onCompleted={handleCompleteTour}
+        activeTab={activeTab}
+        moreSubView={moreSubView}
+        onNavigateTab={(tab, subView) => handleNavigateTab(tab, subView)}
+        userId={state.currentUser.id}
+        initialStepIndex={tourStepIndex}
       />
 
     </div>

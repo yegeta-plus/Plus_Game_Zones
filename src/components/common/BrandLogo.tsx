@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { WalletType } from '../../types';
-import { Vault, Wallet as WalletIcon, CreditCard, Landmark } from 'lucide-react';
+import { Vault, Wallet as WalletIcon, CreditCard, Landmark, Banknote } from 'lucide-react';
 
-interface BrandLogoProps {
+export interface BrandLogoProps {
   type: WalletType;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
   customColor?: string;
   customLogoUrl?: string;
@@ -19,25 +19,30 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
 }) => {
   const [imgError, setImgError] = useState(false);
 
+  // Precision sizing matrix tailored for mobile, tablet, and desktop viewports
+  // With clean, crisp, consistent pure white backdrop (#FFFFFF)
   const sizeClasses = {
-    sm: 'w-7 h-7 text-xs',
-    md: 'w-10 h-10 text-sm',
-    lg: 'w-12 h-12 text-base',
-    xl: 'w-16 h-16 text-xl'
+    xs: 'w-5 h-5 rounded-md p-0.5 text-[10px]',
+    sm: 'w-8 h-8 rounded-lg p-1 text-xs',
+    md: 'w-10 h-10 rounded-xl p-1.5 text-sm',
+    lg: 'w-12 h-12 rounded-xl p-1.5 text-base',
+    xl: 'w-16 h-16 rounded-2xl p-2 text-xl'
   }[size];
 
-  // If a custom logo URL is provided and valid, fill container fully
+  // Base container class for all logos: crisp, pure white background, subtle clean border, no competing background colors
+  const baseWhiteBadgeClass = `flex items-center justify-center shrink-0 overflow-hidden relative aspect-square bg-white border border-slate-200/90 shadow-sm ${sizeClasses} ${className}`;
+
+  // If a custom logo URL is provided and valid, display it inside the clean white card
   if (customLogoUrl && !imgError) {
     return (
       <div
         title={`${type} Custom Logo`}
-        className={`rounded-xl flex items-center justify-center font-bold text-white shadow-sm shrink-0 overflow-hidden relative ${sizeClasses} ${className}`}
-        style={{ backgroundColor: customColor || '#1E293B' }}
+        className={baseWhiteBadgeClass}
       >
         <img
           src={customLogoUrl}
           alt="Custom Wallet Logo"
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain"
           onError={() => setImgError(true)}
           referrerPolicy="no-referrer"
         />
@@ -50,12 +55,13 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
       return (
         <div
           title="Commercial Bank of Ethiopia (CBE)"
-          className={`rounded-xl flex items-center justify-center font-bold text-slate-900 shadow-sm shrink-0 overflow-hidden relative bg-[#050505] border border-amber-900/30 ${sizeClasses} ${className}`}
+          className={baseWhiteBadgeClass}
         >
           <img
             src="/cbe-logo.svg"
-            alt="CBE Logo"
-            className="w-full h-full object-cover"
+            alt="Commercial Bank of Ethiopia (CBE) Coin"
+            className="w-full h-full object-contain select-none"
+            loading="eager"
             onError={() => setImgError(true)}
           />
         </div>
@@ -64,13 +70,14 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
     case 'TELEBIRR':
       return (
         <div
-          title="Telebirr Mobile Money"
-          className={`rounded-xl flex items-center justify-center font-bold text-slate-900 shadow-sm shrink-0 overflow-hidden relative bg-white border border-blue-200 dark:border-blue-900/40 ${sizeClasses} ${className}`}
+          title="Telebirr Mobile Money (Ethio Telecom)"
+          className={baseWhiteBadgeClass}
         >
           <img
             src="/telebirr-logo.svg"
-            alt="Telebirr Logo"
-            className="w-full h-full object-contain"
+            alt="Telebirr Official Blue Logo"
+            className="w-full h-full object-contain select-none"
+            loading="eager"
             onError={() => setImgError(true)}
           />
         </div>
@@ -79,13 +86,14 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
     case 'EBIRR':
       return (
         <div
-          title="eBirr Financial Gateway"
-          className={`rounded-xl flex items-center justify-center font-bold text-white shadow-sm shrink-0 overflow-hidden relative bg-[#0F9945] ${sizeClasses} ${className}`}
+          title="eBirr Electronic Payment Gateway"
+          className={baseWhiteBadgeClass}
         >
           <img
             src="/ebirr-logo.svg"
-            alt="eBirr Logo"
-            className="w-full h-full object-cover"
+            alt="eBirr Official Green Emblem"
+            className="w-full h-full object-contain select-none"
+            loading="eager"
             onError={() => setImgError(true)}
           />
         </div>
@@ -94,35 +102,10 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
     case 'CASH':
       return (
         <div
-          title="Physical Cash Vault"
-          className={`rounded-xl flex items-center justify-center font-bold text-white shadow-sm shrink-0 overflow-hidden relative ${sizeClasses} ${className}`}
-          style={{ backgroundColor: customColor || '#F97316' }}
+          title="Physical Cash Vault (ETB)"
+          className={baseWhiteBadgeClass}
         >
-          <svg
-            className="w-full h-full"
-            viewBox="0 0 32 32"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <rect width="32" height="32" rx="8" fill="#F97316" />
-            <rect
-              x="3"
-              y="7"
-              width="26"
-              height="18"
-              rx="4"
-              fill="#EA580C"
-              stroke="white"
-              strokeWidth="2.2"
-            />
-            <circle cx="16" cy="16" r="4.5" fill="#F97316" stroke="white" strokeWidth="2" />
-            <path
-              d="M7 12V12.01M25 20V20.01"
-              stroke="white"
-              strokeWidth="3.5"
-              strokeLinecap="round"
-            />
-          </svg>
+          <Banknote className="w-full h-full p-0.5 text-emerald-600 stroke-[2.2]" />
         </div>
       );
 
@@ -130,10 +113,9 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
       return (
         <div
           title="Savings Vault"
-          className={`rounded-xl flex items-center justify-center font-bold text-white shadow-sm shrink-0 ${sizeClasses} ${className}`}
-          style={{ backgroundColor: customColor || '#3B82F6' }}
+          className={baseWhiteBadgeClass}
         >
-          <Vault className="w-3/5 h-3/5 text-white" />
+          <Vault className="w-full h-full p-0.5 text-blue-600" />
         </div>
       );
 
@@ -141,10 +123,9 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
       return (
         <div
           title="Credit Facility"
-          className={`rounded-xl flex items-center justify-center font-bold text-white shadow-sm shrink-0 ${sizeClasses} ${className}`}
-          style={{ backgroundColor: customColor || '#8B5CF6' }}
+          className={baseWhiteBadgeClass}
         >
-          <CreditCard className="w-3/5 h-3/5 text-white" />
+          <CreditCard className="w-full h-full p-0.5 text-purple-600" />
         </div>
       );
 
@@ -152,10 +133,9 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
       return (
         <div
           title="Loan Account"
-          className={`rounded-xl flex items-center justify-center font-bold text-white shadow-sm shrink-0 ${sizeClasses} ${className}`}
-          style={{ backgroundColor: customColor || '#EC4899' }}
+          className={baseWhiteBadgeClass}
         >
-          <Landmark className="w-3/5 h-3/5 text-white" />
+          <Landmark className="w-full h-full p-0.5 text-pink-600" />
         </div>
       );
 
@@ -163,12 +143,10 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
       return (
         <div
           title="Wallet"
-          className={`rounded-xl flex items-center justify-center font-bold text-white shadow-sm shrink-0 ${sizeClasses} ${className}`}
-          style={{ backgroundColor: customColor || '#06B6D4' }}
+          className={baseWhiteBadgeClass}
         >
-          <WalletIcon className="w-3/5 h-3/5 text-white" />
+          <WalletIcon className="w-full h-full p-0.5 text-cyan-600" />
         </div>
       );
   }
 };
-

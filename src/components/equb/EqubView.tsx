@@ -919,7 +919,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
       )}
 
       {/* Main Sub-Module Navigation Pills */}
-      <div className="grid grid-cols-3 gap-1.5 bg-slate-200/80 dark:bg-[#0F172A] p-1.5 rounded-2xl border border-slate-300/80 dark:border-[#1E2D40]">
+      <div id="tour-equb-section" data-tour="equb-section" className="grid grid-cols-3 gap-1.5 bg-slate-200/80 dark:bg-[#0F172A] p-1.5 rounded-2xl border border-slate-300/80 dark:border-[#1E2D40]">
         <button
           onClick={() => {
             triggerHaptic('light');

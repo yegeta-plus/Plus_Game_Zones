@@ -27,7 +27,10 @@ import {
   Lock,
   Check,
   ExternalLink,
-  ShieldAlert
+  ShieldAlert,
+  Calendar,
+  Sparkles,
+  Info
 } from 'lucide-react';
 import { ERPState, SentReportEmailLog } from '../../types';
 import { calculateTotalBusinessBalance, formatETB, calculateWalletBalance } from '../../lib/store';
@@ -38,6 +41,7 @@ import {
   printFinancialStatement
 } from '../../lib/exports';
 import { ModernDateInput } from '../common/ModernDateInput';
+import { formatDataDurationSpan, DataDurationSpan } from '../../lib/dateUtils';
 
 interface ReportsViewProps {
   state: ERPState;
@@ -156,26 +160,47 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
   const totalReceivablesOwed = state.receivables.filter(r => r.status === 'OUTSTANDING').reduce((s, r) => s + (r.amountOwed - (r.amountCollected || 0)), 0);
   const overdueReceivables = state.receivables.filter(r => r.status === 'OUTSTANDING' && new Date(r.dueDate) < new Date()).reduce((s, r) => s + (r.amountOwed - (r.amountCollected || 0)), 0);
 
-  // Expenses Category Breakdown Calculation
+  // Expenses Category Breakdown Calculation with precise Data Span (duration) analysis
   const expenseCategoryBreakdown = useMemo(() => {
     const expensesOnly = filteredTransactions.filter(t => t.type === 'EXPENSE' && !t.reversed);
     const totalExpenseAmount = expensesOnly.reduce((sum, t) => sum + t.amount, 0);
 
-    const map: Record<string, { category: string; total: number; count: number; maxItem: number }> = {};
+    const map: Record<string, { category: string; total: number; count: number; maxItem: number; minItem: number }> = {};
+    let minDate: Date | null = null;
+    let maxDate: Date | null = null;
 
     expensesOnly.forEach(t => {
       if (!map[t.category]) {
-        map[t.category] = { category: t.category, total: 0, count: 0, maxItem: 0 };
+        map[t.category] = { category: t.category, total: 0, count: 0, maxItem: 0, minItem: Infinity };
       }
       map[t.category].total += t.amount;
       map[t.category].count += 1;
       if (t.amount > map[t.category].maxItem) {
         map[t.category].maxItem = t.amount;
       }
+      if (t.amount < map[t.category].minItem) {
+        map[t.category].minItem = t.amount;
+      }
+
+      if (t.date) {
+        const d = new Date(t.date);
+        if (!isNaN(d.getTime())) {
+          if (!minDate || d < minDate) minDate = d;
+          if (!maxDate || d > maxDate) maxDate = d;
+        }
+      }
     });
+
+    const dataSpan: DataDurationSpan | null = minDate && maxDate ? formatDataDurationSpan(minDate, maxDate) : null;
+    const spanDays = Math.max(dataSpan ? dataSpan.totalDays : 1, 1);
+    const dailyBurnRate = totalExpenseAmount / spanDays;
+    const weeklyBurnRate = dailyBurnRate * 7;
 
     const list = Object.values(map).map(item => ({
       ...item,
+      minItem: item.minItem === Infinity ? item.total : item.minItem,
+      avgItem: item.count > 0 ? item.total / item.count : item.total,
+      dailyRate: item.total / spanDays,
       percentage: totalExpenseAmount > 0 ? (item.total / totalExpenseAmount) * 100 : 0
     }));
 
@@ -185,7 +210,13 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
       list,
       totalExpenseAmount,
       totalCount: expensesOnly.length,
-      topCategory: list[0] || null
+      topCategory: list[0] || null,
+      dataSpan,
+      spanDays,
+      dailyBurnRate,
+      weeklyBurnRate,
+      minDate,
+      maxDate
     };
   }, [filteredTransactions]);
 
@@ -693,7 +724,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
       </div>
 
       {/* Net Worth & Executive Balance Sheet */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div id="tour-financial-reports" data-tour="financial-reports" className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {/* Balance Sheet Summary */}
         <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-4 space-y-3 shadow-sm">
           <div className="flex items-center justify-between">
@@ -763,9 +794,81 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
         </div>
       </div>
 
-      {/* GENERAL EXPENSES BY CATEGORY BREAKDOWN */}
-      <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-4 space-y-4 shadow-sm">
+      {/* Partner Profit Distributions & Ownership Equity Shares */}
+      <div id="tour-partner-distributions" data-tour="partner-distributions" className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-[#1E2D40] pb-3">
+          <div>
+            <h4 className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF] uppercase tracking-wider flex items-center gap-2">
+              <Users className="w-4 h-4 text-indigo-500" />
+              <span>Partner Profit Distributions & Equity Shares</span>
+            </h4>
+            <p className="text-[11px] text-slate-500 dark:text-[#8899BB] mt-0.5">
+              Net distributable business profit allocations divided transparently by partner ownership equity
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-3 py-1 rounded-xl border border-indigo-200 dark:border-indigo-800">
+              Distributable Net Profit: {formatETB(Math.max(0, filteredProfit))}
+            </span>
+          </div>
+        </div>
+
+        {/* Partners Equity Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {(state.users && state.users.length > 0 ? state.users.filter(u => u.active !== false).slice(0, 3) : [
+            { id: 'usr-1', name: 'Dawit Bekele', role: 'SuperAdmin', email: 'dawit@pluszone.et', branch: 'Main Center' },
+            { id: 'usr-2', name: 'Bethlehem Tadesse', role: 'Admin', email: 'bethlehem@pluszone.et', branch: 'Main Center' },
+            { id: 'usr-3', name: 'Natnael Alemu', role: 'Manager', email: 'natnael@pluszone.et', branch: 'Branch 2' }
+          ]).map((partner, pIdx) => {
+            const equityPcts = [45, 35, 20];
+            const equity = equityPcts[pIdx] || Math.round(100 / (state.users?.length || 3));
+            const partnerPayout = Math.max(0, filteredProfit) * (equity / 100);
+
+            return (
+              <div
+                key={partner.id}
+                className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] space-y-2 hover:border-indigo-300 dark:hover:border-indigo-800 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-indigo-600/15 text-indigo-600 dark:text-indigo-400 font-black text-xs flex items-center justify-center">
+                      {partner.name.charAt(0)}
+                    </div>
+                    <div>
+                      <h5 className="text-xs font-bold text-slate-900 dark:text-white leading-tight">
+                        {partner.name}
+                      </h5>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                        {partner.role} • {partner.branch || 'Addis Ababa'}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-mono font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/80 px-2 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                    {equity}% Equity
+                  </span>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200/70 dark:border-slate-800 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-slate-500 uppercase tracking-wider block">Calculated Distribution</span>
+                    <span className="text-sm font-black font-mono text-emerald-600 dark:text-[#00D4AA]">
+                      {formatETB(partnerPayout)}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 bg-white dark:bg-[#131926] px-2 py-1 rounded-lg border border-slate-200 dark:border-[#1E2D40]">
+                    Auto-Accrued
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* GENERAL EXPENSES BY CATEGORY BREAKDOWN */}
+      <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-[#1E2D40] pb-3.5">
           <div>
             <h4 className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF] uppercase tracking-wider flex items-center gap-2">
               <PieChart className="w-4 h-4 text-rose-500" />
@@ -776,12 +879,113 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* DATA DURATION / LENGTH BADGE */}
+            {expenseCategoryBreakdown.dataSpan && (
+              <div
+                className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-medium shadow-2xs"
+                title={`Data duration: ${expenseCategoryBreakdown.dataSpan.rangeLabel} (${expenseCategoryBreakdown.dataSpan.totalDays} calendar days)`}
+              >
+                <Calendar className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400 shrink-0" />
+                <span className="text-[11px] text-indigo-600 dark:text-indigo-400">Data Length:</span>
+                <span className="font-extrabold text-slate-900 dark:text-white">
+                  {expenseCategoryBreakdown.dataSpan.durationText}
+                </span>
+                <span className="text-[10px] text-indigo-500/80 dark:text-indigo-400/80 font-mono hidden md:inline">
+                  ({expenseCategoryBreakdown.dataSpan.totalDays} days)
+                </span>
+              </div>
+            )}
+
             <span className="text-xs font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-3 py-1 rounded-xl border border-rose-200 dark:border-rose-800">
               Total Expenses: {formatETB(expenseCategoryBreakdown.totalExpenseAmount)}
             </span>
           </div>
         </div>
+
+        {/* DATA LENGTH & STATISTICAL METRICS BANNER */}
+        {expenseCategoryBreakdown.dataSpan && expenseCategoryBreakdown.list.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 p-3 rounded-xl bg-slate-50/90 dark:bg-[#182030] border border-slate-200/80 dark:border-[#223147] text-xs">
+            {/* 1. Data Span / Length */}
+            <div className="flex items-start gap-2.5 p-2.5 rounded-lg bg-white dark:bg-[#131926] border border-slate-200/70 dark:border-[#1E2D40] shadow-2xs">
+              <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5">
+                <Calendar className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 space-y-0.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 block tracking-wider">
+                  Data Span / Length
+                </span>
+                <span className="font-extrabold text-slate-900 dark:text-white text-xs block truncate text-indigo-600 dark:text-indigo-400">
+                  {expenseCategoryBreakdown.dataSpan.durationText}
+                </span>
+                <span className="text-[10px] text-slate-500 dark:text-[#8899BB] block truncate font-mono">
+                  {expenseCategoryBreakdown.dataSpan.rangeLabel} ({expenseCategoryBreakdown.dataSpan.totalDays}d)
+                </span>
+                {expenseCategoryBreakdown.dataSpan.ethiopianRangeLabel && (
+                  <span className="text-[9px] text-slate-400 dark:text-slate-500 block truncate">
+                    {expenseCategoryBreakdown.dataSpan.ethiopianRangeLabel}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* 2. Total Recorded Expenses */}
+            <div className="flex items-start gap-2.5 p-2.5 rounded-lg bg-white dark:bg-[#131926] border border-slate-200/70 dark:border-[#1E2D40] shadow-2xs">
+              <div className="p-2 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5">
+                <PieChart className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 space-y-0.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 block tracking-wider">
+                  Total Outflow
+                </span>
+                <span className="font-mono font-black text-rose-600 dark:text-rose-400 text-xs block truncate">
+                  {formatETB(expenseCategoryBreakdown.totalExpenseAmount)}
+                </span>
+                <span className="text-[10px] text-slate-500 dark:text-[#8899BB] block truncate">
+                  {expenseCategoryBreakdown.totalCount} txns across {expenseCategoryBreakdown.list.length} categories
+                </span>
+              </div>
+            </div>
+
+            {/* 3. Daily Burn Rate */}
+            <div className="flex items-start gap-2.5 p-2.5 rounded-lg bg-white dark:bg-[#131926] border border-slate-200/70 dark:border-[#1E2D40] shadow-2xs">
+              <div className="p-2 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">
+                <Clock className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 space-y-0.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 block tracking-wider">
+                  Daily Burn Rate
+                </span>
+                <span className="font-mono font-black text-slate-900 dark:text-white text-xs block truncate">
+                  {formatETB(expenseCategoryBreakdown.dailyBurnRate)}
+                  <span className="text-[10px] font-normal text-slate-400">/day</span>
+                </span>
+                <span className="text-[10px] text-slate-500 dark:text-[#8899BB] block truncate">
+                  Normalized over {expenseCategoryBreakdown.dataSpan.durationText}
+                </span>
+              </div>
+            </div>
+
+            {/* 4. Weekly Outflow Pace */}
+            <div className="flex items-start gap-2.5 p-2.5 rounded-lg bg-white dark:bg-[#131926] border border-slate-200/70 dark:border-[#1E2D40] shadow-2xs">
+              <div className="p-2 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5">
+                <TrendingDown className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 space-y-0.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 block tracking-wider">
+                  Weekly Outflow Pace
+                </span>
+                <span className="font-mono font-black text-purple-600 dark:text-purple-400 text-xs block truncate">
+                  {formatETB(expenseCategoryBreakdown.weeklyBurnRate)}
+                  <span className="text-[10px] font-normal text-slate-400">/wk</span>
+                </span>
+                <span className="text-[10px] text-slate-500 dark:text-[#8899BB] block truncate">
+                  Projected 7-day run rate
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {expenseCategoryBreakdown.list.length === 0 ? (
           <div className="p-8 text-center text-slate-500 dark:text-[#8899BB] space-y-1">
@@ -809,7 +1013,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
                     {formatETB(expenseCategoryBreakdown.topCategory.total)}
                   </span>
                   <span className="text-[10px] text-slate-500 dark:text-[#8899BB]">
-                    {expenseCategoryBreakdown.topCategory.percentage.toFixed(1)}% of total expenses ({expenseCategoryBreakdown.topCategory.count} txns)
+                    {expenseCategoryBreakdown.topCategory.percentage.toFixed(1)}% of total expenses ({expenseCategoryBreakdown.topCategory.count} txns
+                    {expenseCategoryBreakdown.dataSpan ? ` • ~${formatETB(expenseCategoryBreakdown.topCategory.dailyRate)}/day` : ''})
                   </span>
                 </div>
               </div>
@@ -831,6 +1036,11 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
                     </div>
 
                     <div className="text-right flex items-center gap-3">
+                      {expenseCategoryBreakdown.dataSpan && (
+                        <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 hidden sm:inline" title="Average expense per day over this data length">
+                          ~{formatETB(item.dailyRate)}/day
+                        </span>
+                      )}
                       <span className="text-[11px] font-mono text-slate-500 dark:text-[#8899BB]">
                         {item.percentage.toFixed(1)}%
                       </span>

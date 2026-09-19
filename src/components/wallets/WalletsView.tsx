@@ -312,8 +312,8 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
     setEditingWallet(null);
   };
 
-  const getWalletIcon = (type: Wallet['type'], color: string, customLogoUrl?: string) => {
-    return <BrandLogo type={type} size="sm" customColor={color} customLogoUrl={customLogoUrl} />;
+  const getWalletIcon = (type: Wallet['type'], color: string, customLogoUrl?: string, size: 'xs' | 'sm' | 'md' | 'lg' | 'xl' = 'md') => {
+    return <BrandLogo type={type} size={size} customColor={color} customLogoUrl={customLogoUrl} />;
   };
 
   return (
@@ -396,7 +396,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
       </div>
 
       {/* Cash Available Snapshot Table & Card (User Canonical Breakdown) */}
-      <div className="bg-white dark:bg-[#111622] border border-slate-200/90 dark:border-[#1C2638] rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
+      <div id="tour-wallets-overview" data-tour="wallets-overview" className="bg-white dark:bg-[#111622] border border-slate-200/90 dark:border-[#1C2638] rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-[#1E2D40] pb-3.5">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-[#00D4AA] shrink-0">
@@ -702,14 +702,8 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
 
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div
-                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white border transition-transform group-hover:scale-105"
-                    style={{
-                      backgroundColor: `${w.color}20`,
-                      borderColor: `${w.color}40`
-                    }}
-                  >
-                    {getWalletIcon(w.type, w.color, w.customLogoUrl)}
+                  <div className="shrink-0 transition-transform group-hover:scale-105">
+                    {getWalletIcon(w.type, w.color, w.customLogoUrl, 'md')}
                   </div>
 
                   <div>
@@ -1079,11 +1073,8 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                   }}
                 >
                   <div className="flex items-center gap-2.5">
-                    <div
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-white overflow-hidden"
-                      style={{ backgroundColor: `${newWalletColor}30` }}
-                    >
-                      {getWalletIcon(newWalletType, newWalletColor, newCustomLogoUrl)}
+                    <div className="shrink-0">
+                      {getWalletIcon(newWalletType, newWalletColor, newCustomLogoUrl, 'sm')}
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5">
@@ -1327,11 +1318,8 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2.5">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white border overflow-hidden shrink-0"
-                    style={{ backgroundColor: `${editColor}25`, borderColor: `${editColor}50` }}
-                  >
-                    {getWalletIcon(editType, editColor, editCustomLogoUrl)}
+                  <div className="shrink-0">
+                    {getWalletIcon(editType, editColor, editCustomLogoUrl, 'md')}
                   </div>
 
                   <label className="flex-1 cursor-pointer bg-slate-50 dark:bg-[#1C2333] border border-dashed border-slate-300 dark:border-[#1E2D40] hover:border-purple-500 rounded-xl p-2.5 flex items-center justify-center gap-2 transition-colors">

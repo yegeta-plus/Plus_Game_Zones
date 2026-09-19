@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Tag, Users, Repeat, Database, Settings, ArrowLeft, ChevronRight, ShieldAlert } from 'lucide-react';
+import { Tag, Users, Repeat, Database, Settings, ArrowLeft, ChevronRight, ShieldAlert, Sparkles, RotateCcw, Play } from 'lucide-react';
 import { ERPState } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 
@@ -15,12 +15,14 @@ interface SettingsViewProps {
   state: ERPState;
   onUpdateState: (fn: (prev: ERPState) => ERPState) => void;
   initialTab?: SettingsTabType | null;
+  onReplayTour?: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   state,
   onUpdateState,
-  initialTab = null
+  initialTab = null,
+  onReplayTour
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTabType | null>(initialTab);
 
@@ -152,6 +154,54 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               );
             })}
+          </div>
+
+          {/* Interactive Feature Walkthrough / Replay Tour */}
+          <div className="pt-3 border-t border-slate-200/80 dark:border-[#1E2D40]">
+            <div
+              id="btn-replay-tour"
+              onClick={() => {
+                triggerHaptic('medium');
+                if (onReplayTour) {
+                  onReplayTour();
+                }
+              }}
+              className="p-4 rounded-2xl bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-teal-500/10 border border-indigo-200 dark:border-indigo-800/60 hover:border-indigo-400 dark:hover:border-indigo-600 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 group shadow-sm"
+            >
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className="w-11 h-11 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
+                  <RotateCcw className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors flex items-center gap-2">
+                    <span>Replay Onboarding Tour</span>
+                    <span className="text-[10px] font-mono font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800">
+                      8 Spotlight Steps
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-[#8899BB] mt-0.5">
+                    Take an interactive walkthrough of PlusZone's core features anytime
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 sm:self-auto self-end">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    triggerHaptic('medium');
+                    if (onReplayTour) {
+                      onReplayTour();
+                    }
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>Replay Tour</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

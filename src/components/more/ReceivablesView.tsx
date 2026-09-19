@@ -248,7 +248,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
       </div>
 
       {/* Summary KPI Cards */}
-      <div className="grid grid-cols-3 gap-2">
+      <div id="tour-loans-receivables" data-tour="loans-receivables" className="grid grid-cols-3 gap-2">
         <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-3 shadow-sm">
           <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">Total Credit</p>
           <p className="text-sm font-black font-mono text-blue-600 dark:text-[#3B82F6]">{formatETB(outstandingTotal)}</p>
