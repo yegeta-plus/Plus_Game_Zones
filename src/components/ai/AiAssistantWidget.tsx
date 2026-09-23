@@ -885,7 +885,7 @@ export const AiAssistantWidget: React.FC<AiAssistantWidgetProps> = ({
 
   // Total balance & monthly stats
   const totalBalance = calculateTotalBusinessBalance(state.wallets, state.transactions, state.transfers);
-  const { income, expense, profit } = calculateMonthlyStats(state.transactions);
+  const { income, expense, profit } = calculateMonthlyStats(state.transactions, state.receivables);
 
   // Calculate detailed upcoming expenses breakdown from active recurring templates, active loans, and active equbs
   const upcomingExpensesBreakdown = useMemo(() => {

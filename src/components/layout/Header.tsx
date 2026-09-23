@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut, Gamepad2, Send, Sparkles, X, CheckCheck, HelpCircle } from 'lucide-react';
+import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut, Gamepad2, Send, Sparkles, X, CheckCheck } from 'lucide-react';
 import { UserProfile, NavTab } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 import { requestNotificationPermission, sendExternalNotification } from '../../lib/notifications';
@@ -37,7 +37,6 @@ interface HeaderProps {
   onToggleAutoRefresh?: () => void;
   onManualRefresh?: () => void;
   unreadChatCount?: number;
-  onOpenHelp?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -61,8 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleCalendarType,
   onToggleAutoRefresh,
   onManualRefresh,
-  unreadChatCount = 0,
-  onOpenHelp
+  unreadChatCount = 0
 }) => {
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const [pushSentMessage, setPushSentMessage] = useState<string | null>(null);
@@ -336,22 +334,6 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
         </div>
-
-        {/* Page Help & Interactive Tour Button */}
-        {onOpenHelp && (
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic('light');
-              onOpenHelp();
-            }}
-            title="Help (?)"
-            className="p-2 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-600 dark:text-[#8899BB] hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-800 transition-colors cursor-pointer flex items-center justify-center"
-            aria-label="Help"
-          >
-            <HelpCircle className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-          </button>
-        )}
 
         {/* Theme Toggle */}
         <button

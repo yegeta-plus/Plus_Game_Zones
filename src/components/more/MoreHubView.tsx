@@ -94,6 +94,7 @@ interface MoreHubViewProps {
   onNavigateTab?: (tab: any) => void;
   onCollectReceivable?: (receivableId: string, walletId: string, amount: number) => void;
   onReplayTour?: () => void;
+  onOpenHelp?: () => void;
 }
 
 export const MoreHubView: React.FC<MoreHubViewProps> = ({
@@ -104,7 +105,8 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
   initialSubView,
   onNavigateTab,
   onCollectReceivable,
-  onReplayTour
+  onReplayTour,
+  onOpenHelp
 }) => {
   const [subView, setSubView] = useState<SubViewType>(() => normalizeSubView(initialSubView));
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabType | null>(null);
@@ -330,41 +332,59 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
             <span>Back to More Operations</span>
           </button>
 
-          {/* Quick Calendar Switch Pill */}
-          <div className="flex items-center bg-slate-100 dark:bg-[#131926] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40] text-xs">
-            <span className="text-[10px] font-bold text-slate-500 dark:text-[#8899BB] px-1.5 hidden xs:inline">
-              Calendar:
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('medium');
-                if (typeof window !== 'undefined') localStorage.setItem('pluszone_calendar_user_choice', 'ETHIOPIAN');
-                onUpdateState(prev => ({ ...prev, calendarType: 'ETHIOPIAN' }));
-              }}
-              className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
-                state.calendarType === 'ETHIOPIAN'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              🇪🇹 E.C.
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('medium');
-                if (typeof window !== 'undefined') localStorage.setItem('pluszone_calendar_user_choice', 'GREGORIAN');
-                onUpdateState(prev => ({ ...prev, calendarType: 'GREGORIAN' }));
-              }}
-              className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
-                (state.calendarType || 'GREGORIAN') === 'GREGORIAN'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              🌐 G.C.
-            </button>
+          <div className="flex items-center gap-2">
+            {/* Quick Calendar Switch Pill */}
+            <div className="flex items-center bg-slate-100 dark:bg-[#131926] p-1 rounded-xl border border-slate-200 dark:border-[#1E2D40] text-xs">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-[#8899BB] px-1.5 hidden xs:inline">
+                Calendar:
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  if (typeof window !== 'undefined') localStorage.setItem('pluszone_calendar_user_choice', 'ETHIOPIAN');
+                  onUpdateState(prev => ({ ...prev, calendarType: 'ETHIOPIAN' }));
+                }}
+                className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                  state.calendarType === 'ETHIOPIAN'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                🇪🇹 E.C.
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  if (typeof window !== 'undefined') localStorage.setItem('pluszone_calendar_user_choice', 'GREGORIAN');
+                  onUpdateState(prev => ({ ...prev, calendarType: 'GREGORIAN' }));
+                }}
+                className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                  (state.calendarType || 'GREGORIAN') === 'GREGORIAN'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                🌐 G.C.
+              </button>
+            </div>
+
+            {onOpenHelp && (
+              <button
+                type="button"
+                id="btn-page-help-more-subview"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onOpenHelp();
+                }}
+                className="p-1.5 sm:p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#131926] dark:hover:bg-[#1a2336] border border-slate-200 dark:border-[#1E2D40] text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer flex items-center justify-center shrink-0 active:scale-95"
+                title="Operations Help (?)"
+                aria-label="Help"
+              >
+                <HelpCircle className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -635,39 +655,57 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
           </div>
         </div>
 
-        {/* Toggle Switch */}
-        <div className="flex items-center bg-slate-950/80 p-1 rounded-xl border border-slate-800 shrink-0 self-start sm:self-auto">
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic('medium');
-              if (typeof window !== 'undefined') localStorage.setItem('pluszone_calendar_user_choice', 'ETHIOPIAN');
-              onUpdateState(prev => ({ ...prev, calendarType: 'ETHIOPIAN' }));
-            }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
-              state.calendarType === 'ETHIOPIAN'
-                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md border border-emerald-400/40'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <span>🇪🇹 Ethiopian (E.C.)</span>
-          </button>
+        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+          {/* Toggle Switch */}
+          <div className="flex items-center bg-slate-950/80 p-1 rounded-xl border border-slate-800 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('medium');
+                if (typeof window !== 'undefined') localStorage.setItem('pluszone_calendar_user_choice', 'ETHIOPIAN');
+                onUpdateState(prev => ({ ...prev, calendarType: 'ETHIOPIAN' }));
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
+                state.calendarType === 'ETHIOPIAN'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md border border-emerald-400/40'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>🇪🇹 Ethiopian (E.C.)</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic('medium');
-              if (typeof window !== 'undefined') localStorage.setItem('pluszone_calendar_user_choice', 'GREGORIAN');
-              onUpdateState(prev => ({ ...prev, calendarType: 'GREGORIAN' }));
-            }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
-              (state.calendarType || 'GREGORIAN') === 'GREGORIAN'
-                ? 'bg-indigo-600 text-white shadow-md border border-indigo-400/40'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <span>🌐 Gregorian (G.C.)</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('medium');
+                if (typeof window !== 'undefined') localStorage.setItem('pluszone_calendar_user_choice', 'GREGORIAN');
+                onUpdateState(prev => ({ ...prev, calendarType: 'GREGORIAN' }));
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
+                (state.calendarType || 'GREGORIAN') === 'GREGORIAN'
+                  ? 'bg-indigo-600 text-white shadow-md border border-indigo-400/40'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>🌐 Gregorian (G.C.)</span>
+            </button>
+          </div>
+
+          {onOpenHelp && (
+            <button
+              type="button"
+              id="btn-page-help-more-hub"
+              onClick={() => {
+                triggerHaptic('light');
+                onOpenHelp();
+              }}
+              className="p-2 rounded-xl bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-indigo-400 transition-colors cursor-pointer flex items-center justify-center shrink-0 active:scale-95"
+              title="More Hub Help (?)"
+              aria-label="Help"
+            >
+              <HelpCircle className="w-4 h-4 text-indigo-400" />
+            </button>
+          )}
         </div>
       </div>
 

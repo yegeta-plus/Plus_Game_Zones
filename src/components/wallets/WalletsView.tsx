@@ -19,7 +19,8 @@ import {
   Upload,
   Image,
   X,
-  Lock
+  Lock,
+  HelpCircle
 } from 'lucide-react';
 import { Wallet, Transaction, Transfer, UserProfile, TransactionType, Receivable } from '../../types';
 import { calculateWalletBalance, formatETB, isOverdraftAllowed, isWalletActive, isCreditSaleCollected, getTransactionDisplayTitle } from '../../lib/store';
@@ -62,6 +63,7 @@ interface WalletsViewProps {
     description: string;
     date: string;
   }>) => void;
+  onOpenHelp?: () => void;
 }
 
 const COLOR_PALETTE = [
@@ -105,7 +107,8 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
   onUpdateWallet,
   onDeleteWallet,
   onAddTransaction,
-  onBatchPostTransactions
+  onBatchPostTransactions,
+  onOpenHelp
 }) => {
   const [selectedWalletId, setSelectedWalletId] = useState<string | null>(wallets[0]?.id || null);
   const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'ACTIVE' | 'DIGITAL' | 'CASH' | 'CREDIT' | 'ARCHIVED'>('ALL');
@@ -394,6 +397,22 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
             >
               <Plus className="w-3.5 h-3.5 shrink-0" />
               <span>Add New Wallet</span>
+            </button>
+          )}
+
+          {onOpenHelp && (
+            <button
+              type="button"
+              id="btn-page-help-wallets"
+              onClick={() => {
+                triggerHaptic('light');
+                onOpenHelp();
+              }}
+              title="Wallets Help (?)"
+              aria-label="Help"
+              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#1A2232] dark:hover:bg-[#222C40] border border-slate-200 dark:border-[#243046] text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer flex items-center justify-center shrink-0 active:scale-95"
+            >
+              <HelpCircle className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
             </button>
           )}
         </div>

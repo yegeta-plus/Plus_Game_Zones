@@ -34,7 +34,8 @@ import {
   List,
   Table,
   PiggyBank,
-  Wallet as WalletIcon
+  Wallet as WalletIcon,
+  HelpCircle
 } from 'lucide-react';
 import { Equb, Wallet, UserProfile, Loan, Receivable, LoanType, LoanDirection, AdminApprovalRequest } from '../../types';
 import { formatETB } from '../../lib/store';
@@ -82,6 +83,7 @@ interface EqubViewProps {
   onApproveRequest?: (reqId: string) => void;
   onRejectRequest?: (reqId: string) => void;
   onOpenAiAdvisor?: (prompt?: string) => void;
+  onOpenHelp?: () => void;
 }
 
 export const EqubView: React.FC<EqubViewProps> = ({
@@ -111,7 +113,8 @@ export const EqubView: React.FC<EqubViewProps> = ({
   onRequestApproval,
   onApproveRequest,
   onRejectRequest,
-  onOpenAiAdvisor
+  onOpenAiAdvisor,
+  onOpenHelp
 }) => {
   // Main Module Tab State: EQUB CIRCLES vs LOANS vs RECEIVABLES
   const [mainTab, setMainTab] = useState<'CIRCLES' | 'LOANS' | 'RECEIVABLES'>('CIRCLES');
@@ -848,6 +851,22 @@ export const EqubView: React.FC<EqubViewProps> = ({
             >
               <Plus className="w-4 h-4 shrink-0" />
               <span>New Credit IOU</span>
+            </button>
+          )}
+
+          {onOpenHelp && (
+            <button
+              type="button"
+              id="btn-page-help-equb"
+              onClick={() => {
+                triggerHaptic('light');
+                onOpenHelp();
+              }}
+              title="Equb & Community Help (?)"
+              aria-label="Help"
+              className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#1C2333] dark:hover:bg-[#253046] border border-slate-200 dark:border-[#1E2D40] text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer flex items-center justify-center shrink-0 active:scale-95"
+            >
+              <HelpCircle className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
             </button>
           )}
         </div>

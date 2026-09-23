@@ -100,6 +100,7 @@ interface DashboardViewProps {
   onAddIncome?: (amount: number, category: string, description: string) => void;
   onOpenAiAssistant?: (prompt?: string, initialMode?: 'chat' | 'simulator') => void;
   onStartTour?: () => void;
+  onOpenHelp?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -122,11 +123,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateTab,
   onAddIncome,
   onOpenAiAssistant,
-  onStartTour
+  onStartTour,
+  onOpenHelp
 }) => {
   const totalBalance = calculateTotalBusinessBalance(wallets, transactions, transfers);
-  const { income, expense, profit } = calculateMonthlyStats(transactions);
-  const incomeAverages = calculateIncomeAverages(transactions);
+  const { income, expense, profit, creditWork } = calculateMonthlyStats(transactions, receivables);
+  const incomeAverages = calculateIncomeAverages(transactions, receivables);
 
   const [reportTimeframe, setReportTimeframe] = useState<'ALL' | 'DAILY' | 'MONTHLY' | 'YEARLY'>('ALL');
   const hasSeenOnboarding = useMemo(() => {
@@ -194,6 +196,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         totalAllTimeExp += amt;
         totalAllTimeCount++;
       }
+    });
+
+    // Include credit work (receivables created) in business work totals so owners know how much the business worked
+    (receivables || []).forEach((rcv) => {
+      const uncollected = Math.max(0, (rcv.amountOwed || 0) - (rcv.amountCollected || 0));
+      if (uncollected <= 0) return; // If already collected, the cash income transaction is already in validTxs!
+
+      const rcvDate = new Date(rcv.createdDate || rcv.dueDate);
+      if (isNaN(rcvDate.getTime())) return;
+
+      const ymd = `${rcvDate.getFullYear()}-${String(rcvDate.getMonth() + 1).padStart(2, '0')}-${String(rcvDate.getDate()).padStart(2, '0')}`;
+      const ym = `${rcvDate.getFullYear()}-${String(rcvDate.getMonth() + 1).padStart(2, '0')}`;
+      const yr = rcvDate.getFullYear();
+
+      if (!txByDate[ymd]) {
+        txByDate[ymd] = { income: 0, expense: 0, count: 0, txs: [] };
+      }
+      txByDate[ymd].income += uncollected;
+      txByDate[ymd].count++;
+
+      if (!txByMonth[ym]) {
+        txByMonth[ym] = { income: 0, expense: 0, count: 0, year: yr, month: rcvDate.getMonth() };
+      }
+      txByMonth[ym].income += uncollected;
+      txByMonth[ym].count++;
+
+      if (!txByYear[yr]) {
+        txByYear[yr] = { income: 0, expense: 0, count: 0 };
+      }
+      txByYear[yr].income += uncollected;
+      txByYear[yr].count++;
+
+      totalAllTimeInc += uncollected;
+      totalAllTimeCount++;
     });
 
     const sortedDatesWithTxs = Object.keys(txByDate).sort();
@@ -269,7 +305,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         activeDaysCount: sortedDatesWithTxs.length
       }
     };
-  }, [transactions]);
+  }, [transactions, receivables]);
 
   const today = new Date();
   const ethDate = toEthiopianDate(today);
@@ -546,31 +582,29 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 pt-1 md:pt-0">
-          {/* ? Mark Shortcut for First-Time Onboarding & Guided Tour */}
+          {/* Help Sign (?) */}
           <button
+            type="button"
             id="btn-open-tutorial-tour"
             onClick={() => {
               triggerHaptic('medium');
-              if (onStartTour) {
+              if (onOpenHelp) {
+                onOpenHelp();
+              } else if (onStartTour) {
                 onStartTour();
               }
             }}
-            className={`px-2.5 py-1.5 sm:py-2 rounded-lg sm:rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-xs ${
+            className={`p-1.5 sm:p-2 rounded-lg sm:rounded-xl font-bold text-xs flex items-center justify-center cursor-pointer active:scale-95 transition-all shadow-xs ${
               !hasSeenOnboarding
                 ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-black shadow-md shadow-emerald-500/20 ring-2 ring-emerald-400/50 hover:brightness-105'
-                : 'bg-slate-100 hover:bg-slate-200 dark:bg-[#1A2232] dark:hover:bg-[#222C40] border border-slate-200 dark:border-[#243046] text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                : 'bg-slate-100 hover:bg-slate-200 dark:bg-[#1A2232] dark:hover:bg-[#222C40] border border-slate-200 dark:border-[#243046] text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400'
             }`}
-            title="First-Time Onboarding: Explore all Dashboard Properties"
-            aria-label="First-time onboarding tour shortcut"
+            title="Dashboard Help & Tour (?)"
+            aria-label="Help"
           >
-            <span className={`w-4 h-4 rounded-full flex items-center justify-center text-xs font-black leading-none shrink-0 ${
-              !hasSeenOnboarding ? 'bg-slate-950 text-emerald-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200'
-            }`}>
-              ?
-            </span>
-            {!hasSeenOnboarding && <span className="font-extrabold">Tour</span>}
+            <HelpCircle className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
             {!hasSeenOnboarding && (
-              <span className="relative flex h-2 w-2 shrink-0">
+              <span className="relative flex h-2 w-2 shrink-0 ml-1">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
               </span>
@@ -683,7 +717,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div id="tour-kpi-income" data-tour="dashboard-kpi-income" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-xl p-3 flex flex-col justify-between shadow-2xs hover:border-emerald-500/50 transition-all group">
             <div className="flex items-center justify-between gap-1">
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-[#8899BB] truncate">
-                Total Income
+                Total Income (Work Done)
               </span>
               <div className="w-5 h-5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
                 <ArrowDownLeft className="w-3 h-3" />
@@ -693,9 +727,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <p className="text-sm sm:text-base font-black font-mono text-emerald-600 dark:text-emerald-400 truncate">
                 {hideBalances ? '••••••' : formatETB(income, true)}
               </p>
+              {creditWork > 0 && !hideBalances && (
+                <span className="text-[9px] text-blue-600 dark:text-blue-400 font-bold block truncate">
+                  incl. {formatETB(creditWork, true)} credit work
+                </span>
+              )}
             </div>
             <div className="text-[10px] text-slate-500 dark:text-[#8899BB] flex items-center justify-between border-t border-slate-100 dark:border-[#1E2D40] pt-1 mt-0.5 font-mono">
-              <span className="truncate">Daily:</span>
+              <span className="truncate">Daily Avg:</span>
               <span className="font-bold text-slate-900 dark:text-white truncate">
                 {hideBalances ? '•••' : formatETB(incomeAverages.dailyAvg, true)}
               </span>
@@ -729,7 +768,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div id="tour-kpi-receivables" data-tour="dashboard-kpi-receivables" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-xl p-3 flex flex-col justify-between shadow-2xs hover:border-indigo-500/50 transition-all group">
             <div className="flex items-center justify-between gap-1">
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-[#8899BB] truncate">
-                Uncollected Debt
+                Uncollected Credit
               </span>
               <div className="w-5 h-5 rounded-md bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
                 <Receipt className="w-3 h-3" />
@@ -739,6 +778,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <p className="text-sm sm:text-base font-black font-mono text-indigo-600 dark:text-indigo-400 truncate">
                 {hideBalances ? '••••••' : formatETB(uncollectedReceivablesTotal, true)}
               </p>
+              <span className="text-[9px] text-slate-400 dark:text-slate-500 block truncate">
+                Work done • Not in wallets
+              </span>
             </div>
             <div className="text-[10px] text-slate-500 dark:text-[#8899BB] flex items-center justify-between border-t border-slate-100 dark:border-[#1E2D40] pt-1 mt-0.5 font-mono">
               <span className="truncate">Pending:</span>

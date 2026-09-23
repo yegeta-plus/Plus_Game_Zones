@@ -31,7 +31,8 @@ import {
   Moon,
   Coffee,
   CalendarOff,
-  MessageSquare
+  MessageSquare,
+  HelpCircle
 } from 'lucide-react';
 import { Transaction, Transfer, Receivable, Wallet, Category, UserProfile, TransactionType, ERPState, NavTab } from '../../types';
 import {
@@ -76,6 +77,7 @@ interface TransactionsViewProps {
   users?: UserProfile[];
   onRequestApproval?: (req: Omit<import('../../types').AdminApprovalRequest, 'id' | 'createdAt' | 'requestedBy' | 'requestedByName' | 'status'>) => void;
   onNavigateTab?: (tab: NavTab, subView?: string) => void;
+  onOpenHelp?: () => void;
 }
 
 export const TransactionsView: React.FC<TransactionsViewProps> = ({
@@ -93,7 +95,8 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   onDeleteTransaction,
   onClearAllTransactions,
   onRequestApproval,
-  onNavigateTab
+  onNavigateTab,
+  onOpenHelp
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedWalletId, setSelectedWalletId] = useState('ALL');
@@ -382,11 +385,11 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     } else {
       if (selectedScope === 'PERSONAL') return false;
       const rcv = item.receivable;
-      if (selectedType !== 'ALL' && selectedType !== 'CREDIT_SALE') return false;
-      // In the main "ALL" transactions feed, if a credit sale is already COLLECTED, the actual income cash transaction
+      if (selectedType !== 'ALL' && selectedType !== 'CREDIT_SALE' && selectedType !== 'INCOME') return false;
+      // In the main "ALL" or "INCOME" transactions feed, if a credit sale is already COLLECTED, the actual income cash transaction
       // is already present in the ledger. Showing the settled credit note alongside it makes it look like it was registered twice.
       // All credit sales (both active and settled) can be viewed under the "CREDIT SALES" tab.
-      if (selectedType === 'ALL' && rcv.status === 'COLLECTED') return false;
+      if ((selectedType === 'ALL' || selectedType === 'INCOME') && rcv.status === 'COLLECTED') return false;
       if (selectedWalletId !== 'ALL' && rcv.walletId !== selectedWalletId) return false;
       if (searchTerm) {
         const q = searchTerm.toLowerCase();
@@ -401,6 +404,41 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     if (b.time !== a.time) return b.time - a.time;
     return (b.id || '').localeCompare(a.id || '');
   });
+
+  // Comprehensive Ledger Totals: Business Work Done (Cash + Credit Receivables) vs Expenses
+  const ledgerSummary = useMemo(() => {
+    let totalCashIncome = 0;
+    let totalExpense = 0;
+    let totalCreditWork = 0;
+
+    filtered.forEach(item => {
+      if (item.kind === 'TX' && !item.tx.reversed) {
+        if (item.tx.type === 'INCOME') {
+          totalCashIncome += item.tx.amount;
+        } else if (item.tx.type === 'EXPENSE') {
+          totalExpense += item.tx.amount;
+        }
+      } else if (item.kind === 'CREDIT_SALE') {
+        const rcv = item.receivable;
+        const uncollected = Math.max(0, (rcv.amountOwed || 0) - (rcv.amountCollected || 0));
+        const creditAmt = selectedType === 'CREDIT_SALE'
+          ? (rcv.amountOwed || 0)
+          : uncollected;
+        totalCreditWork += creditAmt;
+      }
+    });
+
+    const totalBusinessWork = totalCashIncome + totalCreditWork;
+    const netBusinessBalance = totalBusinessWork - totalExpense;
+
+    return {
+      totalBusinessWork,
+      totalCashIncome,
+      totalCreditWork,
+      totalExpense,
+      netBusinessBalance
+    };
+  }, [filtered, selectedType]);
 
   // Interface for timeline date grouping (including non-working / 0-transaction days)
   interface LedgerDateGroup {
@@ -613,6 +651,81 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
             <FileSpreadsheet className="w-3.5 h-3.5" />
             <span>Export xlsx</span>
           </button>
+
+          {onOpenHelp && (
+            <button
+              type="button"
+              id="btn-page-help-transactions"
+              onClick={() => {
+                triggerHaptic('light');
+                onOpenHelp();
+              }}
+              title="Ledger Help (?)"
+              aria-label="Help"
+              className="p-1.5 sm:p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#1A2232] dark:hover:bg-[#222C40] border border-slate-200 dark:border-[#243046] text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer flex items-center justify-center shrink-0 active:scale-95"
+            >
+              <HelpCircle className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Transaction & Business Work Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-3 shadow-2xs">
+          <div className="flex items-center justify-between text-slate-500 dark:text-[#8899BB] text-[10px] font-bold uppercase tracking-wider">
+            <span>Total Business Work</span>
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-600 dark:text-[#00D4AA]" />
+          </div>
+          <p className="text-sm sm:text-base font-black font-mono text-emerald-600 dark:text-[#00D4AA] mt-1 truncate">
+            {hideBalances ? '••••••' : formatETB(ledgerSummary.totalBusinessWork)}
+          </p>
+          <div className="flex items-center gap-1 text-[9px] text-slate-500 dark:text-[#8899BB] mt-0.5 font-mono truncate">
+            <span>Cash: {hideBalances ? '•••' : formatETB(ledgerSummary.totalCashIncome, true)}</span>
+            <span>•</span>
+            <span className="text-blue-600 dark:text-blue-400 font-bold">Credit: {hideBalances ? '•••' : formatETB(ledgerSummary.totalCreditWork, true)}</span>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-[#131926] border border-blue-200 dark:border-blue-900/40 rounded-xl p-3 shadow-2xs bg-blue-50/20 dark:bg-blue-950/10">
+          <div className="flex items-center justify-between text-blue-600 dark:text-blue-400 text-[10px] font-bold uppercase tracking-wider">
+            <span>Credit Work</span>
+            <FileCheck className="w-3.5 h-3.5 text-blue-500" />
+          </div>
+          <p className="text-sm sm:text-base font-black font-mono text-blue-600 dark:text-blue-400 mt-1 truncate">
+            {hideBalances ? '••••••' : formatETB(ledgerSummary.totalCreditWork)}
+          </p>
+          <p className="text-[9px] text-blue-600/80 dark:text-blue-400/80 mt-0.5 truncate font-medium">
+            Summed in work • Not in wallets
+          </p>
+        </div>
+
+        <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-3 shadow-2xs">
+          <div className="flex items-center justify-between text-slate-500 dark:text-[#8899BB] text-[10px] font-bold uppercase tracking-wider">
+            <span>Total Expense</span>
+            <TrendingDown className="w-3.5 h-3.5 text-rose-500" />
+          </div>
+          <p className="text-sm sm:text-base font-black font-mono text-rose-600 dark:text-rose-400 mt-1 truncate">
+            {hideBalances ? '••••••' : formatETB(ledgerSummary.totalExpense)}
+          </p>
+          <p className="text-[9px] text-slate-400 mt-0.5 truncate">
+            Operational Outflow
+          </p>
+        </div>
+
+        <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-3 shadow-2xs">
+          <div className="flex items-center justify-between text-slate-500 dark:text-[#8899BB] text-[10px] font-bold uppercase tracking-wider">
+            <span>Net Work Margin</span>
+            <Briefcase className="w-3.5 h-3.5 text-indigo-500" />
+          </div>
+          <p className={`text-sm sm:text-base font-black font-mono mt-1 truncate ${
+            ledgerSummary.netBusinessBalance >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-rose-600 dark:text-rose-400'
+          }`}>
+            {hideBalances ? '••••••' : formatETB(ledgerSummary.netBusinessBalance)}
+          </p>
+          <p className="text-[9px] text-slate-400 mt-0.5 truncate">
+            Production Balance
+          </p>
         </div>
       </div>
 
@@ -817,10 +930,19 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
           const sortedItemList = [...group.items].sort((a, b) => b.time - a.time);
 
-          // Calculate daily total income and expense
-          const dayIncome = sortedItemList
+          // Calculate daily total income (cash + credit receivables created) and expense
+          const dayTxIncome = sortedItemList
             .filter(i => i.kind === 'TX' && !i.tx.reversed && i.tx.type === 'INCOME')
             .reduce((sum, i) => sum + (i.kind === 'TX' ? i.tx.amount : 0), 0);
+
+          const dayCreditWork = sortedItemList
+            .filter(i => i.kind === 'CREDIT_SALE')
+            .reduce((sum, i) => {
+              if (i.kind !== 'CREDIT_SALE') return sum;
+              return sum + (i.receivable.amountOwed || 0);
+            }, 0);
+
+          const dayIncome = dayTxIncome + dayCreditWork;
 
           const dayExpense = sortedItemList
             .filter(i => i.kind === 'TX' && !i.tx.reversed && i.tx.type === 'EXPENSE')
@@ -835,10 +957,18 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                   <span>{group.dateLabel}</span>
                 </h3>
 
-                <div className="flex items-center gap-2 text-[10px] font-mono font-bold">
+                <div className="flex items-center gap-2 text-[10px] font-mono font-bold flex-wrap justify-end">
                   {dayIncome > 0 && (
-                    <span className="text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-500/20">
-                      +{hideBalances ? '••••' : formatETB(dayIncome, true)}
+                    <span
+                      title={dayCreditWork > 0 ? `Cash Income: ${formatETB(dayTxIncome)} | Credit Work: ${formatETB(dayCreditWork)} (Not in wallets)` : 'Daily Business Income'}
+                      className="text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-500/20 flex items-center gap-1.5"
+                    >
+                      <span>+{hideBalances ? '••••' : formatETB(dayIncome, true)}</span>
+                      {dayCreditWork > 0 && (
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 font-sans font-extrabold">
+                          incl. {formatETB(dayCreditWork, true)} credit
+                        </span>
+                      )}
                     </span>
                   )}
                   {dayExpense > 0 && (

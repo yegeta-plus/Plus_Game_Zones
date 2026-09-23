@@ -1146,13 +1146,14 @@ export function getRelativeWalletBalancesForTransfer(
   };
 }
 
-export function calculateMonthlyStats(transactions: Transaction[]) {
+export function calculateMonthlyStats(transactions: Transaction[], receivables: Receivable[] = []) {
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
 
   let income = 0;
   let expense = 0;
+  let creditWork = 0;
 
   for (const tx of transactions) {
     if (tx.reversed) continue;
@@ -1166,13 +1167,32 @@ export function calculateMonthlyStats(transactions: Transaction[]) {
     }
   }
 
+  // Include credit work (uncollected receivables created in this month) in business work totals
+  // Note: If a receivable was already collected, the cash income transaction is already in transactions!
+  if (Array.isArray(receivables)) {
+    for (const r of receivables) {
+      if (!r.createdDate && !r.dueDate) continue;
+      const d = new Date(r.createdDate || r.dueDate);
+      if (d.getMonth() === currentMonth && d.getFullYear() === currentYear) {
+        const uncollected = Math.max(0, (r.amountOwed || 0) - (r.amountCollected || 0));
+        creditWork += uncollected;
+        income += uncollected;
+      }
+    }
+  }
+
   const profit = income - expense;
-  return { income, expense, profit };
+  return { income, expense, profit, creditWork };
 }
 
-export function calculateIncomeAverages(transactions: Transaction[]) {
+export function calculateIncomeAverages(transactions: Transaction[], receivables: Receivable[] = []) {
   const validIncomes = transactions.filter(tx => !tx.reversed && tx.type === 'INCOME');
-  if (validIncomes.length === 0) {
+  
+  // Calculate uncollected credit work from receivables
+  const uncollectedReceivables = (receivables || []).filter(r => (r.amountOwed || 0) > (r.amountCollected || 0));
+  const totalCreditWork = uncollectedReceivables.reduce((sum, r) => sum + Math.max(0, (r.amountOwed || 0) - (r.amountCollected || 0)), 0);
+
+  if (validIncomes.length === 0 && totalCreditWork === 0) {
     return {
       weeklyAvg: 0,
       weeklyDailyAvg: 0,
@@ -1181,21 +1201,27 @@ export function calculateIncomeAverages(transactions: Transaction[]) {
       dailyAvg: 0,
       currentWeekIncome: 0,
       currentMonthIncome: 0,
-      totalIncome: 0
+      totalIncome: 0,
+      creditWork: 0
     };
   }
 
   const now = new Date();
   const nowMs = now.getTime();
 
-  const timestamps = transactions.filter(t => !t.reversed).map(tx => new Date(tx.date).getTime());
+  const timestamps = [
+    ...transactions.filter(t => !t.reversed).map(tx => new Date(tx.date).getTime()),
+    ...uncollectedReceivables.map(r => new Date(r.createdDate || r.dueDate).getTime())
+  ].filter(t => !isNaN(t));
+
   const minTime = timestamps.length > 0 ? Math.min(...timestamps) : nowMs;
 
   const daysDiff = Math.max(1, Math.ceil((nowMs - minTime) / (1000 * 60 * 60 * 24)));
   const weeksDiff = Math.max(1, daysDiff / 7);
   const monthsDiff = Math.max(1, daysDiff / 30);
 
-  const totalIncome = validIncomes.reduce((sum, tx) => sum + tx.amount, 0);
+  const totalCashIncome = validIncomes.reduce((sum, tx) => sum + tx.amount, 0);
+  const totalIncome = totalCashIncome + totalCreditWork;
 
   const dailyAvg = totalIncome / daysDiff;
   const totalWeeklyAvg = totalIncome / weeksDiff;
@@ -1203,8 +1229,10 @@ export function calculateIncomeAverages(transactions: Transaction[]) {
 
   const sevenDaysAgo = nowMs - (7 * 24 * 60 * 60 * 1000);
   let currentWeekTxs = validIncomes.filter(tx => new Date(tx.date).getTime() >= sevenDaysAgo);
+  const currentWeekCredit = uncollectedReceivables
+    .filter(r => new Date(r.createdDate || r.dueDate).getTime() >= sevenDaysAgo)
+    .reduce((s, r) => s + Math.max(0, (r.amountOwed || 0) - (r.amountCollected || 0)), 0);
 
-  // If no transactions in the last 7 calendar days from today (e.g. historical ledger), anchor to the most recent 7-day active transaction window
   if (currentWeekTxs.length === 0 && validIncomes.length > 0) {
     const latestTxTime = Math.max(...validIncomes.map(tx => new Date(tx.date).getTime()));
     const anchorSevenDaysAgo = latestTxTime - (7 * 24 * 60 * 60 * 1000);
@@ -1214,20 +1242,25 @@ export function calculateIncomeAverages(transactions: Transaction[]) {
     });
   }
 
-  const currentWeekIncome = currentWeekTxs.reduce((sum, tx) => sum + tx.amount, 0);
-
-  // Weekly daily income average: average daily income calculated over the 7-day week
+  const currentWeekIncome = currentWeekTxs.reduce((sum, tx) => sum + tx.amount, 0) + currentWeekCredit;
   const weeklyDailyAvg = currentWeekIncome / 7;
   const weeklyAvg = weeklyDailyAvg;
 
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
+  const currentMonthCredit = uncollectedReceivables
+    .filter(r => {
+      const d = new Date(r.createdDate || r.dueDate);
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    })
+    .reduce((s, r) => s + Math.max(0, (r.amountOwed || 0) - (r.amountCollected || 0)), 0);
+
   const currentMonthIncome = validIncomes
     .filter(tx => {
       const d = new Date(tx.date);
       return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
     })
-    .reduce((sum, tx) => sum + tx.amount, 0);
+    .reduce((sum, tx) => sum + tx.amount, 0) + currentMonthCredit;
 
   return {
     dailyAvg,
@@ -1237,7 +1270,8 @@ export function calculateIncomeAverages(transactions: Transaction[]) {
     monthlyAvg,
     currentWeekIncome,
     currentMonthIncome,
-    totalIncome
+    totalIncome,
+    creditWork: totalCreditWork
   };
 }
 

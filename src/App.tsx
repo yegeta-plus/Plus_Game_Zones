@@ -2811,7 +2811,6 @@ export default function App() {
         onToggleAutoRefresh={() => setAutoRefreshEnabled(prev => !prev)}
         onManualRefresh={() => performRefresh(true)}
         unreadChatCount={unreadChatCount}
-        onOpenHelp={handleOpenHelp}
       />
 
       {/* Main Screen Container */}
@@ -2838,6 +2837,7 @@ export default function App() {
             onAddIncome={handleAddGamingIncome}
             onOpenAiAssistant={handleOpenAiAssistant}
             onStartTour={handleStartTour}
+            onOpenHelp={handleOpenHelp}
           />
         )}
 
@@ -2858,6 +2858,7 @@ export default function App() {
             onClearAllTransactions={handleClearAllTransactions}
             onRequestApproval={handleCreateApprovalRequest}
             onNavigateTab={(tab, subView) => handleNavigateTab(tab, subView)}
+            onOpenHelp={handleOpenHelp}
           />
         )}
 
@@ -2883,6 +2884,7 @@ export default function App() {
             onDeleteWallet={handleDeleteWallet}
             onAddTransaction={handlePostTransaction}
             onBatchPostTransactions={handleBatchPostTransactions}
+            onOpenHelp={handleOpenHelp}
           />
         )}
 
@@ -2918,6 +2920,7 @@ export default function App() {
             onApproveRequest={handleApproveRequest}
             onRejectRequest={handleRejectRequest}
             onOpenAiAdvisor={handleOpenAiAssistant}
+            onOpenHelp={handleOpenHelp}
           />
         )}
 
@@ -2930,6 +2933,7 @@ export default function App() {
             onApproveRequest={handleApproveRequest}
             onRejectRequest={handleRejectRequest}
             onMarkRead={markChatAsRead}
+            onOpenHelp={handleOpenHelp}
           />
         )}
 
@@ -2943,6 +2947,7 @@ export default function App() {
             onNavigateTab={(tab) => handleNavigateTab(tab)}
             onCollectReceivable={handleCollectReceivable}
             onReplayTour={handleStartTour}
+            onOpenHelp={handleOpenHelp}
           />
         )}
       </main>

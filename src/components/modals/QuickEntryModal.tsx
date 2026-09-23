@@ -1020,7 +1020,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                   This credit IOU will be recorded in <strong>Receivables</strong> for <strong>{customerName || 'the customer'}</strong>.
                 </p>
                 <p className="text-[11px] text-blue-800 dark:text-blue-200 bg-blue-100/60 dark:bg-blue-900/40 p-2 rounded-lg border border-blue-200/50 dark:border-blue-800/40">
-                  ℹ️ <strong>No Wallet Balance Impact:</strong> No cash or wallet balance is altered now. You will choose the deposit wallet when the customer settles the debt in Receivables.
+                  ℹ️ <strong>Summed in Transaction Total:</strong> Included in overall business work and revenue totals to reflect business production, but <strong>not added to wallets</strong> until the customer pays.
                 </p>
               </div>
             </div>

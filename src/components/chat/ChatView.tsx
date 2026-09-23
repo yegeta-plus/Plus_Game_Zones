@@ -23,7 +23,8 @@ import {
   Pin,
   Flame,
   UserCheck,
-  Check
+  Check,
+  HelpCircle
 } from 'lucide-react';
 import { ERPState, ChatMessage, ChatChannel, UserProfile, Transaction, Wallet as WalletType, Equb } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
@@ -39,6 +40,7 @@ interface ChatViewProps {
   onApproveRequest?: (reqId: string, note?: string) => void;
   onRejectRequest?: (reqId: string, note?: string) => void;
   onMarkRead?: () => void;
+  onOpenHelp?: () => void;
 }
 
 const COMMON_EMOJIS = ['👍', '❤️', '🚀', '💡', '💰', '✅', '🔥', '🙏', '👏', '🎯'];
@@ -104,7 +106,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
   onAddReaction,
   onApproveRequest,
   onRejectRequest,
-  onMarkRead
+  onMarkRead,
+  onOpenHelp
 }) => {
   const currentUser = state.currentUser;
   const chatMessages = state.chatMessages || [];
@@ -252,6 +255,21 @@ export const ChatView: React.FC<ChatViewProps> = ({
             >
               <Search className="w-4 h-4" />
             </button>
+            {onOpenHelp && (
+              <button
+                type="button"
+                id="btn-page-help-chat"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onOpenHelp();
+                }}
+                className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-[#1C2333] text-slate-500 dark:text-[#8899BB] hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+                title="Chat & Communications Help (?)"
+                aria-label="Help"
+              >
+                <HelpCircle className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              </button>
+            )}
           </div>
         </div>
 
