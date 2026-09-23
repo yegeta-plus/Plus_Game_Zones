@@ -21,8 +21,8 @@ import {
   X,
   Lock
 } from 'lucide-react';
-import { Wallet, Transaction, Transfer, UserProfile, TransactionType } from '../../types';
-import { calculateWalletBalance, formatETB, isOverdraftAllowed, isWalletActive, isCreditSaleCollected } from '../../lib/store';
+import { Wallet, Transaction, Transfer, UserProfile, TransactionType, Receivable } from '../../types';
+import { calculateWalletBalance, formatETB, isOverdraftAllowed, isWalletActive, isCreditSaleCollected, getTransactionDisplayTitle } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 import { TelebirrIntegrationModal } from './TelebirrIntegrationModal';
 import { ShegerPayVerificationModal } from './ShegerPayVerificationModal';
@@ -34,6 +34,7 @@ interface WalletsViewProps {
   wallets: Wallet[];
   transactions: Transaction[];
   transfers: Transfer[];
+  receivables?: Receivable[];
   users?: UserProfile[];
   currentUser: UserProfile;
   hideBalances: boolean;
@@ -91,6 +92,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
   wallets,
   transactions,
   transfers,
+  receivables = [],
   users = [],
   currentUser,
   hideBalances,
@@ -326,7 +328,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
           <p className="text-xs text-slate-500 dark:text-[#8899BB] mt-0.5">Multi-account liquid capital breakdown</p>
         </div>
 
-        <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
+        <div id="tour-wallets-actions" data-tour="wallets-actions" className="grid grid-cols-2 sm:flex sm:items-center gap-2">
           {currentUser.role === 'SuperAdmin' && (
             <>
               <button
@@ -382,6 +384,8 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
           
           {(currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
             <button
+              id="tour-add-wallet-btn"
+              data-tour="add-wallet-btn"
               onClick={() => {
                 triggerHaptic('light');
                 setShowAddModal(true);
@@ -512,7 +516,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
         </div>
 
         {/* Total Cash Money Summary Card */}
-        <div className="bg-gradient-to-br from-emerald-500/15 via-white to-slate-50 dark:via-[#131926] dark:to-[#0F172A] border border-emerald-500/35 rounded-2xl p-3.5 space-y-2 shadow-sm relative overflow-hidden">
+        <div id="tour-vault-section" data-tour="vault-section" className="bg-gradient-to-br from-emerald-500/15 via-white to-slate-50 dark:via-[#131926] dark:to-[#0F172A] border border-emerald-500/35 rounded-2xl p-3.5 space-y-2 shadow-sm relative overflow-hidden">
           <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-xl pointer-events-none" />
 
           <div className="flex items-center justify-between relative z-10">
@@ -665,8 +669,8 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
       </div>
 
       {/* Wallet Cards Grid with Custom Color Styling */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {filteredWallets.map((w) => {
+      <div id="tour-wallets-grid" data-tour="wallets-grid" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {filteredWallets.map((w, index) => {
           const bal = calculateWalletBalance(w, transactions, transfers);
           const isSelected = w.id === selectedWalletId;
           const isDigital = w.type !== 'CASH';
@@ -676,6 +680,8 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
           return (
             <div
               key={w.id}
+              id={index === 0 ? "tour-wallet-card" : undefined}
+              data-tour={index === 0 ? "wallet-card" : undefined}
               onClick={() => {
                 triggerHaptic('light');
                 setSelectedWalletId(w.id);
@@ -802,6 +808,8 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
       {/* Selected Wallet Ledger History & Quick Actions */}
       {selectedWallet && (
         <div
+          id="tour-wallets-ledger"
+          data-tour="wallets-ledger"
           className="bg-white dark:bg-[#131926] border rounded-2xl p-4 space-y-3 transition-colors shadow-sm"
           style={{ borderColor: `${selectedWallet.color}40` }}
         >
@@ -881,7 +889,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                   >
                     <div>
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="font-bold text-slate-900 dark:text-[#F0F4FF]">{tx.description}</p>
+                        <p className="font-bold text-slate-900 dark:text-[#F0F4FF]">{getTransactionDisplayTitle(tx, receivables)}</p>
                         {isCreditCollected && (
                           <span className="text-[8px] bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300 font-bold px-1.5 py-0.2 rounded border border-purple-200 dark:border-purple-500/30 shrink-0">
                             Daily Income / Collected
@@ -1484,10 +1492,10 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                 <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 rounded-xl space-y-1">
                   <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-bold text-xs">
                     <Check className="w-4 h-4" />
-                    <span>Direct SuperAdmin Deletion Authorized</span>
+                    <span>Direct Deletion Authorized</span>
                   </div>
                   <p className="text-[11px] text-slate-600 dark:text-[#8899BB] leading-relaxed">
-                    No other active co-users are registered in the system. As SuperAdmin, you can delete this wallet directly.
+                    No other active co-users are registered in the system. Direct deletion is authorized.
                   </p>
                 </div>
               ) : (
@@ -1522,7 +1530,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                       >
                         {otherActiveUsers.map(u => (
                           <option key={u.id} value={u.id}>
-                            {u.name} ({u.role} - {u.branch})
+                            {u.name} ({u.branch})
                           </option>
                         ))}
                       </select>
@@ -1532,7 +1540,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                       <div className="p-2.5 bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-xl space-y-2">
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-slate-500 dark:text-[#8899BB]">Approver Name:</span>
-                          <span className="font-bold text-slate-900 dark:text-white">{selectedApprover.name} ({selectedApprover.role})</span>
+                          <span className="font-bold text-slate-900 dark:text-white">{selectedApprover.name}</span>
                         </div>
 
                         <div>

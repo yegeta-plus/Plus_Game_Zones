@@ -1265,8 +1265,9 @@ const RAW_NEW_AUGUST_SEPTEMBER_TRANSACTIONS: Transaction[] = [
     category: 'Daily Income / Collected',
     amount: 130,
     walletId: 'w-telebirr',
-    description: 'Daily Income / Collected: Repayment on receivable',
+    description: 'Collected from Solomon',
     refType: 'RECEIVABLE',
+    refId: 'rcv-20260913-solomon',
     creatorName: 'Yegeta Huawei'
   },
   {
@@ -1310,8 +1311,9 @@ const RAW_NEW_AUGUST_SEPTEMBER_TRANSACTIONS: Transaction[] = [
     category: 'Daily Income / Collected',
     amount: 500,
     walletId: 'w-cbe',
-    description: 'Daily Income / Collected: Repayment on receivable',
+    description: 'Collected from Fike',
     refType: 'RECEIVABLE',
+    refId: 'rcv-20260913-fike',
     creatorName: 'Yegeta Huawei'
   },
   {

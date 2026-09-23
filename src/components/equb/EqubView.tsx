@@ -812,6 +812,8 @@ export const EqubView: React.FC<EqubViewProps> = ({
           {/* Primary CTA based on main tab */}
           {mainTab === 'CIRCLES' && (
             <button
+              id="tour-equb-create"
+              data-tour="equb-create"
               onClick={() => {
                 triggerHaptic('light');
                 setShowCreateEqubModal(true);
@@ -1007,7 +1009,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
           {/* Ekub Savings Overview Table (matching official screenshot) */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
             {/* Table 1: Ekub Savings Summary */}
-            <div className="lg:col-span-2 bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-4 shadow-sm">
+            <div id="tour-equb-summary" data-tour="equb-summary" className="lg:col-span-2 bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-4 shadow-sm">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-[#1E2D40]">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-700/60 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
@@ -1209,7 +1211,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
           </div>
 
           {/* Equb Circles List (Table or Cards) */}
-          <div className="space-y-4">
+          <div id="tour-equb-cards" data-tour="equb-cards" className="space-y-4">
             {equbs.length === 0 ? (
               <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-8 text-center space-y-2 shadow-sm">
                 <Users className="w-8 h-8 text-slate-400 dark:text-[#8899BB] mx-auto" />
@@ -1354,6 +1356,8 @@ export const EqubView: React.FC<EqubViewProps> = ({
                                     {!isCompleted && (
                                       <button
                                         type="button"
+                                        id="tour-equb-round-action"
+                                        data-tour="equb-round-action"
                                         onClick={() => openPayRoundModal(eq)}
                                         className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition-colors flex items-center gap-1 shadow-sm cursor-pointer"
                                       >
@@ -1648,6 +1652,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
                                 {/* Action CTAs */}
                                 <div className="flex items-center gap-2 pt-1">
                                   <button
+                                    data-tour="equb-round-action"
                                     onClick={() => {
                                       triggerHaptic('medium');
                                       openPayRoundModal(eq);
@@ -1660,6 +1665,8 @@ export const EqubView: React.FC<EqubViewProps> = ({
 
                                   {payoutsClaimed < mySlots ? (
                                     <button
+                                      id="tour-equb-draw"
+                                      data-tour="equb-draw"
                                       onClick={() => {
                                         triggerHaptic('heavy');
                                         setShowPayoutModal(eq);
@@ -3528,11 +3535,11 @@ export const EqubView: React.FC<EqubViewProps> = ({
           <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#3B82F6]/40 w-full max-w-sm p-5 rounded-2xl space-y-4 text-slate-900 dark:text-white shadow-2xl">
             <h3 className="text-sm font-bold flex items-center gap-2">
               <DollarSign className="w-4 h-4 text-blue-600 dark:text-[#3B82F6]" />
-              <span>Collect Customer Credit (Daily Income / Collected)</span>
+              <span>Collect Customer Credit</span>
             </h3>
 
             <p className="text-xs text-slate-500 dark:text-[#8899BB]">
-              Collecting payment for <strong className="text-slate-900 dark:text-white">{activeCollectRcvModal.customerName}</strong> — recorded as <span className="text-purple-600 dark:text-purple-400 font-bold">Daily Income / Collected</span>
+              Collecting payment for <strong className="text-slate-900 dark:text-white">{activeCollectRcvModal.customerName}</strong> — recorded in ledger as <span className="text-purple-600 dark:text-purple-400 font-bold">Collected from {activeCollectRcvModal.customerName}</span>
             </p>
 
             <form onSubmit={handleCollectRcvSubmit} className="space-y-3">
@@ -3666,11 +3673,11 @@ export const EqubView: React.FC<EqubViewProps> = ({
 
               {otherAdmins.length > 0 ? (
                 <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300">
-                  🛡️ <strong>Co-Admin Confirmation:</strong> Saving changes will prompt co-admin confirmation ({otherAdmins.map(a => a.name).join(', ')}).
+                  🛡️ <strong>Co-User Confirmation:</strong> Saving changes will prompt partner confirmation ({otherAdmins.map(a => a.name).join(', ')}).
                 </div>
               ) : (
                 <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30 text-[11px] text-purple-800 dark:text-purple-300">
-                  ⚡ <strong>SuperAdmin Direct Execution:</strong> No other active admins exist in system. Direct save authorized.
+                  ⚡ <strong>Direct Execution:</strong> No other active accounts exist in system. Direct save authorized.
                 </div>
               )}
 
@@ -3784,11 +3791,11 @@ export const EqubView: React.FC<EqubViewProps> = ({
 
               {otherAdmins.length > 0 ? (
                 <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300">
-                  🛡️ <strong>Co-Admin Confirmation:</strong> Saving changes will prompt co-admin confirmation.
+                  🛡️ <strong>Co-User Confirmation:</strong> Saving changes will prompt partner confirmation.
                 </div>
               ) : (
                 <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30 text-[11px] text-purple-800 dark:text-purple-300">
-                  ⚡ <strong>SuperAdmin Direct Execution:</strong> No other active admins exist in system. Direct save authorized.
+                  ⚡ <strong>Direct Execution:</strong> No other active accounts exist in system. Direct save authorized.
                 </div>
               )}
 
@@ -3903,11 +3910,11 @@ export const EqubView: React.FC<EqubViewProps> = ({
 
               {otherAdmins.length > 0 ? (
                 <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300">
-                  🛡️ <strong>Co-Admin Confirmation:</strong> Saving changes will prompt co-admin confirmation.
+                  🛡️ <strong>Co-User Confirmation:</strong> Saving changes will prompt partner confirmation.
                 </div>
               ) : (
                 <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30 text-[11px] text-purple-800 dark:text-purple-300">
-                  ⚡ <strong>SuperAdmin Direct Execution:</strong> No other active admins exist in system. Direct save authorized.
+                  ⚡ <strong>Direct Execution:</strong> No other active accounts exist in system. Direct save authorized.
                 </div>
               )}
 
@@ -3989,14 +3996,14 @@ export const EqubView: React.FC<EqubViewProps> = ({
               /* Multi Admin Authorization Flow */
               <form onSubmit={handleCoAdminInstantSubmit} className="space-y-3">
                 <div>
-                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1 font-semibold">Select Confirming Co-Admin</label>
+                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1 font-semibold">Select Confirming Partner</label>
                   <select
                     value={coAdminSelectedId}
                     onChange={e => setCoAdminSelectedId(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-bold outline-none"
                   >
                     {otherAdmins.map(adm => (
-                      <option key={adm.id} value={adm.id}>{adm.name} ({adm.role})</option>
+                      <option key={adm.id} value={adm.id}>{adm.name} ({adm.branch || 'Addis Ababa'})</option>
                     ))}
                   </select>
                 </div>

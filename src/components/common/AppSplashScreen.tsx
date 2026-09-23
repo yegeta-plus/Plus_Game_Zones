@@ -11,7 +11,7 @@ export const AppSplashScreen: React.FC<AppSplashScreenProps> = ({
   minDurationMs = 1800
 }) => {
   const [fadingOut, setFadingOut] = useState(false);
-  const [imgSrc, setImgSrc] = useState('/app-logo.jpg');
+  const [imgSrc, setImgSrc] = useState('/app-logo-transparent.png');
   const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
@@ -34,10 +34,12 @@ export const AppSplashScreen: React.FC<AppSplashScreenProps> = ({
   };
 
   const handleImgError = () => {
-    if (imgSrc === '/app-logo.jpg') {
+    if (imgSrc === '/app-logo-transparent.png') {
+      setImgSrc('/app-logo.jpg');
+    } else if (imgSrc === '/app-logo.jpg') {
+      setImgSrc('/pwa-512.png');
+    } else if (imgSrc === '/pwa-512.png') {
       setImgSrc('/apple-touch-icon.png');
-    } else if (imgSrc === '/apple-touch-icon.png') {
-      setImgSrc('/pwa-192.png');
     } else {
       setImgError(true);
     }
@@ -57,16 +59,19 @@ export const AppSplashScreen: React.FC<AppSplashScreenProps> = ({
       {/* Main Fullscreen Brand Logo Container */}
       <div className="relative z-10 flex flex-col items-center text-center px-6 animate-in zoom-in-95 duration-500">
         
-        {/* Clean Logo Frame */}
-        <div className="relative mb-6">
-          <div className="relative w-28 h-28 sm:w-36 sm:h-36 rounded-2xl overflow-hidden shadow-2xl flex items-center justify-center bg-[#070B14]">
+        {/* Clean Logo Frame - Seamless dark background with zero edge artifacts */}
+        <div className="relative mb-6 group">
+          {/* Subtle ambient halo behind logo */}
+          <div className="absolute -inset-1.5 bg-gradient-to-tr from-[#00D4AA]/25 via-blue-500/20 to-purple-600/25 rounded-3xl blur-md opacity-75 group-hover:opacity-100 transition-opacity" />
+          
+          <div className="relative w-28 h-28 sm:w-36 sm:h-36 rounded-3xl overflow-hidden shadow-2xl flex items-center justify-center bg-[#070B14] ring-1 ring-white/10">
             {!imgError ? (
               <img
                 src={imgSrc}
                 alt="Plus Game Zone Logo"
                 onError={handleImgError}
                 referrerPolicy="no-referrer"
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain select-none pointer-events-none"
               />
             ) : (
               <div className="w-full h-full bg-[#0A0E1A] flex flex-col items-center justify-center text-[#00D4AA]">

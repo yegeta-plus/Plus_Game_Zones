@@ -309,7 +309,7 @@ export const BackupView: React.FC<BackupViewProps> = ({ state, onRestore }) => {
                             <span className="text-[9px] bg-[#00D4AA]/20 text-[#00D4AA] px-1 rounded font-mono">YOU</span>
                           )}
                         </div>
-                        <p className="text-[10px] text-[#8899BB]">{user.role} • {user.branch}</p>
+                        <p className="text-[10px] text-[#8899BB]">{user.branch}</p>
                       </div>
                     </div>
 

@@ -5,28 +5,103 @@ const sharp = require('sharp');
 async function generateIcons() {
   const publicDir = path.join(__dirname, '..', 'public');
   const sourceAsset = path.join(__dirname, '..', 'src', 'assets', 'images', 'game_app_icon_1786707249717.jpg');
-  const logoJpg = path.join(publicDir, 'app-logo.jpg');
 
-  const inputPath = fs.existsSync(sourceAsset) ? sourceAsset : fs.existsSync(logoJpg) ? logoJpg : null;
-
-  if (!inputPath) {
+  if (!fs.existsSync(sourceAsset)) {
     console.error('No source logo image found!');
     return;
   }
 
-  // Ensure public/app-logo.jpg
-  await sharp(inputPath)
-    .resize(512, 512, { fit: 'cover' })
-    .jpeg({ quality: 92 })
-    .toFile(path.join(publicDir, 'app-logo.jpg.tmp'));
-  fs.renameSync(path.join(publicDir, 'app-logo.jpg.tmp'), path.join(publicDir, 'app-logo.jpg'));
+  const { data, info } = await sharp(sourceAsset)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const w = info.width;
+  const h = info.height;
+
+  // Flood fill light corner pixels to remove white canvas
+  const visited = new Uint8Array(w * h);
+  const queue = [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1]];
+  visited[0] = 1;
+  visited[w - 1] = 1;
+  visited[(h - 1) * w] = 1;
+  visited[(h - 1) * w + w - 1] = 1;
+
+  let head = 0;
+  while (head < queue.length) {
+    const [cx, cy] = queue[head++];
+    const neighbors = [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]];
+    for (const [nx, ny] of neighbors) {
+      if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+        const nidx = ny * w + nx;
+        if (!visited[nidx]) {
+          const pidx = nidx * 3;
+          const lum = 0.299 * data[pidx] + 0.587 * data[pidx + 1] + 0.114 * data[pidx + 2];
+          if (lum > 70) {
+            visited[nidx] = 1;
+            queue.push([nx, ny]);
+          }
+        }
+      }
+    }
+  }
+
+  const dilated = new Uint8Array(visited);
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const idx = y * w + x;
+      if (visited[idx] === 0) {
+        if (visited[idx - 1] || visited[idx + 1] || visited[idx - w] || visited[idx + w]) {
+          const pidx = idx * 3;
+          const lum = 0.299 * data[pidx] + 0.587 * data[pidx + 1] + 0.114 * data[pidx + 2];
+          if (lum > 55) dilated[idx] = 1;
+        }
+      }
+    }
+  }
+
+  const rgbaBuffer = Buffer.alloc(w * h * 4);
+  const rgbDarkBuffer = Buffer.alloc(w * h * 3);
+  const bgR = 7, bgG = 11, bgB = 20;
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const sIdx = (y * w + x) * 3;
+      const dIdx = (y * w + x) * 4;
+      const isOuter = dilated[y * w + x] === 1;
+
+      if (isOuter) {
+        rgbaBuffer[dIdx] = bgR;
+        rgbaBuffer[dIdx + 1] = bgG;
+        rgbaBuffer[dIdx + 2] = bgB;
+        rgbaBuffer[dIdx + 3] = 0;
+
+        rgbDarkBuffer[sIdx] = bgR;
+        rgbDarkBuffer[sIdx + 1] = bgG;
+        rgbDarkBuffer[sIdx + 2] = bgB;
+      } else {
+        rgbaBuffer[dIdx] = data[sIdx];
+        rgbaBuffer[dIdx + 1] = data[sIdx + 1];
+        rgbaBuffer[dIdx + 2] = data[sIdx + 2];
+        rgbaBuffer[dIdx + 3] = 255;
+
+        rgbDarkBuffer[sIdx] = data[sIdx];
+        rgbDarkBuffer[sIdx + 1] = data[sIdx + 1];
+        rgbDarkBuffer[sIdx + 2] = data[sIdx + 2];
+      }
+    }
+  }
+
+  // Ensure public/app-logo.jpg with seamless dark background
+  await sharp(rgbDarkBuffer, { raw: { width: w, height: h, channels: 3 } })
+    .resize(512, 512, { fit: 'contain', background: { r: bgR, g: bgG, b: bgB } })
+    .jpeg({ quality: 95 })
+    .toFile(path.join(publicDir, 'app-logo.jpg'));
 
   // Ensure public/app-logo-transparent.png
-  await sharp(inputPath)
-    .resize(512, 512, { fit: 'cover' })
-    .png({ compressionLevel: 9, effort: 10 })
-    .toFile(path.join(publicDir, 'app-logo-transparent.png.tmp'));
-  fs.renameSync(path.join(publicDir, 'app-logo-transparent.png.tmp'), path.join(publicDir, 'app-logo-transparent.png'));
+  await sharp(rgbaBuffer, { raw: { width: w, height: h, channels: 4 } })
+    .resize(512, 512, { fit: 'contain', background: { r: bgR, g: bgG, b: bgB, alpha: 0 } })
+    .png({ compressionLevel: 9 })
+    .toFile(path.join(publicDir, 'app-logo-transparent.png'));
 
   const targets = [
     { file: 'pwa-192.png', size: 192 },
@@ -37,11 +112,10 @@ async function generateIcons() {
 
   for (const t of targets) {
     const outPath = path.join(publicDir, t.file);
-    await sharp(inputPath)
-      .resize(t.size, t.size, { fit: 'cover' })
-      .png({ compressionLevel: 9, effort: 10 })
-      .toFile(outPath + '.tmp');
-    fs.renameSync(outPath + '.tmp', outPath);
+    await sharp(rgbaBuffer, { raw: { width: w, height: h, channels: 4 } })
+      .resize(t.size, t.size, { fit: 'contain', background: { r: bgR, g: bgG, b: bgB, alpha: 0 } })
+      .png({ compressionLevel: 9 })
+      .toFile(outPath);
     console.log(`Generated standard PNG: ${t.file} (${t.size}x${t.size})`);
   }
 }

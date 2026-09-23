@@ -50,7 +50,7 @@ const RAW_CANONICAL_PDF_TRANSACTIONS: Transaction[] = [
   { id: 'tx-20260707-05', date: '2026-07-07T13:00:00.000Z', type: 'EXPENSE', category: 'Expense — Phone/Internet', amount: 70, walletId: 'w-telebirr', description: '2.5 GB daily GB for PS4', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260707-06', date: '2026-07-07T14:00:00.000Z', type: 'EXPENSE', category: 'Expense — Transport', amount: 200, walletId: 'w-telebirr', description: 'Transport', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260707-07', date: '2026-07-07T15:00:00.000Z', type: 'INCOME', category: 'Receivable Collected', amount: 580, walletId: 'w-telebirr', description: 'Split repayment on receivable', creatorName: 'Yegeta Huawei' },
-  { id: 'tx-20260707-08', date: '2026-07-07T16:00:00.000Z', type: 'EXPENSE', category: 'Expense — Equipment', amount: 49500, walletId: 'w-cash', description: 'PS4 Pro purchase', creatorName: 'Yegeta Huawei' },
+  { id: 'tx-20260707-08', date: '2026-07-07T16:00:00.000Z', type: 'EXPENSE', category: 'Purchase', amount: 49500, walletId: 'w-cash', description: 'PS4 Pro purchase', creatorName: 'Yegeta Huawei' },
 
   // Jul 8
   { id: 'tx-20260708-01', date: '2026-07-08T09:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 1445, walletId: 'w-cash', description: 'Daily Income', creatorName: 'Yegeta Huawei' },

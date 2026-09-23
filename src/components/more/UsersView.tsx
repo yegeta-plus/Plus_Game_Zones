@@ -429,10 +429,10 @@ export const UsersView: React.FC<UsersViewProps> = ({
         <div>
           <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Users className="w-5 h-5 text-[#FB923C]" />
-            Users & Role Permissions Matrix
+            Users & Accounts Directory
           </h3>
           <p className="text-xs text-slate-500 dark:text-[#8899BB]">
-            Role-Based Access Control (RBAC) • SuperAdmin user registration & privilege management
+            Account management, user registration & system access privileges
           </p>
         </div>
 
@@ -445,46 +445,6 @@ export const UsersView: React.FC<UsersViewProps> = ({
             <span>Register New User</span>
           </button>
         )}
-      </div>
-
-      {/* Privileges Matrix Hierarchy Banner */}
-      <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-4 space-y-3 text-xs shadow-sm">
-        <div className="flex items-center justify-between">
-          <h4 className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF] flex items-center gap-1.5 uppercase tracking-wider">
-            <Shield className="w-4 h-4 text-[#FB923C]" />
-            Role Hierarchy & Granular Privileges
-          </h4>
-          <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
-            Current Session: <strong className="text-orange-500 font-bold">{currentUser.role}</strong>
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-[11px]">
-          <div className="bg-slate-50 dark:bg-[#1C2333] p-2.5 rounded-xl border border-purple-500/20">
-            <span className="font-bold text-purple-600 dark:text-purple-400 block">SuperAdmin</span>
-            <p className="text-slate-500 dark:text-[#8899BB] text-[10px] mt-0.5">
-              Full system control, User CRUD, Role management, Temp Password resets & System resets.
-            </p>
-          </div>
-          <div className="bg-slate-50 dark:bg-[#1C2333] p-2.5 rounded-xl border border-blue-500/20">
-            <span className="font-bold text-blue-600 dark:text-blue-400 block">Admin</span>
-            <p className="text-slate-500 dark:text-[#8899BB] text-[10px] mt-0.5">
-              Operational write rights across transactions, loans, equbs, wallets & reports.
-            </p>
-          </div>
-          <div className="bg-slate-50 dark:bg-[#1C2333] p-2.5 rounded-xl border border-emerald-500/20">
-            <span className="font-bold text-emerald-600 dark:text-emerald-400 block">Partner</span>
-            <p className="text-slate-500 dark:text-[#8899BB] text-[10px] mt-0.5">
-              Standard financial recording & viewing rights for designated branch locations.
-            </p>
-          </div>
-          <div className="bg-slate-50 dark:bg-[#1C2333] p-2.5 rounded-xl border border-slate-500/20">
-            <span className="font-bold text-slate-600 dark:text-slate-400 block">Viewer</span>
-            <p className="text-slate-500 dark:text-[#8899BB] text-[10px] mt-0.5">
-              Strict read-only privilege mode across authorized reports and financial views.
-            </p>
-          </div>
-        </div>
       </div>
 
       {/* Filter and Search Bar */}
@@ -505,11 +465,11 @@ export const UsersView: React.FC<UsersViewProps> = ({
           onChange={(e) => setRoleFilter(e.target.value as any)}
           className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white outline-none cursor-pointer"
         >
-          <option value="ALL">All Roles ({users.length})</option>
-          <option value="SuperAdmin">SuperAdmin</option>
-          <option value="Admin">Admin</option>
-          <option value="Partner">Partner</option>
-          <option value="Viewer">Viewer</option>
+          <option value="ALL">All Accounts ({users.length})</option>
+          <option value="SuperAdmin">Master Tier</option>
+          <option value="Admin">Management Tier</option>
+          <option value="Partner">Operational Tier</option>
+          <option value="Viewer">Observer Tier</option>
         </select>
       </div>
 
@@ -533,15 +493,7 @@ export const UsersView: React.FC<UsersViewProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-start gap-3">
                   <div
-                    className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm text-white shrink-0 ${
-                      u.role === 'SuperAdmin'
-                        ? 'bg-purple-600'
-                        : u.role === 'Admin'
-                        ? 'bg-blue-600'
-                        : u.role === 'Partner'
-                        ? 'bg-emerald-600'
-                        : 'bg-slate-600'
-                    }`}
+                    className="w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm text-white shrink-0 bg-gradient-to-tr from-emerald-600 to-indigo-600 shadow-sm"
                   >
                     {u.name.slice(0, 2).toUpperCase()}
                   </div>
@@ -549,19 +501,6 @@ export const UsersView: React.FC<UsersViewProps> = ({
                   <div>
                     <div className="flex items-center gap-2">
                       <h4 className="text-sm font-bold text-slate-900 dark:text-white">{u.name}</h4>
-                      <span
-                        className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider border ${
-                          u.role === 'SuperAdmin'
-                            ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30'
-                            : u.role === 'Admin'
-                            ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30'
-                            : u.role === 'Partner'
-                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
-                            : 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/30'
-                        }`}
-                      >
-                        {u.role}
-                      </span>
 
                       {u.isDigitalMoneyManager && (
                         <span className="text-[9px] font-black bg-emerald-500/15 text-emerald-600 dark:text-[#00D4AA] px-2 py-0.5 rounded-full border border-emerald-500/30 flex items-center gap-1">
@@ -782,17 +721,17 @@ export const UsersView: React.FC<UsersViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-slate-600 dark:text-[#8899BB] block mb-1">
-                    System Role Preset
+                    Access Permission Level
                   </label>
                   <select
                     value={role}
                     onChange={(e) => handleRoleChange(e.target.value as UserRole)}
                     className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] focus:border-orange-500 dark:focus:border-[#FB923C] rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none cursor-pointer"
                   >
-                    <option value="SuperAdmin">SuperAdmin (Full Master Privileges)</option>
-                    <option value="Admin">Admin (Operational Management)</option>
-                    <option value="Partner">Partner (Standard Branch Operational)</option>
-                    <option value="Viewer">Viewer (Read-Only Observer Mode)</option>
+                    <option value="SuperAdmin">Master Tier (Full System Privileges)</option>
+                    <option value="Admin">Management Tier (Operational Access)</option>
+                    <option value="Partner">Operational Tier (Branch Operations)</option>
+                    <option value="Viewer">Observer Tier (Read-Only Mode)</option>
                   </select>
                 </div>
 
@@ -943,7 +882,7 @@ export const UsersView: React.FC<UsersViewProps> = ({
               </div>
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">Delete User Account?</h3>
-                <p className="text-xs text-slate-500 dark:text-[#8899BB] font-semibold">{deletingUser.name} ({deletingUser.role})</p>
+                <p className="text-xs text-slate-500 dark:text-[#8899BB] font-semibold">{deletingUser.name} • {deletingUser.branch}</p>
               </div>
             </div>
 

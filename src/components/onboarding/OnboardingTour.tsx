@@ -16,6 +16,7 @@ interface OnboardingTourProps {
   userId?: string;
   onCompleted?: () => void;
   customSteps?: TourStep[];
+  tourTitle?: string;
   initialStepIndex?: number;
 }
 
@@ -35,6 +36,7 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
   userId,
   onCompleted,
   customSteps,
+  tourTitle,
   initialStepIndex = 0
 }) => {
   const steps = customSteps || ONBOARDING_TOUR_STEPS;
@@ -113,8 +115,24 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
     const attemptMeasurement = () => {
       const el = document.querySelector(currentStep.targetSelector) as HTMLElement | null;
       if (el) {
-        // Smooth scroll element to center of viewport
-        el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+        // Responsive scroll: position element to provide ample room for the tour card
+        const rect = el.getBoundingClientRect();
+        const currentScrollY = window.scrollY || document.documentElement.scrollTop;
+        const vh = window.innerHeight;
+
+        let targetScrollY = currentScrollY;
+        if (currentStep.placement === 'top') {
+          // Bottom portion of screen: leave space above for card
+          targetScrollY = currentScrollY + rect.bottom - (vh - 200);
+        } else {
+          // Placement bottom: leave ~80px below the fixed top header, providing maximum space below for card
+          targetScrollY = currentScrollY + rect.top - 80;
+        }
+
+        window.scrollTo({
+          top: Math.max(0, targetScrollY),
+          behavior: 'smooth'
+        });
 
         // Allow scroll animation to settle before measuring
         setTimeout(() => {
@@ -145,19 +163,48 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
     };
   }, [isOpen, currentStepIndex, currentStep, activeTab, moreSubView, onNavigateTab, measureTarget]);
 
-  // Listen to window resize and scroll events to re-align
+  // Screen viewport dimensions state
+  const [viewport, setViewport] = useState({
+    w: typeof window !== 'undefined' ? window.innerWidth : 400,
+    h: typeof window !== 'undefined' ? window.innerHeight : 800
+  });
+
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [measuredCardHeight, setMeasuredCardHeight] = useState(210);
+
+  // ResizeObserver to track exact card height across font scaling and devices
+  useEffect(() => {
+    if (!cardRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.height > 50) {
+          setMeasuredCardHeight(Math.round(entry.contentRect.height) + 16);
+        }
+      }
+    });
+    observer.observe(cardRef.current);
+    return () => observer.disconnect();
+  }, [isOpen, currentStepIndex]);
+
+  // Track viewport dimensions on resize and orientation changes
   useEffect(() => {
     if (!isOpen) return;
 
     const handleUpdate = () => {
+      setViewport({
+        w: window.innerWidth,
+        h: window.innerHeight
+      });
       measureTarget();
     };
 
     window.addEventListener('resize', handleUpdate, { passive: true });
+    window.addEventListener('orientationchange', handleUpdate, { passive: true });
     window.addEventListener('scroll', handleUpdate, { passive: true });
 
     return () => {
       window.removeEventListener('resize', handleUpdate);
+      window.removeEventListener('orientationchange', handleUpdate);
       window.removeEventListener('scroll', handleUpdate);
     };
   }, [isOpen, measureTarget]);
@@ -203,46 +250,70 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
     : null;
 
   // Tooltip card positioning calculation
-  const cardWidth = 360;
-  const cardEstimatedHeight = 180;
-  const windowW = typeof window !== 'undefined' ? window.innerWidth : 400;
-  const windowH = typeof window !== 'undefined' ? window.innerHeight : 800;
+  const isSmallScreen = viewport.w < 480;
+  const horizPadding = isSmallScreen ? 12 : 16;
+  const cardWidth = Math.min(380, viewport.w - horizPadding * 2);
+  const cardEstimatedHeight = measuredCardHeight || 210;
 
-  let cardStyle: React.CSSProperties = {
-    position: 'fixed',
-    zIndex: 9999,
-    width: `min(${cardWidth}px, calc(100vw - 32px))`
-  };
-
+  let computedLeft = horizPadding;
+  let computedTop = 16;
   let arrowPlacement: 'top' | 'bottom' | 'none' = 'none';
+  let arrowLeft = 24;
 
   if (cutout) {
-    // Determine whether to place card above or below target
-    const spaceBelow = windowH - (cutout.y + cutout.height);
+    const targetCenterX = cutout.x + cutout.width / 2;
+    // Align card center with target center, strictly clamped to viewport bounds
+    computedLeft = Math.max(
+      horizPadding,
+      Math.min(viewport.w - cardWidth - horizPadding, targetCenterX - cardWidth / 2)
+    );
+
+    // Compute pointer arrow beak position relative to the card's left edge
+    arrowLeft = Math.max(20, Math.min(cardWidth - 28, targetCenterX - computedLeft - 8));
+
+    const spaceBelow = viewport.h - (cutout.y + cutout.height);
     const spaceAbove = cutout.y;
 
-    const preferredPlacement = currentStep.placement || (spaceBelow >= cardEstimatedHeight + 20 ? 'bottom' : 'top');
-    const placeBelow = preferredPlacement === 'bottom' ? spaceBelow >= cardEstimatedHeight || spaceBelow > spaceAbove : !(spaceAbove >= cardEstimatedHeight);
+    const fitsBelow = spaceBelow >= cardEstimatedHeight + 16;
+    const fitsAbove = spaceAbove >= cardEstimatedHeight + 16;
 
-    // Compute Horizontal centering aligned with target
-    const targetCenterX = cutout.x + cutout.width / 2;
-    const computedLeft = Math.max(16, Math.min(windowW - cardWidth - 16, targetCenterX - cardWidth / 2));
+    let placeBelow = true;
+    if (currentStep.placement === 'top') {
+      placeBelow = fitsAbove ? false : true;
+    } else {
+      placeBelow = fitsBelow || spaceBelow >= spaceAbove;
+    }
 
     if (placeBelow) {
-      cardStyle.top = Math.min(windowH - cardEstimatedHeight - 16, cutout.y + cutout.height + 14);
-      cardStyle.left = computedLeft;
+      computedTop = cutout.y + cutout.height + 12;
       arrowPlacement = 'top';
+      // Safety clamp: ensure card bottom never overflows viewport bottom
+      if (computedTop + cardEstimatedHeight > viewport.h - 12) {
+        computedTop = Math.max(12, viewport.h - cardEstimatedHeight - 12);
+      }
     } else {
-      cardStyle.top = Math.max(16, cutout.y - cardEstimatedHeight - 14);
-      cardStyle.left = computedLeft;
+      computedTop = cutout.y - cardEstimatedHeight - 12;
       arrowPlacement = 'bottom';
+      // Safety clamp: ensure card top never overflows viewport top
+      if (computedTop < 12) {
+        computedTop = 12;
+      }
     }
   } else {
     // Fallback: center in screen if target element is not found
-    cardStyle.top = '50%';
-    cardStyle.left = '50%';
-    cardStyle.transform = 'translate(-50%, -50%)';
+    computedLeft = Math.max(horizPadding, (viewport.w - cardWidth) / 2);
+    computedTop = Math.max(12, (viewport.h - cardEstimatedHeight) / 2);
+    arrowPlacement = 'none';
   }
+
+  const cardStyle: React.CSSProperties = {
+    position: 'fixed',
+    zIndex: 9999,
+    width: `${cardWidth}px`,
+    left: `${computedLeft}px`,
+    top: `${computedTop}px`,
+    maxHeight: `calc(100vh - 24px)`
+  };
 
   return (
     <div className="fixed inset-0 z-[9990] select-none">
@@ -300,27 +371,34 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
 
       {/* Anchored Tooltip Popup Card */}
       <div
+        ref={cardRef}
         style={cardStyle}
-        className="bg-white dark:bg-[#131926] border border-indigo-100 dark:border-indigo-900/60 shadow-2xl rounded-2xl p-4 sm:p-5 space-y-3 pointer-events-auto transition-all duration-200 animate-fadeIn"
+        className="bg-white dark:bg-[#131926] border border-indigo-100 dark:border-indigo-900/60 shadow-2xl rounded-2xl p-4 sm:p-5 space-y-3 pointer-events-auto transition-all duration-200 animate-fadeIn overflow-y-auto"
       >
         {/* Pointer Arrow Beak */}
         {arrowPlacement === 'top' && (
-          <div className="absolute -top-2 left-8 w-4 h-4 bg-white dark:bg-[#131926] border-t border-l border-indigo-100 dark:border-indigo-900/60 transform rotate-45" />
+          <div
+            style={{ left: `${arrowLeft}px` }}
+            className="absolute -top-2 w-4 h-4 bg-white dark:bg-[#131926] border-t border-l border-indigo-100 dark:border-indigo-900/60 transform rotate-45 pointer-events-none"
+          />
         )}
         {arrowPlacement === 'bottom' && (
-          <div className="absolute -bottom-2 left-8 w-4 h-4 bg-white dark:bg-[#131926] border-b border-r border-indigo-100 dark:border-indigo-900/60 transform rotate-45" />
+          <div
+            style={{ left: `${arrowLeft}px` }}
+            className="absolute -bottom-2 w-4 h-4 bg-white dark:bg-[#131926] border-b border-r border-indigo-100 dark:border-indigo-900/60 transform rotate-45 pointer-events-none"
+          />
         )}
 
         {/* Header: Step Counter Badge & Close Button */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
               <Sparkles className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
-              <span>Step {currentStepIndex + 1} of {steps.length}</span>
+              <span>Step {currentStepIndex + 1}/{steps.length}</span>
             </span>
 
             {currentStep.badge && (
-              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider hidden sm:inline">
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider truncate max-w-[130px] sm:max-w-none">
                 {currentStep.badge}
               </span>
             )}
@@ -329,8 +407,9 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
           <button
             type="button"
             onClick={handleFinishOrDismiss}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
             title="Close Tour (Esc)"
+            aria-label="Close Tour"
           >
             <X className="w-4 h-4" />
           </button>
@@ -341,43 +420,36 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
           <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight">
             {currentStep.title}
           </h4>
-          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-2">
+          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
             {currentStep.description}
           </p>
         </div>
 
-        {/* Progress Dots Indicator */}
-        <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/80">
-          <div className="flex items-center gap-1.5">
-            {steps.map((s, idx) => (
-              <div
-                key={s.id}
-                onClick={() => {
-                  triggerHaptic('light');
-                  setCurrentStepIndex(idx);
-                }}
-                className={`h-1.5 rounded-full transition-all cursor-pointer ${
-                  idx === currentStepIndex
-                    ? 'w-5 bg-indigo-600 dark:bg-indigo-500'
-                    : idx < currentStepIndex
-                    ? 'w-2 bg-indigo-300 dark:bg-indigo-900'
-                    : 'w-2 bg-slate-200 dark:bg-slate-700'
-                }`}
-                title={`Jump to step ${idx + 1}: ${s.title}`}
-              />
-            ))}
+        {/* Step Progress Bar Track */}
+        <div className="pt-1.5 space-y-1">
+          <div className="flex items-center justify-between text-[10px] font-medium text-slate-400 dark:text-slate-500">
+            <span>{tourTitle || 'Tour Walkthrough'}</span>
+            <span className="font-mono">{Math.round(((currentStepIndex + 1) / steps.length) * 100)}%</span>
           </div>
+          <div className="w-full bg-slate-100 dark:bg-slate-800/90 h-1.5 rounded-full overflow-hidden">
+            <div
+              className="bg-indigo-600 dark:bg-indigo-500 h-full rounded-full transition-all duration-300 ease-out"
+              style={{ width: `${Math.round(((currentStepIndex + 1) / steps.length) * 100)}%` }}
+            />
+          </div>
+        </div>
 
-          {/* Action Buttons: Skip, Back, Next / Finish */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleFinishOrDismiss}
-              className="text-xs font-semibold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-2 py-1 transition-colors cursor-pointer"
-            >
-              Skip
-            </button>
+        {/* Action Controls: Skip on left, Back & Next on right */}
+        <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/80 gap-2">
+          <button
+            type="button"
+            onClick={handleFinishOrDismiss}
+            className="text-xs font-semibold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-1.5 py-1.5 transition-colors cursor-pointer shrink-0"
+          >
+            Skip Tour
+          </button>
 
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {!isFirstStep && (
               <button
                 type="button"
@@ -385,7 +457,8 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
                   triggerHaptic('light');
                   setCurrentStepIndex(prev => Math.max(0, prev - 1));
                 }}
-                className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                className="px-2.5 sm:px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95 shrink-0"
+                aria-label="Previous tour step"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
                 <span>Back</span>
@@ -402,7 +475,8 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
                   setCurrentStepIndex(prev => prev + 1);
                 }
               }}
-              className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/20 cursor-pointer transition-all active:scale-95"
+              className="px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/25 cursor-pointer transition-all active:scale-95 shrink-0 whitespace-nowrap"
+              aria-label={isLastStep ? 'Finish onboarding tour' : 'Next tour step'}
             >
               <span>{isLastStep ? 'Get Started' : 'Next'}</span>
               {isLastStep ? (

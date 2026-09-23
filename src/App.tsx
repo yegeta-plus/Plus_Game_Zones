@@ -13,6 +13,8 @@ import { ChatView } from './components/chat/ChatView';
 import { AiAssistantWidget } from './components/ai/AiAssistantWidget';
 import { LoginPage } from './components/auth/LoginPage';
 import { OnboardingTour, ONBOARDING_STORAGE_KEY } from './components/onboarding/OnboardingTour';
+import { PageHelpModal } from './components/help/PageHelpModal';
+import { getPageTourSteps, FULL_APP_TOUR_STEPS, TourStep } from './components/onboarding/onboardingSteps';
 import { FirestoreQuotaBanner } from './components/common/FirestoreQuotaBanner';
 
 import {
@@ -30,7 +32,8 @@ import {
   isEqubPayoutTransaction,
   findMatchingEqub,
   revertEqubForDeletedContribution,
-  revertEqubForDeletedPayout
+  revertEqubForDeletedPayout,
+  getTransactionDisplayTitle
 } from './lib/store';
 import { calculateNextEthiopianDueDate } from './lib/ethiopianCalendar';
 import {
@@ -107,13 +110,41 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
 
-  // Onboarding Spotlight Tour State
+  // Onboarding Spotlight Tour & Help State
   const [isTourActive, setIsTourActive] = useState<boolean>(false);
   const [tourStepIndex, setTourStepIndex] = useState<number>(0);
+  const [activeTourSteps, setActiveTourSteps] = useState<TourStep[] | undefined>(undefined);
+  const [activeTourTitle, setActiveTourTitle] = useState<string | undefined>(undefined);
+  const [isHelpModalOpen, setIsHelpModalOpen] = useState<boolean>(false);
+
+  const handleOpenHelp = useCallback(() => {
+    setIsHelpModalOpen(true);
+  }, []);
 
   const handleStartTour = useCallback(() => {
+    setActiveTourSteps(undefined);
+    setActiveTourTitle('Dashboard Walkthrough');
     setTourStepIndex(0);
     setActiveTab('dashboard');
+    setIsTourActive(true);
+  }, []);
+
+  const handleStartPageTour = useCallback((tab: NavTab, subView?: string) => {
+    setIsHelpModalOpen(false);
+    handleNavigateTab(tab, subView);
+    const { steps, title } = getPageTourSteps(tab, subView);
+    setActiveTourSteps(steps);
+    setActiveTourTitle(title);
+    setTourStepIndex(0);
+    setIsTourActive(true);
+  }, []);
+
+  const handleStartFullAppTour = useCallback(() => {
+    setIsHelpModalOpen(false);
+    handleNavigateTab('dashboard');
+    setActiveTourSteps(FULL_APP_TOUR_STEPS);
+    setActiveTourTitle('Full PlusZone Business Tour');
+    setTourStepIndex(0);
     setIsTourActive(true);
   }, []);
 
@@ -1659,7 +1690,7 @@ export default function App() {
       amount,
       walletId: resolvedWalletId,
       category: 'Daily Income / Collected',
-      description: `Daily Income / Collected: ${target.customerName}${target.description ? ` (${target.description})` : ''}`,
+      description: `Collected from ${target.customerName}`,
       creatorId: state.currentUser.id,
       creatorName: state.currentUser.name,
       branch: state.currentUser.branch,
@@ -1723,9 +1754,9 @@ export default function App() {
       };
     });
 
-    triggerToast(`✓ Collected ${formatETB(amount)} from ${customerName} → Recorded as Daily Income / Collected in ${walletName}!`);
-    sendExternalNotification('PlusZone ERP - Daily Income / Collected 💰', {
-      body: `Daily Income / Collected: ${formatETB(amount)} from ${customerName} into ${walletName}.`
+    triggerToast(`✓ Collected ${formatETB(amount)} from ${customerName} → Recorded in ${walletName}!`);
+    sendExternalNotification('PlusZone ERP - Receivable Collected 💰', {
+      body: `Collected from ${customerName}: ${formatETB(amount)} deposited into ${walletName}.`
     });
   };
 
@@ -2485,7 +2516,7 @@ export default function App() {
         list.push({
           id: `notif-tx-${tx.id}`,
           title: `Ledger Entry: ${tx.category}`,
-          message: `${tx.description} (${tx.type === 'INCOME' ? '+' : '-'}${formatETB(tx.amount)}) by ${tx.creatorName}`,
+          message: `${getTransactionDisplayTitle(tx, state.receivables)} (${tx.type === 'INCOME' ? '+' : '-'}${formatETB(tx.amount)}) by ${tx.creatorName}`,
           type: 'INFO',
           time: formatRelativeNotifTime(txTime),
           timestamp: txTime,
@@ -2780,6 +2811,7 @@ export default function App() {
         onToggleAutoRefresh={() => setAutoRefreshEnabled(prev => !prev)}
         onManualRefresh={() => performRefresh(true)}
         unreadChatCount={unreadChatCount}
+        onOpenHelp={handleOpenHelp}
       />
 
       {/* Main Screen Container */}
@@ -2834,6 +2866,7 @@ export default function App() {
             wallets={state.wallets}
             transactions={state.transactions}
             transfers={state.transfers}
+            receivables={state.receivables}
             users={state.users}
             currentUser={state.currentUser}
             hideBalances={state.hideBalances}
@@ -3028,7 +3061,17 @@ export default function App() {
         mode="SESSION_UNLOCK"
       />
 
-      {/* First-Time Interactive Onboarding Coachmark Spotlight Tour */}
+      {/* Page Help & Guides Modal */}
+      <PageHelpModal
+        isOpen={isHelpModalOpen}
+        onClose={() => setIsHelpModalOpen(false)}
+        currentTab={activeTab}
+        currentSubView={moreSubView}
+        onStartPageTour={handleStartPageTour}
+        onStartFullAppTour={handleStartFullAppTour}
+      />
+
+      {/* Interactive Spotlight Tour */}
       <OnboardingTour
         isOpen={isTourActive}
         onClose={handleCloseTour}
@@ -3038,6 +3081,8 @@ export default function App() {
         onNavigateTab={(tab, subView) => handleNavigateTab(tab, subView)}
         userId={state.currentUser.id}
         initialStepIndex={tourStepIndex}
+        customSteps={activeTourSteps}
+        tourTitle={activeTourTitle}
       />
 
     </div>

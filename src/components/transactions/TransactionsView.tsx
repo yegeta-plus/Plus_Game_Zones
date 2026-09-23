@@ -27,7 +27,11 @@ import {
   ShieldCheck,
   ShieldAlert,
   Smartphone,
-  Layers
+  Layers,
+  Moon,
+  Coffee,
+  CalendarOff,
+  MessageSquare
 } from 'lucide-react';
 import { Transaction, Transfer, Receivable, Wallet, Category, UserProfile, TransactionType, ERPState, NavTab } from '../../types';
 import {
@@ -40,13 +44,13 @@ import {
   getRelativeWalletBalancesForTransfer,
   getWalletNickname,
   consolidateEqubSplitTransactions,
-  isEqubContributionTransaction
+  isEqubContributionTransaction,
+  getTransactionDisplayTitle
 } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 import { generatePDFReport, generateExcelReport } from '../../lib/exports';
 import { formatDateByCalendar } from '../../lib/ethiopianCalendar';
 import { ModernDateInput } from '../common/ModernDateInput';
-import { BrandLogo } from '../common/BrandLogo';
 
 interface TransactionsViewProps {
   transactions: Transaction[];
@@ -100,6 +104,60 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   const [activeCreditSaleDetail, setActiveCreditSaleDetail] = useState<Receivable | null>(null);
   const [confirmReversalTxId, setConfirmReversalTxId] = useState<string | null>(null);
   const [confirmDeleteTxId, setConfirmDeleteTxId] = useState<string | null>(null);
+
+  // Inactive / Non-working days reminders & toggle
+  const [showNonWorkingDays, setShowNonWorkingDays] = useState<boolean>(true);
+  const [dayReminders, setDayReminders] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem('pluszone_non_working_day_reminders_v1');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [editingNoteModal, setEditingNoteModal] = useState<{ dateKey: string; dateLabel: string } | null>(null);
+  const [noteInputText, setNoteInputText] = useState('');
+
+  const handleOpenDayNoteModal = (dateKey: string, dateLabel: string) => {
+    triggerHaptic('light');
+    setEditingNoteModal({ dateKey, dateLabel });
+    setNoteInputText(dayReminders[dateKey] || '');
+  };
+
+  const handleSaveDayNote = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!editingNoteModal) return;
+    triggerHaptic('medium');
+    const updated = { ...dayReminders };
+    if (noteInputText.trim()) {
+      updated[editingNoteModal.dateKey] = noteInputText.trim();
+    } else {
+      delete updated[editingNoteModal.dateKey];
+    }
+    setDayReminders(updated);
+    try {
+      localStorage.setItem('pluszone_non_working_day_reminders_v1', JSON.stringify(updated));
+    } catch (err) {
+      console.error('Failed to save day reminder to localStorage:', err);
+    }
+    setEditingNoteModal(null);
+    setNoteInputText('');
+  };
+
+  const handleClearDayNote = () => {
+    if (!editingNoteModal) return;
+    triggerHaptic('light');
+    const updated = { ...dayReminders };
+    delete updated[editingNoteModal.dateKey];
+    setDayReminders(updated);
+    try {
+      localStorage.setItem('pluszone_non_working_day_reminders_v1', JSON.stringify(updated));
+    } catch (err) {
+      console.error('Failed to clear day reminder:', err);
+    }
+    setEditingNoteModal(null);
+    setNoteInputText('');
+  };
 
   // Edit modal state
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
@@ -344,13 +402,111 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     return (b.id || '').localeCompare(a.id || '');
   });
 
-  // Group by date label
-  const grouped: Record<string, LedgerItem[]> = filtered.reduce((acc: Record<string, LedgerItem[]>, item) => {
-    const dateStr = formatDateByCalendar(item.date, calendarType, true);
-    if (!acc[dateStr]) acc[dateStr] = [];
-    acc[dateStr].push(item);
-    return acc;
-  }, {});
+  // Interface for timeline date grouping (including non-working / 0-transaction days)
+  interface LedgerDateGroup {
+    dateKey: string;
+    dateLabel: string;
+    time: number;
+    items: LedgerItem[];
+    isInactive: boolean;
+    isSpecialHoliday?: boolean;
+    holidayTitle?: string;
+    reminderNote?: string;
+  }
+
+  // Group by date, including non-working days with reminder notes when appropriate
+  const ledgerDateGroups = useMemo<LedgerDateGroup[]>(() => {
+    // Group existing filtered items by YYYY-MM-DD
+    const mapByDateKey: Record<string, LedgerItem[]> = {};
+    filtered.forEach(item => {
+      const dKey = item.date ? item.date.slice(0, 10) : '';
+      if (!dKey) return;
+      if (!mapByDateKey[dKey]) mapByDateKey[dKey] = [];
+      mapByDateKey[dKey].push(item);
+    });
+
+    // If user has entered a search query, show only active matching days
+    if (searchTerm.trim()) {
+      return Object.entries(mapByDateKey)
+        .map(([dKey, items]) => {
+          const noonIso = `${dKey}T12:00:00.000Z`;
+          return {
+            dateKey: dKey,
+            dateLabel: formatDateByCalendar(noonIso, calendarType, true),
+            time: items[0] ? items[0].time : new Date(noonIso).getTime(),
+            items,
+            isInactive: false
+          };
+        })
+        .sort((a, b) => b.time - a.time);
+    }
+
+    // Determine start and end date range for the timeline
+    let maxDateStr = '2026-09-20';
+    let minDateStr = '2026-07-01';
+
+    if (filtered.length > 0) {
+      filtered.forEach(item => {
+        const d = item.date ? item.date.slice(0, 10) : '';
+        if (d && d > maxDateStr) maxDateStr = d;
+        if (d && d < minDateStr) minDateStr = d;
+      });
+    }
+
+    const groups: LedgerDateGroup[] = [];
+    const curr = new Date(`${maxDateStr}T12:00:00.000Z`);
+    const end = new Date(`${minDateStr}T12:00:00.000Z`);
+
+    // Iterate backwards chronologically from newest date to oldest date
+    while (curr >= end) {
+      const dKey = curr.toISOString().slice(0, 10);
+      const items = mapByDateKey[dKey] || [];
+      const noonIso = `${dKey}T12:00:00.000Z`;
+      const dateLabel = formatDateByCalendar(noonIso, calendarType, true);
+
+      if (items.length > 0) {
+        groups.push({
+          dateKey: dKey,
+          dateLabel,
+          time: items[0]?.time || curr.getTime(),
+          items,
+          isInactive: false
+        });
+      } else if (showNonWorkingDays && selectedType === 'ALL' && selectedWalletId === 'ALL' && selectedCategory === 'ALL' && selectedScope === 'ALL') {
+        // Date with NO transactions / Non-working day
+        const isSepNewYear = dKey === '2026-09-10' || dKey === '2026-09-11' || dKey === '2026-09-12';
+        const customNote = dayReminders[dKey];
+
+        let holidayTitle: string | undefined;
+        let reminderNote: string;
+
+        if (isSepNewYear) {
+          holidayTitle = 'Ethiopian New Year (Enkutatash: Pagumē 5 – Meskerem 2)';
+          reminderNote = customNote || 'Business was closed for Ethiopian New Year holiday. 0 transactions were recorded; wallet balances and total amounts remain 100% accurate and unaffected.';
+        } else if (customNote) {
+          reminderNote = customNote;
+        } else {
+          reminderNote = 'No transactions recorded on this date. The shop was closed or inactive. 0 ETB inflow • 0 ETB outflow. Wallets and total balances remain unaffected.';
+        }
+
+        groups.push({
+          dateKey: dKey,
+          dateLabel,
+          time: curr.getTime(),
+          items: [],
+          isInactive: true,
+          isSpecialHoliday: isSepNewYear,
+          holidayTitle,
+          reminderNote
+        });
+      }
+
+      // Step back 1 day
+      curr.setDate(curr.getDate() - 1);
+    }
+
+    return groups;
+  }, [filtered, calendarType, showNonWorkingDays, dayReminders, searchTerm, selectedType, selectedWalletId, selectedCategory, selectedScope]);
 
   // Compute all relative wallet running balances chronologically
   const allWalletRunningBalancesMap = React.useMemo(() => {
@@ -383,7 +539,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     <div className="space-y-4 pb-24">
       
       {/* Title & Quick Export */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      <div id="tour-transactions-header" data-tour="transactions-header" className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
           <h2 className="text-xl font-bold text-slate-900 dark:text-[#F0F4FF]">Financial Ledger</h2>
           <p className="text-xs text-slate-500 dark:text-[#8899BB] mt-0.5">{filtered.length} entries recorded</p>
@@ -464,7 +620,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       <div id="tour-split-payments" data-tour="split-payments" className="space-y-2">
         
         {/* Search Bar */}
-        <div className="relative">
+        <div id="tour-transactions-search" data-tour="transactions-search" className="relative">
           <Search className="w-4 h-4 text-slate-400 dark:text-[#8899BB] absolute left-3 top-3" />
           <input
             type="text"
@@ -484,7 +640,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
         </div>
 
         {/* Filters */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <div id="tour-transactions-filters" data-tour="transactions-filters" className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           
           {/* Type filter */}
           <div className="flex items-center bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-1 text-xs shrink-0">
@@ -543,60 +699,158 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
             <option value="PERSONAL">👤 Personal</option>
           </select>
 
+          {/* Toggle Non-Working Days */}
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              setShowNonWorkingDays(prev => !prev);
+            }}
+            className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-all cursor-pointer ${
+              showNonWorkingDays
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300 shadow-2xs'
+                : 'bg-white dark:bg-[#131926] border-slate-200 dark:border-[#1E2D40] text-slate-500 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+            }`}
+            title="When active, displays non-working dates and days with no transactions with reminder notes"
+          >
+            <Coffee className="w-3.5 h-3.5 text-amber-500" />
+            <span>Non-Working Days</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
+              showNonWorkingDays ? 'bg-amber-500/20 text-amber-800 dark:text-amber-200' : 'bg-slate-100 dark:bg-[#1E2D40] text-slate-400'
+            }`}>
+              {showNonWorkingDays ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
         </div>
       </div>
 
       {/* Grouped Transactions List */}
-      {Object.keys(grouped).length === 0 ? (
-        <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-8 text-center text-slate-500 dark:text-[#8899BB] space-y-2 shadow-sm">
-          <AlertCircle className="w-8 h-8 mx-auto text-slate-300 dark:text-[#8899BB]/50" />
-          <p className="text-xs font-bold text-slate-800 dark:text-[#F0F4FF]">No matching ledger entries</p>
-          <p className="text-[11px]">Try clearing search or filters to see all transactions.</p>
-        </div>
-      ) : (
-        Object.entries(grouped)
-          .sort(([dateA, listA], [dateB, listB]) => {
-            const timeA = listA[0] ? listA[0].time : 0;
-            const timeB = listB[0] ? listB[0].time : 0;
-            return timeB - timeA;
-          })
-          .map(([dateLabel, itemList]) => {
-            const sortedItemList = [...itemList].sort((a, b) => b.time - a.time);
-
-            // Calculate daily total income and expense
-            const dayIncome = sortedItemList
-              .filter(i => i.kind === 'TX' && !i.tx.reversed && i.tx.type === 'INCOME')
-              .reduce((sum, i) => sum + (i.kind === 'TX' ? i.tx.amount : 0), 0);
-
-            const dayExpense = sortedItemList
-              .filter(i => i.kind === 'TX' && !i.tx.reversed && i.tx.type === 'EXPENSE')
-              .reduce((sum, i) => sum + (i.kind === 'TX' ? i.tx.amount : 0), 0);
-
+      <div id="tour-transactions-list" data-tour="transactions-list" className="space-y-4">
+        {ledgerDateGroups.length === 0 ? (
+          <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-8 text-center text-slate-500 dark:text-[#8899BB] space-y-2 shadow-sm">
+            <AlertCircle className="w-8 h-8 mx-auto text-slate-300 dark:text-[#8899BB]/50" />
+            <p className="text-xs font-bold text-slate-800 dark:text-[#F0F4FF]">No matching ledger entries</p>
+            <p className="text-[11px]">Try clearing search or filters to see all transactions.</p>
+          </div>
+        ) : (
+          ledgerDateGroups.map((group) => {
+          if (group.isInactive) {
             return (
-              <div key={dateLabel} className="space-y-1.5">
-                {/* Date Group Header with Daily Total Income & Expense */}
+              <div key={group.dateKey} className="space-y-1.5">
+                {/* Inactive / Non-working date header */}
                 <div className="flex items-center justify-between px-1 py-1">
                   <h3 className="text-[11px] font-bold text-slate-500 dark:text-[#8899BB] uppercase tracking-wider flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-emerald-600 dark:text-[#00D4AA]" />
-                    <span>{dateLabel}</span>
+                    <Calendar className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+                    <span>{group.dateLabel}</span>
+                    {group.isSpecialHoliday ? (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                        <span>🎉</span>
+                        <span>Holiday Closure</span>
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 dark:bg-[#1E2D40] text-slate-500 dark:text-[#8899BB] border border-slate-200 dark:border-[#2A3B54]">
+                        No Activity
+                      </span>
+                    )}
                   </h3>
 
-                  <div className="flex items-center gap-2 text-[10px] font-mono font-bold">
-                    {dayIncome > 0 && (
-                      <span className="text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-500/20">
-                        +{hideBalances ? '••••' : formatETB(dayIncome, true)}
-                      </span>
-                    )}
-                    {dayExpense > 0 && (
-                      <span className="text-rose-700 dark:text-red-400 bg-rose-50 dark:bg-red-500/10 px-2 py-0.5 rounded-lg border border-rose-200 dark:border-red-500/20">
-                        -{hideBalances ? '••••' : formatETB(dayExpense, true)}
-                      </span>
-                    )}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenDayNoteModal(group.dateKey, group.dateLabel)}
+                      className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium px-1.5 py-0.5 rounded hover:bg-indigo-50 dark:hover:bg-indigo-950/30 cursor-pointer transition-colors"
+                      title="Add or edit reason / reminder for this non-working day"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span>{dayReminders[group.dateKey] ? 'Edit Note' : 'Add Note'}</span>
+                    </button>
+                    <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500">
+                      0 Txns
+                    </span>
                   </div>
                 </div>
 
-                <div className="bg-white dark:bg-[#131926] border border-slate-200/80 dark:border-[#1E2D40] rounded-2xl divide-y divide-slate-100 dark:divide-[#1E2D40] overflow-hidden shadow-sm">
-                  {sortedItemList.map((item) => {
+                {/* Reminder card */}
+                <div className={`rounded-2xl p-3.5 border transition-all ${
+                  group.isSpecialHoliday
+                    ? 'bg-amber-500/5 dark:bg-amber-950/15 border-amber-500/25 dark:border-amber-500/30'
+                    : 'bg-slate-50/70 dark:bg-[#131926]/50 border-slate-200/80 dark:border-[#1E2D40]'
+                }`}>
+                  <div className="flex items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-start sm:items-center gap-3 min-w-0">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-base shadow-2xs ${
+                        group.isSpecialHoliday
+                          ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
+                          : 'bg-slate-200/70 dark:bg-[#1C2333] text-slate-500 dark:text-slate-400'
+                      }`}>
+                        {group.isSpecialHoliday ? '🎉' : <Moon className="w-4 h-4" />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                          <span>{group.holidayTitle || (dayReminders[group.dateKey] ? 'Operational Note' : 'No Transactions Recorded')}</span>
+                          {dayReminders[group.dateKey] && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-medium">
+                              Saved Note
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-[#8899BB] mt-0.5 leading-relaxed">
+                          {group.reminderNote}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <span className="text-xs font-mono font-bold text-slate-400 dark:text-slate-500 block">
+                        0.00 ETB
+                      </span>
+                      <span className="text-[9px] uppercase font-semibold text-slate-400 tracking-wider">
+                        No Movement
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          const sortedItemList = [...group.items].sort((a, b) => b.time - a.time);
+
+          // Calculate daily total income and expense
+          const dayIncome = sortedItemList
+            .filter(i => i.kind === 'TX' && !i.tx.reversed && i.tx.type === 'INCOME')
+            .reduce((sum, i) => sum + (i.kind === 'TX' ? i.tx.amount : 0), 0);
+
+          const dayExpense = sortedItemList
+            .filter(i => i.kind === 'TX' && !i.tx.reversed && i.tx.type === 'EXPENSE')
+            .reduce((sum, i) => sum + (i.kind === 'TX' ? i.tx.amount : 0), 0);
+
+          return (
+            <div key={group.dateKey} className="space-y-1.5">
+              {/* Date Group Header with Daily Total Income & Expense */}
+              <div className="flex items-center justify-between px-1 py-1">
+                <h3 className="text-[11px] font-bold text-slate-500 dark:text-[#8899BB] uppercase tracking-wider flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-emerald-600 dark:text-[#00D4AA]" />
+                  <span>{group.dateLabel}</span>
+                </h3>
+
+                <div className="flex items-center gap-2 text-[10px] font-mono font-bold">
+                  {dayIncome > 0 && (
+                    <span className="text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-500/20">
+                      +{hideBalances ? '••••' : formatETB(dayIncome, true)}
+                    </span>
+                  )}
+                  {dayExpense > 0 && (
+                    <span className="text-rose-700 dark:text-red-400 bg-rose-50 dark:bg-red-500/10 px-2 py-0.5 rounded-lg border border-rose-200 dark:border-red-500/20">
+                      -{hideBalances ? '••••' : formatETB(dayExpense, true)}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-[#131926] border border-slate-200/80 dark:border-[#1E2D40] rounded-2xl divide-y divide-slate-100 dark:divide-[#1E2D40] overflow-hidden shadow-sm">
+                {sortedItemList.map((item) => {
                     if (item.kind === 'CREDIT_SALE') {
                       const rcv = item.receivable;
                       const isSettled = rcv.status === 'COLLECTED';
@@ -810,7 +1064,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <p className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF] line-clamp-1">{tx.description}</p>
+                              <p className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF] line-clamp-1">{getTransactionDisplayTitle(tx, receivables)}</p>
                               {tx.source === 'auto_sms_confirmation' && (
                                 <span className="text-[9px] font-bold px-1.5 py-0.2 rounded border shrink-0 flex items-center gap-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30">
                                   <ShieldCheck className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
@@ -851,15 +1105,6 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                                 </span>
                               ) : (
                                 <span className={`inline-flex items-center gap-1 font-mono font-medium ${isCreditCollected ? "text-purple-700 dark:text-purple-400" : "text-emerald-700 dark:text-[#00D4AA]"}`}>
-                                  {wallet && (
-                                    <BrandLogo
-                                      type={wallet.type}
-                                      size="xs"
-                                      customColor={wallet.color}
-                                      customLogoUrl={wallet.customLogoUrl}
-                                      className="inline-flex shadow-none"
-                                    />
-                                  )}
                                   <span>{getWalletNickname(wallet?.name)}</span>
                                 </span>
                               )}
@@ -906,7 +1151,8 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
               </div>
             );
           })
-      )}
+        )}
+      </div>
 
       {/* Transaction Detail Sheet Modal */}
       {activeTxDetail && (() => {
@@ -968,7 +1214,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                         : activeTxDetail.amount
                     ))}
                   </p>
-                  <p className="text-xs text-slate-800 dark:text-[#F0F4FF] font-medium mt-1">{activeTxDetail.description}</p>
+                  <p className="text-xs text-slate-800 dark:text-[#F0F4FF] font-medium mt-1">{getTransactionDisplayTitle(activeTxDetail, receivables)}</p>
                 </div>
 
                 {/* Combined Split Wallet Breakdown */}
@@ -1559,6 +1805,101 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
           </div>
         );
       })()}
+
+      {/* Day Reminder Note Modal */}
+      {editingNoteModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] max-w-md w-full p-5 rounded-2xl space-y-4 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                  <Coffee className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Day Reminder & Note</h4>
+                  <p className="text-[11px] text-slate-500 dark:text-[#8899BB]">{editingNoteModal.dateLabel}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingNoteModal(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#1E2D40] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveDayNote} className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  Why was there no transaction or business on this day?
+                </label>
+                <input
+                  type="text"
+                  value={noteInputText}
+                  onChange={(e) => setNoteInputText(e.target.value)}
+                  placeholder="e.g. Shop closed for maintenance, Staff day off, Holiday..."
+                  className="w-full bg-slate-50 dark:bg-[#1A2232] border border-slate-200 dark:border-[#223147] rounded-xl px-3 py-2.5 text-xs text-slate-900 dark:text-white outline-none focus:border-indigo-500"
+                  autoFocus
+                />
+              </div>
+
+              {/* Quick suggestions chips */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Quick Reason Presets:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    'Holiday / Closed',
+                    'Staff Rest Day',
+                    'Shop Maintenance',
+                    'Power Outage / No Internet',
+                    'Rainy Day / Inactive'
+                  ].map(preset => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setNoteInputText(preset)}
+                      className="px-2 py-1 rounded-lg text-[10px] font-medium bg-slate-100 dark:bg-[#1C2333] hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-slate-600 dark:text-[#8899BB] hover:text-indigo-600 dark:hover:text-indigo-300 border border-slate-200 dark:border-[#253246] transition-colors cursor-pointer"
+                    >
+                      + {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-[#1E2D40]">
+                {dayReminders[editingNoteModal.dateKey] ? (
+                  <button
+                    type="button"
+                    onClick={handleClearDayNote}
+                    className="px-3 py-2 rounded-xl text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Clear Note
+                  </button>
+                ) : <div />}
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingNoteModal(null)}
+                    className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-[#1C2333] text-xs font-bold text-slate-600 dark:text-[#8899BB] cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-xl bg-indigo-600 text-xs font-bold text-white hover:bg-indigo-700 shadow-sm cursor-pointer"
+                  >
+                    Save Reminder
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );

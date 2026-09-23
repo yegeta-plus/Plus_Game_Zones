@@ -341,7 +341,7 @@ export const AutoImportHubModal: React.FC<AutoImportHubModalProps> = ({
             <UserCheck className="w-4 h-4 text-emerald-600 dark:text-[#00D4AA] shrink-0" />
             <span>
               Designated Digital Money Manager:{' '}
-              <strong className="text-slate-900 dark:text-white font-bold">{managerUser.name}</strong> ({managerUser.role})
+              <strong className="text-slate-900 dark:text-white font-bold">{managerUser.name}</strong>
             </span>
           </div>
           <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-mono">

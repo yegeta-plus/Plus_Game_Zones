@@ -29,7 +29,7 @@ import {
   Coins
 } from 'lucide-react';
 import { Equb, Loan, RecurringTemplate, Receivable, Transaction } from '../../types';
-import { formatETB } from '../../lib/store';
+import { formatETB, getTransactionDisplayTitle } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 import {
   formatEthiopianDate,
@@ -198,7 +198,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       const d = new Date(tx.date);
       list.push({
         id: `tx-${tx.id}`,
-        title: tx.description || tx.category,
+        title: getTransactionDisplayTitle(tx, receivables) || tx.category,
         amount: tx.amount,
         type: 'TRANSACTION',
         categoryKey: 'TRANSACTION',
@@ -459,7 +459,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     <div className="space-y-4">
       {/* Top Expense KPI Cards & Monthly Expense Breakdown */}
       <div className="space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div id="tour-calendar-kpis" data-tour="calendar-kpis" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {/* Current Month Expense Card */}
           <div className="bg-gradient-to-br from-rose-500/10 via-rose-500/5 to-transparent dark:from-rose-500/20 dark:via-rose-950/20 dark:to-[#131926] border border-rose-200 dark:border-rose-900/40 rounded-2xl p-4 shadow-sm relative overflow-hidden">
             <div className="flex items-center justify-between mb-1.5">
@@ -564,7 +564,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       </div>
 
       {/* Header & Controls */}
-      <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-4 shadow-sm space-y-3">
+      <div id="tour-calendar-header" data-tour="calendar-header" className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-4 shadow-sm space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
@@ -613,7 +613,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-[#1E2D40]">
           {/* View Modes */}
           {!agendaOnly ? (
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-[#1C2333] p-1 rounded-xl">
+            <div id="tour-calendar-modes" data-tour="calendar-modes" className="flex items-center gap-1 bg-slate-100 dark:bg-[#1C2333] p-1 rounded-xl">
               <button
                 onClick={() => {
                   triggerHaptic('light');
@@ -681,7 +681,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       </div>
 
       {/* Month Navigation Control Bar */}
-      <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2 shadow-sm">
+      <div id="tour-calendar-grid" data-tour="calendar-grid" className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2 shadow-sm">
         <div className="flex items-center gap-2">
           <button
             onClick={prevMonth}
@@ -828,6 +828,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     )}
                   </div>
 
+                  {/* Closed Days Badge for Sep 10-12 */}
+                  {(cell.dateStr === '2026-09-10' || cell.dateStr === '2026-09-11' || cell.dateStr === '2026-09-12') && (
+                    <div className="my-1 px-1 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[8px] font-bold uppercase tracking-wider text-center">
+                      Closed
+                    </div>
+                  )}
+
                   {/* Day Event Preview Dots & Amounts */}
                   <div className="space-y-1 my-1">
                     {dayEvs.slice(0, 2).map((ev) => (
@@ -899,11 +906,23 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
         {/* List of obligations on selected date */}
         {selectedDayEvents.length === 0 ? (
-          <div className="p-6 text-center text-slate-400 dark:text-[#8899BB] space-y-1">
-            <CheckCircle2 className="w-8 h-8 text-emerald-500/40 mx-auto" />
-            <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No Pending Obligations on this Day</p>
-            <p className="text-[11px]">Clear schedule! No Equb, loan, bill, or receivable due.</p>
-          </div>
+          (selectedDateStr === '2026-09-10' || selectedDateStr === '2026-09-11' || selectedDateStr === '2026-09-12') ? (
+            <div className="p-6 text-center rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-200 space-y-2">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto text-xl shadow-xs">
+                🎉
+              </div>
+              <p className="text-xs font-bold text-slate-900 dark:text-white">Business Closed — Ethiopian New Year (Enkutatash: Pagumē 5 – Meskerem 2)</p>
+              <p className="text-[11px] text-slate-600 dark:text-[#8899BB] max-w-md mx-auto leading-relaxed">
+                Plus Game Zone was not open on this day; 0 transactions were recorded. Total amounts and wallet balances remain 100% accurate and unaffected.
+              </p>
+            </div>
+          ) : (
+            <div className="p-6 text-center text-slate-400 dark:text-[#8899BB] space-y-1">
+              <CheckCircle2 className="w-8 h-8 text-emerald-500/40 mx-auto" />
+              <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No Pending Obligations on this Day</p>
+              <p className="text-[11px]">Clear schedule! No Equb, loan, bill, or receivable due.</p>
+            </div>
+          )
         ) : (
           <div className="space-y-2.5">
             {selectedDayEvents.map((ev) => (

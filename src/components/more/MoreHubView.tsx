@@ -419,7 +419,7 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
                   amount: amt,
                   walletId: resolvedWalletId,
                   category: 'Daily Income / Collected',
-                  description: `Daily Income / Collected: ${target.customerName}${target.description ? ` (${target.description})` : ''}`,
+                  description: `Collected from ${target.customerName}`,
                   creatorId: prev.currentUser.id,
                   creatorName: prev.currentUser.name,
                   branch: prev.currentUser.branch,
@@ -673,6 +673,8 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
 
       {/* User Account Profile Card */}
       <div
+        id="tour-more-hub-profile"
+        data-tour="more-hub-profile"
         onClick={() => {
           triggerHaptic('light');
           setSubView('PROFILE');
@@ -693,14 +695,9 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
           )}
 
           <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                {state.currentUser.name || 'User Account'}
-              </h3>
-              <span className="text-[9px] bg-[#00D4AA]/20 text-[#00D4AA] px-1.5 py-0.2 rounded font-mono font-extrabold uppercase">
-                {state.currentUser.role}
-              </span>
-            </div>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+              {state.currentUser.name || 'User Account'}
+            </h3>
             <p className="text-xs text-slate-500 dark:text-[#8899BB] mt-0.5">
               {state.currentUser.email || 'Manage profile photo, password & account details'}
             </p>
@@ -718,7 +715,7 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
         <h3 className="text-xs font-bold text-slate-500 dark:text-[#8899BB] uppercase tracking-wider px-1">
           Business Operations & Reporting
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div id="tour-more-hub-grid" data-tour="more-hub-grid" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {operationalTiles.map((tile) => {
             const Icon = tile.icon;
             const isRestricted = tile.superAdminOnly && state.currentUser.role === 'Partner';
@@ -726,6 +723,8 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
             return (
               <div
                 key={tile.id}
+                id={tile.id === 'SECURITY' ? 'tour-more-hub-security' : undefined}
+                data-tour={tile.id === 'SECURITY' ? 'more-hub-security' : undefined}
                 onClick={() => {
                   if (isRestricted) {
                     alert('Audit log requires Admin or SuperAdmin permissions.');
@@ -768,6 +767,8 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
 
       {/* AI Assistant Banner Launcher */}
       <div
+        id="tour-ai-insights-tool"
+        data-tour="ai-insights-tool"
         onClick={() => {
           triggerHaptic('medium');
           onOpenAiAssistant();
@@ -798,6 +799,8 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
       {/* System Settings Tile (at the bottom of the page) - SuperAdmin Only */}
       {state.currentUser.role === 'SuperAdmin' && (
         <div
+          id="tour-backup-export"
+          data-tour="backup-export"
           onClick={() => openSettings(null)}
           className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#00D4AA]/40 hover:border-[#00D4AA] rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all shadow-sm group"
         >

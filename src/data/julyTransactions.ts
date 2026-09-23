@@ -431,7 +431,7 @@ export const ALL_JULY_TRANSACTIONS: Transaction[] = [
     id: 'tx-20260707-10',
     date: '2026-07-07T13:00:00.000Z',
     type: 'EXPENSE',
-    category: 'Equipment / Asset Purchase',
+    category: 'Purchase',
     amount: 49500,
     walletId: 'w-cash',
     description: 'PS4 Pro purchase',

@@ -215,7 +215,7 @@ export const VERIFIED_TRANSACTIONS: Transaction[] = [
     category: 'Daily Income / Collected',
     amount: 130,
     walletId: 'w-telebirr',
-    description: 'Repayment on receivable [Solomon]',
+    description: 'Collected from Solomon',
     refType: 'RECEIVABLE',
     refId: 'rcv-20260913-solomon',
     creatorName: 'Yegeta Huawei'
@@ -260,7 +260,7 @@ export const VERIFIED_TRANSACTIONS: Transaction[] = [
     category: 'Daily Income / Collected',
     amount: 500,
     walletId: 'w-cbe',
-    description: 'Repayment on receivable [Fike]',
+    description: 'Collected from Fike',
     refType: 'RECEIVABLE',
     refId: 'rcv-20260913-fike',
     creatorName: 'Yegeta Huawei'

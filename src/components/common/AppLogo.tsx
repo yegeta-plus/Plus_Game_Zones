@@ -19,22 +19,22 @@ export const AppLogo: React.FC<AppLogoProps> = ({
   onClick
 }) => {
   const [imgError, setImgError] = useState(false);
-  const [imgSrc, setImgSrc] = useState('/app-logo.jpg');
+  const [imgSrc, setImgSrc] = useState('/app-logo-transparent.png');
 
   const sizeClasses = {
-    sm: 'w-8 h-8 rounded-lg text-xs',
-    md: 'w-10 h-10 rounded-xl text-sm',
-    lg: 'w-12 h-12 rounded-2xl text-base',
-    xl: 'w-16 h-16 rounded-2xl text-xl'
+    sm: 'w-8 h-8 rounded-[22%] text-xs',
+    md: 'w-10 h-10 rounded-[22%] text-sm',
+    lg: 'w-12 h-12 rounded-[24%] text-base',
+    xl: 'w-16 h-16 rounded-[24%] text-xl'
   }[size];
 
   const handleImageError = () => {
-    if (imgSrc === '/app-logo.jpg') {
-      setImgSrc('/apple-touch-icon.png');
-    } else if (imgSrc === '/apple-touch-icon.png') {
+    if (imgSrc === '/app-logo-transparent.png') {
+      setImgSrc('/app-logo.jpg');
+    } else if (imgSrc === '/app-logo.jpg') {
       setImgSrc('/pwa-192.png');
     } else if (imgSrc === '/pwa-192.png') {
-      setImgSrc('/app-logo-transparent.png');
+      setImgSrc('/apple-touch-icon.png');
     } else {
       setImgError(true);
     }
@@ -49,7 +49,7 @@ export const AppLogo: React.FC<AppLogoProps> = ({
   const logoIcon = (
     <div
       onClick={handleClick}
-      className={`relative overflow-hidden shrink-0 flex items-center justify-center ${sizeClasses} ${className} ${clickable ? 'cursor-pointer hover:scale-105 active:scale-95 transition-transform group' : ''}`}
+      className={`relative overflow-hidden shrink-0 flex items-center justify-center bg-[#070B14] ring-1 ring-white/10 ${sizeClasses} ${className} ${clickable ? 'cursor-pointer hover:scale-105 active:scale-95 transition-transform group' : ''}`}
     >
       {!imgError ? (
         <img
@@ -57,7 +57,7 @@ export const AppLogo: React.FC<AppLogoProps> = ({
           alt="Plus Game Zone Logo"
           onError={handleImageError}
           referrerPolicy="no-referrer"
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain select-none pointer-events-none"
         />
       ) : (
         <div className="w-full h-full bg-slate-900 flex items-center justify-center text-[#00D4AA] relative">

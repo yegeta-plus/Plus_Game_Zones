@@ -61,17 +61,16 @@ export const UserChatAvatar: React.FC<{
 
   const initial = (senderName || matchedUser?.name || 'U').charAt(0).toUpperCase();
 
-  const getRoleColor = (role?: string) => {
-    switch (role) {
-      case 'SuperAdmin':
-        return 'from-purple-600 to-indigo-600 text-white';
-      case 'Admin':
-        return 'from-blue-600 to-cyan-600 text-white';
-      case 'Partner':
-        return 'from-emerald-600 to-teal-600 text-white';
-      default:
-        return 'from-slate-600 to-slate-700 text-white';
-    }
+  const getAvatarGradient = (name?: string) => {
+    const gradients = [
+      'from-emerald-600 to-teal-700 text-white',
+      'from-indigo-600 to-blue-700 text-white',
+      'from-teal-600 to-cyan-700 text-white',
+      'from-blue-600 to-indigo-700 text-white'
+    ];
+    if (!name) return gradients[0];
+    const code = name.charCodeAt(0) + (name.charCodeAt(1) || 0);
+    return gradients[code % gradients.length];
   };
 
   const dimClasses = size === 'sm' ? 'w-6 h-6 text-[10px]' : 'w-8 h-8 text-xs';
@@ -92,7 +91,7 @@ export const UserChatAvatar: React.FC<{
 
   return (
     <div
-      className={`${dimClasses} rounded-full bg-gradient-to-tr ${getRoleColor(senderRole || matchedUser?.role)} flex items-center justify-center font-black shrink-0 border border-white/20 dark:border-slate-700 shadow-sm select-none`}
+      className={`${dimClasses} rounded-full bg-gradient-to-tr ${getAvatarGradient(senderName || matchedUser?.name)} flex items-center justify-center font-black shrink-0 border border-white/20 dark:border-slate-700 shadow-sm select-none`}
     >
       {initial}
     </div>
@@ -225,9 +224,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
       </div>
 
       {/* MAIN CHAT CONVERSATION AREA */}
-      <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl flex flex-col h-[640px] shadow-sm overflow-hidden">
+      <div id="tour-chat-header" data-tour="chat-header" className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl flex flex-col h-[640px] shadow-sm overflow-hidden">
         {/* CHAT HEADER */}
-        <div className="px-5 py-3.5 border-b border-slate-200 dark:border-[#1E2D40] bg-slate-50/50 dark:bg-[#131926] flex items-center justify-between shrink-0">
+        <div id="tour-chat-channels" data-tour="chat-channels" className="px-5 py-3.5 border-b border-slate-200 dark:border-[#1E2D40] bg-slate-50/50 dark:bg-[#131926] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-emerald-500/10 dark:bg-[#00D4AA]/20 text-emerald-600 dark:text-[#00D4AA] flex items-center justify-center font-bold">
               <Users className="w-5 h-5" />
@@ -279,7 +278,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
         )}
 
           {/* MESSAGES LIST CONTAINER */}
-          <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-slate-50/30 dark:bg-[#0D121F]">
+          <div id="tour-chat-messages" data-tour="chat-messages" className="flex-1 p-4 overflow-y-auto space-y-4 bg-slate-50/30 dark:bg-[#0D121F]">
             {filteredMessages.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
                 <MessageSquare className="w-12 h-12 stroke-[1.5] text-slate-300 dark:text-slate-700 mb-2 animate-bounce" />
@@ -312,9 +311,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
                       {/* Meta header */}
                       <div className={`flex items-center gap-1.5 text-[10px] text-slate-400 ${isMe ? 'justify-end' : ''}`}>
                         <span className="font-bold text-slate-700 dark:text-slate-300">{msg.senderName}</span>
-                        <span className="px-1.5 py-0.2 rounded font-mono bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                          {msg.senderRole}
-                        </span>
                         <span>•</span>
                         <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
@@ -543,7 +539,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
           )}
 
           {/* INPUT FORM */}
-          <form onSubmit={handleSend} className="p-3 bg-white dark:bg-[#131926] border-t border-slate-200 dark:border-[#1E2D40] flex items-center gap-2 shrink-0 relative">
+          <form id="tour-chat-composer" data-tour="chat-composer" onSubmit={handleSend} className="p-3 bg-white dark:bg-[#131926] border-t border-slate-200 dark:border-[#1E2D40] flex items-center gap-2 shrink-0 relative">
             <input
               type="file"
               ref={fileInputRef}

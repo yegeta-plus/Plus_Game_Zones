@@ -120,8 +120,8 @@ export const IMPORTED_EXPENSE_RECORDS: ExpenseSheetRecord[] = [
     date: '2026-07-07',
     type: 'Asset Purchase',
     amount: 49500,
-    remark: 'Ps4 pro purchase (Equipment / Asset Purchase)',
-    category: 'Equipment / Asset Purchase',
+    remark: 'Ps4 pro purchase (Purchase)',
+    category: 'Purchase',
     walletId: 'w-cbe'
   },
   {

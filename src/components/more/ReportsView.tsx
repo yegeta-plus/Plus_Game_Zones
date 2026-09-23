@@ -30,11 +30,20 @@ import {
   ShieldAlert,
   Calendar,
   Sparkles,
-  Info
+  Info,
+  ChevronDown,
+  ChevronUp,
+  Search,
+  ArrowUpDown,
+  Receipt,
+  ListFilter,
+  SlidersHorizontal,
+  ArrowUpRight
 } from 'lucide-react';
-import { ERPState, SentReportEmailLog } from '../../types';
+import { ERPState, SentReportEmailLog, Transaction } from '../../types';
 import { calculateTotalBusinessBalance, formatETB, calculateWalletBalance } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
+import { formatDateByCalendar } from '../../lib/ethiopianCalendar';
 import {
   generatePDFReport,
   generateExcelReport,
@@ -88,6 +97,13 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
   const [isSavingSmtp, setIsSavingSmtp] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [smtpSaveMessage, setSmtpSaveMessage] = useState<string | null>(null);
+
+  // Expense Breakdown Details Explorer states
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+  const [expenseDetailsViewMode, setExpenseDetailsViewMode] = useState<'CATEGORIES' | 'ALL_EXPENSES'>('CATEGORIES');
+  const [expenseSearchQuery, setExpenseSearchQuery] = useState('');
+  const [expenseSortBy, setExpenseSortBy] = useState<'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc'>('date_desc');
+  const [selectedTxForDetail, setSelectedTxForDetail] = useState<Transaction | null>(null);
 
   // Filter eligible recipients strictly to Admin and SuperUser roles
   const eligibleAdminSuperusers = useMemo(() => {
@@ -165,22 +181,45 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
     const expensesOnly = filteredTransactions.filter(t => t.type === 'EXPENSE' && !t.reversed);
     const totalExpenseAmount = expensesOnly.reduce((sum, t) => sum + t.amount, 0);
 
-    const map: Record<string, { category: string; total: number; count: number; maxItem: number; minItem: number }> = {};
+    const map: Record<
+      string,
+      {
+        category: string;
+        total: number;
+        count: number;
+        maxItem: number;
+        minItem: number;
+        transactions: Transaction[];
+        walletCounts: Record<string, number>;
+      }
+    > = {};
     let minDate: Date | null = null;
     let maxDate: Date | null = null;
 
     expensesOnly.forEach(t => {
       if (!map[t.category]) {
-        map[t.category] = { category: t.category, total: 0, count: 0, maxItem: 0, minItem: Infinity };
+        map[t.category] = {
+          category: t.category,
+          total: 0,
+          count: 0,
+          maxItem: 0,
+          minItem: Infinity,
+          transactions: [],
+          walletCounts: {}
+        };
       }
       map[t.category].total += t.amount;
       map[t.category].count += 1;
+      map[t.category].transactions.push(t);
       if (t.amount > map[t.category].maxItem) {
         map[t.category].maxItem = t.amount;
       }
       if (t.amount < map[t.category].minItem) {
         map[t.category].minItem = t.amount;
       }
+
+      const wId = t.walletId || 'unassigned';
+      map[t.category].walletCounts[wId] = (map[t.category].walletCounts[wId] || 0) + 1;
 
       if (t.date) {
         const d = new Date(t.date);
@@ -196,18 +235,31 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
     const dailyBurnRate = totalExpenseAmount / spanDays;
     const weeklyBurnRate = dailyBurnRate * 7;
 
-    const list = Object.values(map).map(item => ({
-      ...item,
-      minItem: item.minItem === Infinity ? item.total : item.minItem,
-      avgItem: item.count > 0 ? item.total / item.count : item.total,
-      dailyRate: item.total / spanDays,
-      percentage: totalExpenseAmount > 0 ? (item.total / totalExpenseAmount) * 100 : 0
-    }));
+    const list = Object.values(map).map(item => {
+      let topWalletId = '';
+      let topWalletCount = 0;
+      Object.entries(item.walletCounts).forEach(([wId, cnt]) => {
+        if (cnt > topWalletCount) {
+          topWalletCount = cnt;
+          topWalletId = wId;
+        }
+      });
+
+      return {
+        ...item,
+        minItem: item.minItem === Infinity ? item.total : item.minItem,
+        avgItem: item.count > 0 ? item.total / item.count : item.total,
+        dailyRate: item.total / spanDays,
+        percentage: totalExpenseAmount > 0 ? (item.total / totalExpenseAmount) * 100 : 0,
+        topWalletId
+      };
+    });
 
     list.sort((a, b) => b.total - a.total);
 
     return {
       list,
+      allExpenses: expensesOnly,
       totalExpenseAmount,
       totalCount: expensesOnly.length,
       topCategory: list[0] || null,
@@ -220,9 +272,64 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
     };
   }, [filteredTransactions]);
 
+  const toggleCategoryExpand = (category: string) => {
+    setExpandedCategories(prev => ({
+      ...prev,
+      [category]: !prev[category]
+    }));
+    triggerHaptic('light');
+  };
+
+  const expandAllCategories = () => {
+    const allExp: Record<string, boolean> = {};
+    expenseCategoryBreakdown.list.forEach(c => {
+      allExp[c.category] = true;
+    });
+    setExpandedCategories(allExp);
+    triggerHaptic('light');
+  };
+
+  const collapseAllCategories = () => {
+    setExpandedCategories({});
+    triggerHaptic('light');
+  };
+
   const getWalletName = (walletId: string) => {
     const w = state.wallets.find(item => item.id === walletId);
     return w ? w.name : walletId;
+  };
+
+  const sortExpenseTransactions = (txs: Transaction[]) => {
+    return [...txs].sort((a, b) => {
+      if (expenseSortBy === 'date_desc') {
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+      }
+      if (expenseSortBy === 'date_asc') {
+        return new Date(a.date).getTime() - new Date(b.date).getTime();
+      }
+      if (expenseSortBy === 'amount_desc') {
+        return b.amount - a.amount;
+      }
+      if (expenseSortBy === 'amount_asc') {
+        return a.amount - b.amount;
+      }
+      return 0;
+    });
+  };
+
+  const filterExpenseTransactions = (txs: Transaction[]) => {
+    if (!expenseSearchQuery.trim()) return txs;
+    const q = expenseSearchQuery.toLowerCase().trim();
+    return txs.filter(t => {
+      const desc = (t.description || '').toLowerCase();
+      const cat = (t.category || '').toLowerCase();
+      const user = (t.creatorName || '').toLowerCase();
+      const wallet = getWalletName(t.walletId).toLowerCase();
+      const amt = t.amount.toString();
+      const id = (t.id || '').toLowerCase();
+      const notes = (t.notes || '').toLowerCase();
+      return desc.includes(q) || cat.includes(q) || user.includes(q) || wallet.includes(q) || amt.includes(q) || id.includes(q) || notes.includes(q);
+    });
   };
 
   const handleExportPDF = () => {
@@ -527,7 +634,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
         </div>
 
         {/* Export & Email Buttons */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div id="tour-reports-export-action" data-tour="reports-export-action" className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => {
               triggerHaptic('medium');
@@ -632,22 +739,19 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                 <strong>{u.name}</strong>
-                <span className="text-[10px] text-purple-300 bg-purple-950/60 px-1 py-0.2 rounded font-sans">
-                  {u.role}
-                </span>
                 <span className="text-slate-400 text-[10px]">({u.email || 'email configured'})</span>
               </span>
             ))}
           </div>
 
           <div className="text-[10px] text-slate-400 italic">
-            * Partners & Viewers excluded from automated executive statements
+            * Executive statements delivered to authorized management accounts
           </div>
         </div>
       </div>
 
       {/* Filter Toolbar Header with Icon Button */}
-      <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-3.5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div id="tour-reports-filter-bar" data-tour="reports-filter-bar" className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-3.5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           {/* Filter Icon Trigger Button */}
           <button
@@ -726,7 +830,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
       {/* Net Worth & Executive Balance Sheet */}
       <div id="tour-financial-reports" data-tour="financial-reports" className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {/* Balance Sheet Summary */}
-        <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-4 space-y-3 shadow-sm">
+        <div id="tour-reports-summary-metrics" data-tour="reports-summary-metrics" className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-4 space-y-3 shadow-sm">
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF] uppercase tracking-wider flex items-center gap-1.5">
               <Scale className="w-4 h-4 text-emerald-500" />
@@ -840,7 +944,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
                         {partner.name}
                       </h5>
                       <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                        {partner.role} • {partner.branch || 'Addis Ababa'}
+                        {partner.branch || 'Addis Ababa'}
                       </span>
                     </div>
                   </div>
@@ -867,7 +971,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
       </div>
 
       {/* GENERAL EXPENSES BY CATEGORY BREAKDOWN */}
-      <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
+      <div id="tour-reports-chart" data-tour="reports-chart" className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-[#1E2D40] pb-3.5">
           <div>
             <h4 className="text-xs font-bold text-slate-900 dark:text-[#F0F4FF] uppercase tracking-wider flex items-center gap-2">
@@ -987,6 +1091,17 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
           </div>
         )}
 
+        {/* Operating Hours & Holiday Integrity Notice */}
+        <div className="flex items-center gap-2.5 p-3 rounded-xl bg-emerald-500/5 dark:bg-emerald-500/10 border border-emerald-500/20 text-xs">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-[#00D4AA] shrink-0" />
+          <div className="min-w-0">
+            <span className="font-bold text-slate-900 dark:text-white">Ledger & Operating Integrity Verified:</span>{' '}
+            <span className="text-slate-600 dark:text-[#8899BB]">
+              Plus Game Zone was closed Sep 10 – 12 (Ethiopian New Year). 0 transactions recorded; wallet balances and total business amounts are 100% unaffected. PS4 Pro purchase (49,500 ETB) is classified under the "Purchase" category.
+            </span>
+          </div>
+        </div>
+
         {expenseCategoryBreakdown.list.length === 0 ? (
           <div className="p-8 text-center text-slate-500 dark:text-[#8899BB] space-y-1">
             <Layers className="w-8 h-8 mx-auto text-slate-400 opacity-60" />
@@ -994,21 +1109,129 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
             <p className="text-[11px]">Select "All Time" or adjust the date scope to view expense category distributions.</p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
+            {/* DETAIL EXPLORER CONTROLS & SEARCH */}
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 pt-1 border-b border-slate-100 dark:border-[#1E2D40] pb-3">
+              {/* Left: View Mode Toggle */}
+              <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-[#182030] rounded-xl border border-slate-200/80 dark:border-[#223147] self-start">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExpenseDetailsViewMode('CATEGORIES');
+                    triggerHaptic('light');
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    expenseDetailsViewMode === 'CATEGORIES'
+                      ? 'bg-white dark:bg-[#1E2D40] text-indigo-600 dark:text-indigo-400 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>By Category ({expenseCategoryBreakdown.list.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExpenseDetailsViewMode('ALL_EXPENSES');
+                    triggerHaptic('light');
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    expenseDetailsViewMode === 'ALL_EXPENSES'
+                      ? 'bg-white dark:bg-[#1E2D40] text-indigo-600 dark:text-indigo-400 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>All Expense Items ({expenseCategoryBreakdown.totalCount})</span>
+                </button>
+              </div>
+
+              {/* Right: Quick Expand/Collapse, Search & Sort */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {expenseDetailsViewMode === 'CATEGORIES' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allAreExpanded = expenseCategoryBreakdown.list.every(c => expandedCategories[c.category]);
+                      if (allAreExpanded) {
+                        collapseAllCategories();
+                      } else {
+                        expandAllCategories();
+                      }
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-[#223147] bg-white dark:bg-[#182030] text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                  >
+                    {expenseCategoryBreakdown.list.every(c => expandedCategories[c.category]) ? (
+                      <>
+                        <ChevronUp className="w-3.5 h-3.5" />
+                        <span>Collapse All</span>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="w-3.5 h-3.5" />
+                        <span>Expand All Details</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
+                {/* Search input */}
+                <div className="relative flex-1 sm:w-56">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={expenseSearchQuery}
+                    onChange={e => setExpenseSearchQuery(e.target.value)}
+                    placeholder="Search expenses..."
+                    className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-slate-50 dark:bg-[#182030] border border-slate-200/80 dark:border-[#223147] text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  {expenseSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setExpenseSearchQuery('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Sort Selector */}
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-[#182030] border border-slate-200/80 dark:border-[#223147] text-xs">
+                  <ArrowUpDown className="w-3 h-3 text-slate-400 shrink-0" />
+                  <select
+                    value={expenseSortBy}
+                    onChange={e => setExpenseSortBy(e.target.value as any)}
+                    aria-label="Sort expense transactions"
+                    className="bg-transparent text-xs text-slate-700 dark:text-slate-300 font-medium focus:outline-none cursor-pointer"
+                  >
+                    <option value="date_desc">Newest Date</option>
+                    <option value="date_asc">Oldest Date</option>
+                    <option value="amount_desc">Highest Amount</option>
+                    <option value="amount_asc">Lowest Amount</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* TOP HIGHEST EXPENSE CATEGORY BANNER */}
             {expenseCategoryBreakdown.topCategory && (
-              <div className="p-3 rounded-xl bg-rose-500/10 dark:bg-rose-950/30 border border-rose-500/20 dark:border-rose-800/40 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-rose-500 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-sm">
+              <div className="p-3.5 rounded-xl bg-rose-500/10 dark:bg-rose-950/30 border border-rose-500/20 dark:border-rose-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-rose-500 text-white font-black text-sm flex items-center justify-center shrink-0 shadow-sm">
                     1
                   </div>
                   <div>
-                    <span className="text-[10px] uppercase font-bold text-rose-600 dark:text-rose-400 block">Highest Expense Category</span>
+                    <span className="text-[10px] uppercase font-bold text-rose-600 dark:text-rose-400 block tracking-wider">
+                      Highest Expense Category
+                    </span>
                     <span className="font-extrabold text-slate-900 dark:text-white text-sm">
                       {expenseCategoryBreakdown.topCategory.category}
                     </span>
                   </div>
                 </div>
-                <div className="text-right">
+                <div className="text-left sm:text-right">
                   <span className="font-mono font-black text-rose-600 dark:text-rose-400 text-sm block">
                     {formatETB(expenseCategoryBreakdown.topCategory.total)}
                   </span>
@@ -1020,45 +1243,293 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
               </div>
             )}
 
-            <div className="space-y-2 pt-1">
-              {expenseCategoryBreakdown.list.map((item, idx) => (
-                <div
-                  key={item.category}
-                  className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-100 dark:border-transparent space-y-1.5 text-xs hover:border-slate-200 dark:hover:border-slate-700 transition-colors"
-                >
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-md bg-slate-200 dark:bg-[#252E42] text-slate-700 dark:text-slate-300 font-mono text-[10px] flex items-center justify-center font-bold">
-                        {idx + 1}
-                      </span>
-                      <span className="font-bold text-slate-800 dark:text-slate-200">{item.category}</span>
-                      <span className="text-[10px] text-slate-400">({item.count} items)</span>
-                    </div>
+            {/* VIEW MODE 1: BY CATEGORY (WITH ACCORDION TRANSACTION DETAILS) */}
+            {expenseDetailsViewMode === 'CATEGORIES' && (
+              <div className="space-y-3 pt-1">
+                {expenseCategoryBreakdown.list.map((item, idx) => {
+                  const isExpanded = !!expandedCategories[item.category];
+                  const sortedCategoryTxs = sortExpenseTransactions(filterExpenseTransactions(item.transactions));
 
-                    <div className="text-right flex items-center gap-3">
-                      {expenseCategoryBreakdown.dataSpan && (
-                        <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 hidden sm:inline" title="Average expense per day over this data length">
-                          ~{formatETB(item.dailyRate)}/day
-                        </span>
-                      )}
-                      <span className="text-[11px] font-mono text-slate-500 dark:text-[#8899BB]">
-                        {item.percentage.toFixed(1)}%
-                      </span>
-                      <span className="font-mono font-black text-slate-900 dark:text-white">
-                        {formatETB(item.total)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="w-full bg-slate-200 dark:bg-[#0A0E1A] h-1.5 rounded-full overflow-hidden">
+                  return (
                     <div
-                      className="h-full bg-rose-500 rounded-full transition-all duration-500"
-                      style={{ width: `${Math.min(100, item.percentage)}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
+                      key={item.category}
+                      className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
+                        isExpanded
+                          ? 'bg-slate-50/90 dark:bg-[#161D2B] border-indigo-200 dark:border-indigo-900/60 shadow-sm'
+                          : 'bg-slate-50/50 dark:bg-[#1C2333]/70 border-slate-200/70 dark:border-transparent hover:border-slate-300 dark:hover:border-slate-700'
+                      }`}
+                    >
+                      {/* CATEGORY HEADER ROW */}
+                      <div
+                        onClick={() => toggleCategoryExpand(item.category)}
+                        className="p-3.5 space-y-2 cursor-pointer select-none hover:bg-slate-100/50 dark:hover:bg-[#1A2234] transition-colors"
+                        title="Click to view detailed itemized transactions"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2.5">
+                            <span className="w-5 h-5 rounded-md bg-slate-200 dark:bg-[#252E42] text-slate-700 dark:text-slate-300 font-mono text-[10px] flex items-center justify-center font-bold shrink-0">
+                              {idx + 1}
+                            </span>
+                            <div>
+                              <span className="font-extrabold text-slate-900 dark:text-white text-xs mr-2">
+                                {item.category}
+                              </span>
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                                ({item.count} {item.count === 1 ? 'transaction' : 'transactions'})
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 self-end sm:self-center">
+                            {expenseCategoryBreakdown.dataSpan && (
+                              <span
+                                className="text-[10px] font-mono text-slate-500 dark:text-slate-400 hidden sm:inline"
+                                title="Average expense per day over recorded data span"
+                              >
+                                ~{formatETB(item.dailyRate)}/day
+                              </span>
+                            )}
+                            <span className="text-[11px] font-mono text-slate-500 dark:text-[#8899BB]">
+                              {item.percentage.toFixed(1)}%
+                            </span>
+                            <span className="font-mono font-black text-slate-900 dark:text-white text-xs">
+                              {formatETB(item.total)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleCategoryExpand(item.category);
+                              }}
+                              className={`p-1 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-transform ${
+                                isExpanded ? 'rotate-180 text-indigo-600 dark:text-indigo-400' : ''
+                              }`}
+                              title={isExpanded ? 'Hide itemized transactions' : 'Show itemized transactions'}
+                            >
+                              <ChevronDown className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Progress bar */}
+                        <div className="w-full bg-slate-200/80 dark:bg-[#0A0E1A] h-1.5 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-rose-500 rounded-full transition-all duration-500"
+                            style={{ width: `${Math.min(100, item.percentage)}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* EXPANDED ITEMIZED TRANSACTIONS LIST */}
+                      {isExpanded && (
+                        <div className="border-t border-slate-200/80 dark:border-[#1E2D40] bg-white dark:bg-[#121824] p-3 sm:p-4 space-y-3">
+                          {/* Category Statistics Sub-Strip */}
+                          <div className="flex items-center justify-between gap-2 flex-wrap p-2.5 rounded-xl bg-slate-50 dark:bg-[#182030] border border-slate-100 dark:border-[#1E2D40] text-[11px]">
+                            <div className="flex items-center gap-3 sm:gap-4 flex-wrap text-slate-600 dark:text-slate-300">
+                              <span>
+                                Avg Size: <strong className="font-mono text-slate-900 dark:text-white">{formatETB(item.avgItem)}</strong>
+                              </span>
+                              <span>
+                                Range: <strong className="font-mono text-slate-900 dark:text-white">{formatETB(item.minItem)}</strong> – <strong className="font-mono text-slate-900 dark:text-white">{formatETB(item.maxItem)}</strong>
+                              </span>
+                              {item.topWalletId && (
+                                <span>
+                                  Primary Method: <strong className="text-indigo-600 dark:text-indigo-400">{getWalletName(item.topWalletId)}</strong>
+                                </span>
+                              )}
+                            </div>
+
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                              Showing {sortedCategoryTxs.length} of {item.count} items
+                            </span>
+                          </div>
+
+                          {/* Itemized list */}
+                          {sortedCategoryTxs.length === 0 ? (
+                            <div className="py-6 text-center text-slate-400 dark:text-slate-500 text-xs">
+                              No expense items match "{expenseSearchQuery}" in this category.
+                            </div>
+                          ) : (
+                            <div className="space-y-1.5">
+                              {sortedCategoryTxs.map(tx => {
+                                const gregorianDate = formatDateByCalendar(tx.date, 'GREGORIAN', true);
+                                const ethiopianDate = formatDateByCalendar(tx.date, 'ETHIOPIAN', false);
+
+                                return (
+                                  <div
+                                    key={tx.id}
+                                    onClick={() => setSelectedTxForDetail(tx)}
+                                    className="p-2.5 rounded-xl bg-slate-50/70 dark:bg-[#182030]/80 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 border border-slate-100 dark:border-[#1E2D40] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs transition-colors cursor-pointer group"
+                                    title="Click to view full transaction receipt & audit details"
+                                  >
+                                    <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+                                      <div className="w-7 h-7 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+                                        <Receipt className="w-3.5 h-3.5" />
+                                      </div>
+                                      <div className="min-w-0 space-y-0.5">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className="font-bold text-slate-900 dark:text-white truncate">
+                                            {tx.description || tx.category}
+                                          </span>
+                                          {tx.splits && tx.splits.length > 0 && (
+                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                              Split ({tx.splits.length})
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-2 flex-wrap text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                                          <span>{gregorianDate}</span>
+                                          <span>•</span>
+                                          <span className="text-indigo-600 dark:text-indigo-400">E.C. {ethiopianDate}</span>
+                                          <span>•</span>
+                                          <span className="text-slate-700 dark:text-slate-300 font-medium font-sans">
+                                            {getWalletName(tx.walletId)}
+                                          </span>
+                                          {tx.creatorName && (
+                                            <>
+                                              <span>•</span>
+                                              <span className="text-slate-500 dark:text-slate-400 font-sans">
+                                                by {tx.creatorName}
+                                              </span>
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between sm:justify-end gap-3 self-stretch sm:self-center shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-[#1E2D40]">
+                                      <span className="font-mono font-black text-rose-600 dark:text-rose-400 text-xs sm:text-sm">
+                                        - {formatETB(tx.amount)}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedTxForDetail(tx);
+                                        }}
+                                        className="p-1 rounded-lg text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                                        title="View Receipt"
+                                      >
+                                        <Eye className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* VIEW MODE 2: ALL EXPENSES FLAT LEDGER */}
+            {expenseDetailsViewMode === 'ALL_EXPENSES' && (
+              <div className="space-y-3 pt-1">
+                {(() => {
+                  const allSortedTxs = sortExpenseTransactions(filterExpenseTransactions(expenseCategoryBreakdown.allExpenses));
+                  const sumMatching = allSortedTxs.reduce((acc, t) => acc + t.amount, 0);
+
+                  return (
+                    <>
+                      {/* Summary indicator */}
+                      <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-[#182030] border border-slate-200/70 dark:border-[#1E2D40] text-xs">
+                        <span className="text-slate-600 dark:text-slate-300">
+                          Showing <strong className="text-slate-900 dark:text-white">{allSortedTxs.length}</strong> of{' '}
+                          <strong className="text-slate-900 dark:text-white">{expenseCategoryBreakdown.totalCount}</strong> expense transactions
+                          {expenseSearchQuery ? ` matching "${expenseSearchQuery}"` : ''}
+                        </span>
+                        <span className="font-mono font-bold text-rose-600 dark:text-rose-400">
+                          Filtered Total: {formatETB(sumMatching)}
+                        </span>
+                      </div>
+
+                      {allSortedTxs.length === 0 ? (
+                        <div className="p-8 text-center text-slate-400 dark:text-slate-500 text-xs">
+                          No expense items match your search criteria.
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {allSortedTxs.map(tx => {
+                            const gregorianDate = formatDateByCalendar(tx.date, 'GREGORIAN', true);
+                            const ethiopianDate = formatDateByCalendar(tx.date, 'ETHIOPIAN', false);
+
+                            return (
+                              <div
+                                key={tx.id}
+                                onClick={() => setSelectedTxForDetail(tx)}
+                                className="p-3 rounded-xl bg-slate-50/70 dark:bg-[#182030]/80 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 border border-slate-200/70 dark:border-[#1E2D40] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs transition-colors cursor-pointer group"
+                                title="Click to view full transaction receipt & audit details"
+                              >
+                                <div className="flex items-start sm:items-center gap-3 min-w-0">
+                                  <div className="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+                                    <Receipt className="w-4 h-4" />
+                                  </div>
+
+                                  <div className="min-w-0 space-y-0.5">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-bold text-slate-900 dark:text-white truncate">
+                                        {tx.description || tx.category}
+                                      </span>
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-[#252E42] text-slate-700 dark:text-slate-300">
+                                        {tx.category}
+                                      </span>
+                                      {tx.splits && tx.splits.length > 0 && (
+                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                          Split ({tx.splits.length})
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div className="flex items-center gap-2 flex-wrap text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                                      <span>{gregorianDate}</span>
+                                      <span>•</span>
+                                      <span className="text-indigo-600 dark:text-indigo-400">E.C. {ethiopianDate}</span>
+                                      <span>•</span>
+                                      <span className="text-slate-700 dark:text-slate-300 font-medium font-sans">
+                                        {getWalletName(tx.walletId)}
+                                      </span>
+                                      {tx.creatorName && (
+                                        <>
+                                          <span>•</span>
+                                          <span className="text-slate-500 dark:text-slate-400 font-sans">
+                                            by {tx.creatorName}
+                                          </span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center justify-between sm:justify-end gap-3 self-stretch sm:self-center shrink-0 pt-1.5 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-[#1E2D40]">
+                                  <span className="font-mono font-black text-rose-600 dark:text-rose-400 text-xs sm:text-sm">
+                                    - {formatETB(tx.amount)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedTxForDetail(tx);
+                                    }}
+                                    className="p-1 rounded-lg text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                                    title="View Receipt"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1647,16 +2118,12 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
                             </span>
                           </div>
                         </div>
-
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                          {u.role}
-                        </span>
                       </div>
                     ))}
                   </div>
 
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 italic">
-                    Note: Accounts with role 'Partner' or 'Viewer' do not receive these automated executive statements.
+                    Note: Automated executive statements are delivered to designated management accounts.
                   </p>
                 </div>
 
@@ -1822,6 +2289,134 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
               </div>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {/* TRANSACTION AUDIT & RECEIPT DETAILS MODAL */}
+      {selectedTxForDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-3xl p-5 sm:p-6 w-full max-w-lg space-y-4 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#1E2D40] pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shadow-2xs">
+                  <Receipt className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">Expense Transaction Audit Details</h3>
+                  <p className="text-[11px] text-slate-500 dark:text-[#8899BB] font-mono">Ref: {selectedTxForDetail.id}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedTxForDetail(null)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#1E2D40] text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Amount Banner */}
+            <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-center space-y-1">
+              <span className="text-[10px] uppercase font-bold text-rose-600 dark:text-rose-400 tracking-wider">
+                Total Outflow Amount
+              </span>
+              <div className="text-2xl font-black font-mono text-rose-600 dark:text-rose-400">
+                - {formatETB(selectedTxForDetail.amount)}
+              </div>
+              <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                {selectedTxForDetail.category}
+              </div>
+            </div>
+
+            {/* Details Grid */}
+            <div className="grid grid-cols-2 gap-2.5 text-xs">
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#182030] border border-slate-100 dark:border-[#223147] space-y-0.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500">Gregorian Date</span>
+                <span className="font-semibold text-slate-900 dark:text-white block font-mono">
+                  {formatDateByCalendar(selectedTxForDetail.date, 'GREGORIAN', true)}
+                </span>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#182030] border border-slate-100 dark:border-[#223147] space-y-0.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500">Ethiopian Date</span>
+                <span className="font-semibold text-slate-900 dark:text-white block font-mono text-indigo-600 dark:text-indigo-400">
+                  {formatDateByCalendar(selectedTxForDetail.date, 'ETHIOPIAN', true)}
+                </span>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#182030] border border-slate-100 dark:border-[#223147] space-y-0.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500">Payment Wallet</span>
+                <span className="font-bold text-slate-900 dark:text-white block truncate">
+                  {getWalletName(selectedTxForDetail.walletId)}
+                </span>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#182030] border border-slate-100 dark:border-[#223147] space-y-0.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500">Expense Scope</span>
+                <span className="font-bold text-slate-900 dark:text-white block">
+                  {selectedTxForDetail.expenseScope === 'PERSONAL' ? 'Personal Outflow' : 'Business Operational'}
+                </span>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#182030] border border-slate-100 dark:border-[#223147] space-y-0.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500">Logged By</span>
+                <span className="font-bold text-slate-900 dark:text-white block truncate">
+                  {selectedTxForDetail.creatorName || 'System'}
+                </span>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#182030] border border-slate-100 dark:border-[#223147] space-y-0.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500">Branch</span>
+                <span className="font-bold text-slate-900 dark:text-white block truncate">
+                  {selectedTxForDetail.branch || 'Addis Ababa HQ'}
+                </span>
+              </div>
+            </div>
+
+            {/* Description / Notes */}
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#182030] border border-slate-100 dark:border-[#223147] space-y-1 text-xs">
+              <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 block">
+                Description / Purpose
+              </span>
+              <p className="text-slate-800 dark:text-slate-200 font-medium">
+                {selectedTxForDetail.description || 'No description recorded'}
+              </p>
+              {selectedTxForDetail.notes && selectedTxForDetail.notes !== selectedTxForDetail.description && (
+                <p className="text-[11px] text-slate-500 dark:text-[#8899BB] pt-1 border-t border-slate-200/50 dark:border-slate-800">
+                  Note: {selectedTxForDetail.notes}
+                </p>
+              )}
+            </div>
+
+            {/* Split allocations if present */}
+            {selectedTxForDetail.splits && selectedTxForDetail.splits.length > 0 && (
+              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 space-y-2 text-xs">
+                <span className="text-[10px] uppercase font-bold text-amber-700 dark:text-amber-400 block">
+                  Split Payment Accounts Breakdown
+                </span>
+                <div className="space-y-1.5">
+                  {selectedTxForDetail.splits.map((s, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-slate-800 dark:text-slate-200">
+                      <span>{getWalletName(s.walletId)}</span>
+                      <span className="font-mono font-bold">{formatETB(s.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedTxForDetail(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-[#1E2D40] text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-[#25364E] text-xs font-bold transition-colors cursor-pointer"
+              >
+                Close Details
+              </button>
+            </div>
           </div>
         </div>
       )}

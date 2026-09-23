@@ -235,6 +235,8 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
         {onCreate && (
           <button
             type="button"
+            id="tour-receivables-add"
+            data-tour="receivables-add"
             onClick={() => {
               triggerHaptic('medium');
               setShowCreateModal(true);
@@ -335,7 +337,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
       </div>
 
       {/* Receivables List */}
-      <div className="space-y-3">
+      <div id="tour-receivables-list" data-tour="receivables-list" className="space-y-3">
         {sortedReceivables.length === 0 ? (
           <div className="text-center py-8 bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-2xl">
             <Clock className="w-8 h-8 text-slate-400 mx-auto mb-2 opacity-50" />
@@ -752,7 +754,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold flex items-center gap-1.5">
                   <DollarSign className="w-4 h-4 text-emerald-500" />
-                  <span>Collect Receivable (Daily Income / Collected)</span>
+                  <span>Collect Receivable</span>
                 </h3>
                 <button
                   type="button"
@@ -764,7 +766,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
               </div>
 
               <p className="text-xs text-slate-500 dark:text-[#8899BB]">
-                Collecting payment for <span className="text-slate-900 dark:text-white font-bold">{activeCollectModal.customerName}</span> — recorded in ledger as <span className="text-purple-600 dark:text-purple-400 font-bold">Daily Income / Collected</span>
+                Collecting payment for <span className="text-slate-900 dark:text-white font-bold">{activeCollectModal.customerName}</span> — recorded in ledger as <span className="text-purple-600 dark:text-purple-400 font-bold">Collected from {activeCollectModal.customerName}</span>
               </p>
 
               <div>

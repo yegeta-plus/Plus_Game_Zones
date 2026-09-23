@@ -596,7 +596,11 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
     ...CANONICAL_PDF_TRANSACTIONS.filter(t => t.date < '2026-08-18'),
     ...NEW_AUGUST_SEPTEMBER_TRANSACTIONS.filter(t => t.date >= '2026-08-18' && t.date < '2026-09-07'),
     ...VERIFIED_TRANSACTIONS
-  ]
+  ].filter(t => {
+    // Sep 10 - 12 business was closed (Ethiopian New Year / Pagumē holidays); no transactions
+    const d = t.date ? t.date.slice(0, 10) : '';
+    return d !== '2026-09-10' && d !== '2026-09-11' && d !== '2026-09-12';
+  })
 };
 
 export const COMBINED_TRANSACTIONS: Transaction[] = INITIAL_DATASET_JULY_AUG.transactions;

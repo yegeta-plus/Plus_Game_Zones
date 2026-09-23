@@ -38,13 +38,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             System Settings Access Restricted
           </h2>
           <p className="text-xs text-slate-500 dark:text-[#8899BB] leading-relaxed">
-            Only <strong className="text-purple-600 dark:text-purple-400">SuperAdmin</strong> accounts have privilege to view or adjust System Settings, partner roles, category configs, and data backups.
+            Only authorized administrator accounts have privilege to view or adjust System Settings, account access, category configs, and data backups.
           </p>
         </div>
 
         <div className="p-3 bg-slate-50 dark:bg-[#0A0E1A] border border-slate-200 dark:border-[#1E2D40] rounded-xl text-xs text-slate-600 dark:text-slate-300 max-w-sm mx-auto space-y-1">
           <p className="font-semibold text-slate-900 dark:text-white">Your Current Account:</p>
-          <p className="text-[#00D4AA] font-mono font-bold">{state.currentUser.name} ({state.currentUser.role})</p>
+          <p className="text-[#00D4AA] font-mono font-bold">{state.currentUser.name}</p>
           <p className="text-[10px] text-slate-400">Branch: {state.currentUser.branch}</p>
         </div>
       </div>

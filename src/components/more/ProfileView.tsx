@@ -146,12 +146,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             </div>
 
             <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-xl font-black">{name || 'User Profile'}</h2>
-                <span className="text-[10px] uppercase font-mono font-extrabold bg-white/20 backdrop-blur-md px-2.5 py-0.5 rounded-full border border-white/30">
-                  {currentUser.role}
-                </span>
-              </div>
+              <h2 className="text-xl font-black">{name || 'User Profile'}</h2>
               <p className="text-xs text-white/80 mt-1 flex items-center gap-1.5">
                 <Mail className="w-3.5 h-3.5" />
                 <span>{email || 'No email provided'}</span>

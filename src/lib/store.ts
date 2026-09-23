@@ -279,6 +279,7 @@ const DEFAULT_CATEGORIES: Category[] = [
   { id: 'cat-2', name: 'Daily Income / Collected', type: 'INCOME', icon: 'CheckCircle', color: '#8B5CF6', active: true },
   { id: 'cat-cap', name: 'Capital Injection', type: 'INCOME', icon: 'PlusCircle', color: '#3B82F6', active: true },
   { id: 'cat-lr', name: 'Loans Received', type: 'INCOME', icon: 'ArrowDownLeft', color: '#8B5CF6', active: true },
+  { id: 'cat-purchase', name: 'Purchase', type: 'EXPENSE', icon: 'ShoppingBag', color: '#0EA5E9', active: true },
   { id: 'cat-3', name: 'Equipment / Asset Purchase', type: 'EXPENSE', icon: 'HardDrive', color: '#64748B', active: true },
   { id: 'cat-4', name: 'Tax & License', type: 'EXPENSE', icon: 'FileText', color: '#EF4444', active: true },
   { id: 'cat-5', name: 'Electricity & Utilities', type: 'EXPENSE', icon: 'Zap', color: '#FB923C', active: true },
@@ -530,8 +531,26 @@ export function loadInitialState(): ERPState {
           }
         }
         // Strictly load verified transactions, transfers, receivables, and opening balances requested by user
-        parsed.transactions = COMBINED_TRANSACTIONS;
-        parsed.transfers = VERIFIED_TRANSFERS;
+        // Ensure PS4 Pro purchase is in Purchase category and Sep 10 - 12 (closed days) are excluded
+        parsed.transactions = (COMBINED_TRANSACTIONS || []).map((t: Transaction) => {
+          let category = t.category;
+          if (t.id === 'tx-20260707-08' || (t.description && /ps.*pro.*purchase/i.test(t.description))) {
+            category = 'Purchase';
+          }
+          return {
+            ...t,
+            category,
+            expenseScope: t.type === 'EXPENSE' ? (t.expenseScope || 'BUSINESS') : undefined
+          };
+        }).filter((t: Transaction) => {
+          const d = t.date ? t.date.slice(0, 10) : '';
+          return d !== '2026-09-10' && d !== '2026-09-11' && d !== '2026-09-12';
+        });
+
+        parsed.transfers = (VERIFIED_TRANSFERS || []).filter((tr: Transfer) => {
+          const d = tr.date ? tr.date.slice(0, 10) : '';
+          return d !== '2026-09-10' && d !== '2026-09-11' && d !== '2026-09-12';
+        });
         parsed.receivables = VERIFIED_RECEIVABLES;
         if (Array.isArray(parsed.wallets)) {
           parsed.wallets = parsed.wallets.map((w: Wallet) => {
@@ -542,11 +561,6 @@ export function loadInitialState(): ERPState {
             return w;
           });
         }
-        // Preserve existing classified transaction scopes without re-applying the automated keyword rule
-        parsed.transactions = (parsed.transactions || []).map((t: Transaction) => ({
-          ...t,
-          expenseScope: t.type === 'EXPENSE' ? (t.expenseScope || 'BUSINESS') : undefined
-        }));
 
         // Deduplicate any accidental duplicate receivable collection transactions created within seconds of each other
         const seenRcvKeys = new Set<string>();
@@ -644,6 +658,9 @@ export function loadInitialState(): ERPState {
         parsed.categories = Array.isArray(parsed.categories) && parsed.categories.length > 0 ? parsed.categories : DEFAULT_CATEGORIES;
         if (!parsed.categories.some((c: Category) => c.name === 'Community & Security')) {
           parsed.categories.push({ id: 'cat-sec', name: 'Community & Security', type: 'EXPENSE', icon: 'Shield', color: '#3B82F6', active: true });
+        }
+        if (!parsed.categories.some((c: Category) => c.name === 'Purchase')) {
+          parsed.categories.push({ id: 'cat-purchase', name: 'Purchase', type: 'EXPENSE', icon: 'ShoppingBag', color: '#0EA5E9', active: true });
         }
         
         // Ensure default recurring schedules exist if empty or missing, filtering out removed rent
@@ -782,9 +799,20 @@ export function calculateWalletBalance(wallet: Wallet, transactions: Transaction
 
   // Active ledger period begins on 2026-09-07 where the user defined verified opening balances.
   // Prior period transactions (July 1 - Sep 6) are preserved for historical audit & reporting.
+  // Sep 10 - 12 the business was closed for Ethiopian New Year (0 transactions; strictly no effect on wallet balances).
   const activePeriodStart = '2026-09-07T00:00:00.000Z';
-  const activeTransactions = transactions.filter(tx => tx.date >= activePeriodStart);
-  const activeTransfers = transfers.filter(tr => tr.date >= activePeriodStart);
+  const activeTransactions = transactions.filter(tx => {
+    if (tx.date < activePeriodStart) return false;
+    const d = tx.date ? tx.date.slice(0, 10) : '';
+    if (d === '2026-09-10' || d === '2026-09-11' || d === '2026-09-12') return false;
+    return true;
+  });
+  const activeTransfers = transfers.filter(tr => {
+    if (tr.date < activePeriodStart) return false;
+    const d = tr.date ? tr.date.slice(0, 10) : '';
+    if (d === '2026-09-10' || d === '2026-09-11' || d === '2026-09-12') return false;
+    return true;
+  });
 
   for (const tx of activeTransactions) {
     if (tx.reversed) continue;
@@ -1257,6 +1285,7 @@ export function isCreditSaleCollected(tx: { category?: string; description?: str
     desc.includes('daily income / collected') ||
     desc.includes('daily income/collected') ||
     desc.includes('daily income/ collected') ||
+    desc.includes('collected from') ||
     desc.includes('collected customer debt') ||
     desc.includes('repayment on receivable') ||
     desc.includes('repayment from') ||
@@ -1276,6 +1305,80 @@ export function isCreditSaleCollected(tx: { category?: string; description?: str
   }
 
   return false;
+}
+
+/**
+ * Resolves the display title for collected receivables to "Collected from <CustomerName>".
+ */
+export function getReceivableCollectedTitle(
+  tx: { description?: string; category?: string; refType?: string; refId?: string } | null | undefined,
+  receivables?: Receivable[]
+): string {
+  if (!tx) return '';
+  const desc = (tx.description || '').trim();
+
+  // If already matches "Collected from <Name>", ensure proper capitalization and return
+  if (/^Collected from\s+/i.test(desc)) {
+    return 'Collected from ' + desc.replace(/^Collected from\s+/i, '').trim();
+  }
+
+  // If refId is provided, look up the receivable customer name
+  if (tx.refId && receivables && receivables.length > 0) {
+    const matched = receivables.find(r => r.id === tx.refId);
+    if (matched && matched.customerName) {
+      return `Collected from ${matched.customerName}`;
+    }
+  }
+
+  // Check if description contains customer name in square brackets: "Repayment on receivable [Customer]"
+  const bracketMatch = desc.match(/\[([^\]]+)\]/);
+  if (bracketMatch && bracketMatch[1]) {
+    return `Collected from ${bracketMatch[1].trim()}`;
+  }
+
+  // Check "Daily Income / Collected: <Name>"
+  const dailyIncomePrefixMatch = desc.match(/^Daily Income\s*\/\s*Collected:\s*([^(]+)/i);
+  if (dailyIncomePrefixMatch && dailyIncomePrefixMatch[1]) {
+    const rawName = dailyIncomePrefixMatch[1].trim();
+    if (rawName && !/^Repayment/i.test(rawName)) {
+      return `Collected from ${rawName}`;
+    }
+  }
+
+  // Check "Repayment from <Name>"
+  const repaymentFromMatch = desc.match(/^Repayment from\s+([^(]+)/i);
+  if (repaymentFromMatch && repaymentFromMatch[1]) {
+    return `Collected from ${repaymentFromMatch[1].trim()}`;
+  }
+
+  // Check if refType is RECEIVABLE or category is Daily Income / Collected / Receivable Collected
+  if (tx.refType === 'RECEIVABLE' || isCreditSaleCollected(tx)) {
+    if (tx.refId?.toLowerCase().includes('solomon') || /solomon/i.test(desc)) return 'Collected from Solomon';
+    if (tx.refId?.toLowerCase().includes('fike') || /fike/i.test(desc)) return 'Collected from Fike';
+    if (tx.refId?.toLowerCase().includes('weframu') || /weframu/i.test(desc)) return 'Collected from Weframu lij';
+    if (tx.refId?.toLowerCase().includes('fikadu') || /fikadu/i.test(desc)) return 'Collected from Fikadu';
+
+    if (/repayment on receivable/i.test(desc) || /^Daily Income\s*\/\s*Collected$/i.test(desc)) {
+      return 'Collected from Customer';
+    }
+  }
+
+  return desc;
+}
+
+/**
+ * Returns the primary display title of a transaction in list views and cards.
+ * If the transaction represents a collected receivable, formats as "Collected from <CustomerName>".
+ */
+export function getTransactionDisplayTitle(
+  tx: { description?: string; category?: string; refType?: string; refId?: string } | null | undefined,
+  receivables?: Receivable[]
+): string {
+  if (!tx) return '';
+  if (tx.refType === 'RECEIVABLE' || isCreditSaleCollected(tx)) {
+    return getReceivableCollectedTitle(tx, receivables);
+  }
+  return tx.description || tx.category || 'Transaction';
 }
 
 export function formatETB(amount: number, compact = false): string {

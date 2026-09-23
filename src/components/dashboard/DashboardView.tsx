@@ -63,7 +63,8 @@ import {
   formatETB,
   getWalletNickname,
   isCreditSaleCollected,
-  consolidateEqubSplitTransactions
+  consolidateEqubSplitTransactions,
+  getTransactionDisplayTitle
 } from '../../lib/store';
 import {
   formatEthiopianDate,
@@ -76,7 +77,7 @@ import { triggerHaptic } from '../../lib/haptics';
 import { formatRelativeNotifTime } from '../../lib/notifications';
 import { BrandLogo } from '../common/BrandLogo';
 import { FutureCashflowForecast } from './FutureCashflowForecast';
-import { OnboardingTutorialCard } from '../common/OnboardingTutorialCard';
+import { ONBOARDING_STORAGE_KEY } from '../onboarding/onboardingSteps';
 
 interface DashboardViewProps {
   currentUser: UserProfile;
@@ -128,7 +129,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const incomeAverages = calculateIncomeAverages(transactions);
 
   const [reportTimeframe, setReportTimeframe] = useState<'ALL' | 'DAILY' | 'MONTHLY' | 'YEARLY'>('ALL');
-  const [showTutorial, setShowTutorial] = useState<boolean>(false);
+  const hasSeenOnboarding = useMemo(() => {
+    try {
+      const stored = localStorage.getItem(`has_seen_onboarding_${currentUser.id}`) || localStorage.getItem(ONBOARDING_STORAGE_KEY);
+      return Boolean(currentUser.has_seen_onboarding || stored === 'true');
+    } catch {
+      return Boolean(currentUser.has_seen_onboarding);
+    }
+  }, [currentUser.id, currentUser.has_seen_onboarding]);
 
   // Comprehensive Income & Expense Summary Report (Daily, Monthly, Yearly, Overview)
   const financialSummaryReport = useMemo(() => {
@@ -483,7 +491,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         list.push({
           id: `notif-tx-${tx.id}`,
           title: `New Entry Posted`,
-          message: `${tx.description} (${tx.type === 'INCOME' ? '+' : '-'}${formatETB(tx.amount)}) by ${tx.creatorName}`,
+          message: `${getTransactionDisplayTitle(tx, receivables)} (${tx.type === 'INCOME' ? '+' : '-'}${formatETB(tx.amount)}) by ${tx.creatorName}`,
           type: 'INFO',
           time: formatRelativeNotifTime(txTime),
           timestamp: txTime,
@@ -514,9 +522,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
               {greeting}, <span className="bg-gradient-to-r from-emerald-600 to-teal-500 dark:from-[#00D4AA] dark:to-teal-300 bg-clip-text text-transparent">{currentUser.name}</span>
             </h2>
-            <span className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-[#00D4AA]/15 dark:text-[#00D4AA] border border-emerald-200 dark:border-[#00D4AA]/30 px-2.5 py-0.5 rounded-full font-mono font-bold uppercase tracking-wider">
-              {currentUser.role}
-            </span>
             <span className="text-[10px] bg-indigo-50 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 px-2.5 py-0.5 rounded-full font-medium flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
               Live Ledger Synced
@@ -541,21 +546,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 pt-1 md:pt-0">
+          {/* ? Mark Shortcut for First-Time Onboarding & Guided Tour */}
           <button
             id="btn-open-tutorial-tour"
             onClick={() => {
-              triggerHaptic('light');
+              triggerHaptic('medium');
               if (onStartTour) {
                 onStartTour();
-              } else {
-                setShowTutorial(true);
               }
             }}
-            className="px-2.5 py-1.5 sm:py-2 rounded-lg sm:rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#1A2232] dark:hover:bg-[#222C40] border border-slate-200 dark:border-[#243046] text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all"
-            title="App Tutorial & Feature Tour"
+            className={`px-2.5 py-1.5 sm:py-2 rounded-lg sm:rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-xs ${
+              !hasSeenOnboarding
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-black shadow-md shadow-emerald-500/20 ring-2 ring-emerald-400/50 hover:brightness-105'
+                : 'bg-slate-100 hover:bg-slate-200 dark:bg-[#1A2232] dark:hover:bg-[#222C40] border border-slate-200 dark:border-[#243046] text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+            }`}
+            title="First-Time Onboarding: Explore all Dashboard Properties"
+            aria-label="First-time onboarding tour shortcut"
           >
-            <HelpCircle className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
-            <span className="hidden sm:inline">Tour</span>
+            <span className={`w-4 h-4 rounded-full flex items-center justify-center text-xs font-black leading-none shrink-0 ${
+              !hasSeenOnboarding ? 'bg-slate-950 text-emerald-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200'
+            }`}>
+              ?
+            </span>
+            {!hasSeenOnboarding && <span className="font-extrabold">Tour</span>}
+            {!hasSeenOnboarding && (
+              <span className="relative flex h-2 w-2 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+            )}
           </button>
 
           <button
@@ -582,19 +601,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Disposable Onboarding Tutorial Card: Shown automatically on first-time user visit, skippable at any time */}
-      <OnboardingTutorialCard
-        forceShow={showTutorial}
-        onClose={() => setShowTutorial(false)}
-        onNavigateTab={onNavigateTab}
-        onOpenQuickEntry={onOpenQuickEntry}
-      />
-
       {/* 2. Top Metric Cards Row (Hero Ledger + PROMINENT WEEKLY AVERAGE INCOME + Monthly KPIs) */}
       <div id="tour-dashboard-kpis" data-tour="dashboard-kpis" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3.5">
 
         {/* Hero Business Ledger Card */}
-        <div className="md:col-span-2 lg:col-span-2 relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#00E5B8] via-[#00B894] to-[#007A60] p-4 text-slate-950 shadow-lg border border-emerald-300 dark:border-[#00D4AA]/40 flex flex-col justify-between group">
+        <div id="tour-hero-ledger" data-tour="dashboard-hero-balance" className="md:col-span-2 lg:col-span-2 relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#00E5B8] via-[#00B894] to-[#007A60] p-4 text-slate-950 shadow-lg border border-emerald-300 dark:border-[#00D4AA]/40 flex flex-col justify-between group">
           <div className="absolute -right-12 -bottom-12 w-44 h-44 bg-white/15 rounded-full blur-2xl pointer-events-none group-hover:scale-125 transition-transform duration-700" />
 
           <div>
@@ -646,7 +657,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* Compact 4-KPI Metrics Grid */}
         <div className="md:col-span-2 lg:col-span-4 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           {/* KPI 1: Weekly Daily Avg Income */}
-          <div className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-xl p-3 flex flex-col justify-between shadow-2xs hover:border-emerald-500/50 transition-all group">
+          <div id="tour-kpi-weekly-avg" data-tour="dashboard-kpi-weekly-avg" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-xl p-3 flex flex-col justify-between shadow-2xs hover:border-emerald-500/50 transition-all group">
             <div className="flex items-center justify-between gap-1">
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-[#8899BB] truncate">
                 Weekly Daily Avg
@@ -669,7 +680,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           {/* KPI 2: Total Income */}
-          <div className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-xl p-3 flex flex-col justify-between shadow-2xs hover:border-emerald-500/50 transition-all group">
+          <div id="tour-kpi-income" data-tour="dashboard-kpi-income" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-xl p-3 flex flex-col justify-between shadow-2xs hover:border-emerald-500/50 transition-all group">
             <div className="flex items-center justify-between gap-1">
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-[#8899BB] truncate">
                 Total Income
@@ -692,7 +703,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           {/* KPI 3: Total Expense */}
-          <div className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-xl p-3 flex flex-col justify-between shadow-2xs hover:border-rose-500/50 transition-all group">
+          <div id="tour-kpi-expense" data-tour="dashboard-kpi-expense" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-xl p-3 flex flex-col justify-between shadow-2xs hover:border-rose-500/50 transition-all group">
             <div className="flex items-center justify-between gap-1">
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-[#8899BB] truncate">
                 Total Expense
@@ -715,7 +726,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           {/* KPI 4: Uncollected Debt */}
-          <div className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-xl p-3 flex flex-col justify-between shadow-2xs hover:border-indigo-500/50 transition-all group">
+          <div id="tour-kpi-receivables" data-tour="dashboard-kpi-receivables" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-xl p-3 flex flex-col justify-between shadow-2xs hover:border-indigo-500/50 transition-all group">
             <div className="flex items-center justify-between gap-1">
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-[#8899BB] truncate">
                 Uncollected Debt
@@ -744,7 +755,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* 3. Cash Available / Active Financial Accounts Section */}
-      <div id="tour-wallets-overview" data-tour="wallets-overview" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-4 shadow-xs space-y-3">
+      <div id="tour-wallets-overview" data-tour="dashboard-wallets" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-4 shadow-xs space-y-3">
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#1C2638] pb-2.5">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-[#00D4AA] flex items-center justify-center font-bold">
@@ -854,7 +865,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* 5. Quick Action Launchpad Strip */}
-      <div className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-3.5 shadow-xs">
+      <div id="tour-launchpad-shortcuts" data-tour="dashboard-launchpad" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-3.5 shadow-xs">
         <div className="flex items-center justify-between mb-2.5 px-1">
           <span className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-1.5">
             <Zap className="w-3.5 h-3.5 text-amber-500" />
@@ -952,7 +963,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="lg:col-span-2 space-y-6">
 
           {/* Recent Ledger Feed */}
-          <div className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-5 shadow-xs space-y-3">
+          <div id="tour-recent-transactions" data-tour="dashboard-recent-transactions" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-5 shadow-xs space-y-3">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#1C2638] pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-[#00D4AA] flex items-center justify-center font-bold">
@@ -1006,7 +1017,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <h5 className="text-xs font-bold text-slate-900 dark:text-white truncate group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
-                            {tx.description}
+                            {getTransactionDisplayTitle(tx, receivables)}
                           </h5>
                           {isCreditCollected && (
                             <span className="text-[9px] bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 px-1.5 py-0.2 rounded font-bold shrink-0">
@@ -1048,7 +1059,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           {/* Financial Summary Report Widget (Daily, Monthly, Yearly Income & Expenses) */}
-          <div className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
+          <div id="tour-financial-reports-widget" data-tour="dashboard-financial-reports" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
             {/* Report Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-[#1C2638]">
               <div className="flex items-center gap-2.5">
@@ -1238,12 +1249,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                               className="p-2 rounded-lg bg-white dark:bg-[#1A2232] border border-slate-100 dark:border-[#223044] flex items-center justify-between text-xs gap-2"
                             >
                               <div className="flex items-center gap-2 min-w-0">
-                                {w && (
-                                  <BrandLogo type={w.type} size="xs" customLogoUrl={w.customLogoUrl} />
-                                )}
                                 <div className="min-w-0">
                                   <p className="font-bold text-slate-900 dark:text-white truncate">
-                                    {tx.description || tx.category || 'Transaction'}
+                                    {getTransactionDisplayTitle(tx, receivables)}
                                   </p>
                                   <span className="text-[10px] text-slate-400 font-mono">
                                     {tx.category} • {w ? getWalletNickname(w.name) : 'Wallet'}
@@ -1379,7 +1387,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           {/* Active Equb Savings Pools */}
-          <div className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-5 shadow-xs space-y-4">
+          <div id="tour-active-equbs" data-tour="dashboard-equbs" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-5 shadow-xs space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#1C2638] pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
@@ -1454,7 +1462,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="space-y-6">
 
           {/* Operational Alerts Card */}
-          <div className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-5 shadow-xs space-y-3.5">
+          <div id="tour-operational-alerts" data-tour="dashboard-alerts" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-5 shadow-xs space-y-3.5">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#1C2638] pb-3">
               <div className="flex items-center gap-2">
                 <Bell className="w-4 h-4 text-amber-500 animate-pulse" />
@@ -1530,7 +1538,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           {/* Upcoming Obligations Agenda */}
-          <div className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-5 shadow-xs space-y-3.5">
+          <div id="tour-agenda-dues" data-tour="dashboard-agenda" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-5 shadow-xs space-y-3.5">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#1C2638] pb-3">
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-indigo-500" />
@@ -1599,7 +1607,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           {/* Active Loans & Repayments */}
-          <div className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-5 shadow-xs space-y-3.5">
+          <div id="tour-active-loans" data-tour="dashboard-loans" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-5 shadow-xs space-y-3.5">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#1C2638] pb-3">
               <div className="flex items-center gap-2">
                 <CreditCard className="w-4 h-4 text-orange-500" />
@@ -1634,17 +1642,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* 7. Future Predictive Cashflow Engine (Current Week Average Grounded) */}
-      <FutureCashflowForecast
-        wallets={wallets}
-        transactions={transactions}
-        transfers={transfers}
-        equbs={equbs}
-        loans={loans}
-        recurring={recurring}
-        hideBalances={hideBalances}
-        calendarType={calendarType}
-        onNavigateTab={onNavigateTab}
-      />
+      <div id="tour-cashflow-forecast" data-tour="dashboard-forecast">
+        <FutureCashflowForecast
+          wallets={wallets}
+          transactions={transactions}
+          transfers={transfers}
+          equbs={equbs}
+          loans={loans}
+          recurring={recurring}
+          hideBalances={hideBalances}
+          calendarType={calendarType}
+          onNavigateTab={onNavigateTab}
+        />
+      </div>
 
     </div>
   );

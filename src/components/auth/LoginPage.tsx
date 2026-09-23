@@ -480,7 +480,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                     <div className="text-left">
                       <h4 className="text-xs font-bold text-white">{verifiedUser.name}</h4>
                       <p className="text-[10px] text-amber-300">
-                        {verifiedUser.email} • <span className="font-bold">{verifiedUser.role}</span>
+                        {verifiedUser.email}
                       </p>
                     </div>
                   </div>
