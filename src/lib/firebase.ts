@@ -56,10 +56,16 @@ const checkIsQuotaExceededInitial = (): boolean => {
   if (typeof window === 'undefined') return false;
   try {
     const isExceeded = localStorage.getItem('pluszone_quota_exceeded') === 'true';
-    const storedDate = localStorage.getItem('pluszone_quota_exceeded_date');
     const storedTimestamp = Number(localStorage.getItem('pluszone_quota_exceeded_time') || '0');
-    const within24h = Date.now() - storedTimestamp < 24 * 60 * 60 * 1000;
-    return isExceeded && (storedDate === getTodayStr() || within24h);
+    // Short 2-minute transient backoff instead of locking out the app for 24 hours
+    const withinBackoff = Date.now() - storedTimestamp < 2 * 60 * 1000;
+    if (isExceeded && !withinBackoff) {
+      localStorage.removeItem('pluszone_quota_exceeded');
+      localStorage.removeItem('pluszone_quota_exceeded_date');
+      localStorage.removeItem('pluszone_quota_exceeded_time');
+      return false;
+    }
+    return isExceeded && withinBackoff;
   } catch (_) {
     return false;
   }
@@ -70,6 +76,22 @@ let quotaExceededLogged = isQuotaExceeded;
 let isRemoteUpdate = false;
 let syncTimeout: ReturnType<typeof setTimeout> | null = null;
 let lastSyncedFingerprint = '';
+
+export const clearQuotaExceeded = () => {
+  isQuotaExceeded = false;
+  quotaExceededLogged = false;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem('pluszone_quota_exceeded');
+      localStorage.removeItem('pluszone_quota_exceeded_date');
+      localStorage.removeItem('pluszone_quota_exceeded_time');
+      window.dispatchEvent(new CustomEvent('pluszone:firestore-quota-exceeded', { detail: { exceeded: false } }));
+    } catch (_) {}
+  }
+  try {
+    enableNetwork(db).catch(() => {});
+  } catch (_) {}
+};
 
 export const markQuotaExceeded = () => {
   isQuotaExceeded = true;
@@ -87,12 +109,10 @@ export const markQuotaExceeded = () => {
   } catch (_) {}
 };
 
-// If already exceeded from previous run, immediately disable network
-if (isQuotaExceeded) {
-  try {
-    disableNetwork(db).catch(() => {});
-  } catch (_) {}
-}
+// Always ensure Firestore network is enabled on app boot
+try {
+  enableNetwork(db).catch(() => {});
+} catch (_) {}
 
 // Intercept window console.error & unhandled rejection to gracefully absorb Firestore quota & backoff delay logs
 if (typeof window !== 'undefined') {
@@ -501,11 +521,13 @@ export function isFirestoreQuotaExceeded(): boolean {
  * This guarantees instantaneous, live sub-second delivery to all active devices.
  */
 export async function sendChatMessageToFirebase(msg: ChatMessage): Promise<void> {
-  if (isQuotaExceeded) return;
   try {
     const msgRef = doc(db, 'team_chat_messages', msg.id);
     const cleanMsg = JSON.parse(JSON.stringify(msg));
     await setDoc(msgRef, cleanMsg);
+    if (isQuotaExceeded) {
+      clearQuotaExceeded();
+    }
   } catch (err: any) {
     if (
       err?.code === 'resource-exhausted' ||
@@ -527,12 +549,14 @@ export async function updateChatMessageReactionInFirebase(
   messageId: string,
   reactions: ChatMessageReaction[]
 ): Promise<void> {
-  if (isQuotaExceeded) return;
   try {
     const msgRef = doc(db, 'team_chat_messages', messageId);
     await updateDoc(msgRef, {
       reactions: JSON.parse(JSON.stringify(reactions))
     });
+    if (isQuotaExceeded) {
+      clearQuotaExceeded();
+    }
   } catch (err: any) {
     if (
       err?.code === 'resource-exhausted' ||
@@ -547,14 +571,34 @@ export async function updateChatMessageReactionInFirebase(
 }
 
 /**
+ * Directly fetches all chat messages from Firestore on demand.
+ */
+export async function fetchRealtimeChatMessages(): Promise<ChatMessage[]> {
+  try {
+    const chatColRef = collection(db, 'team_chat_messages');
+    const q = query(chatColRef, orderBy('timestamp', 'asc'), limit(500));
+    const snapshot = await getDocs(q);
+    const msgs: ChatMessage[] = [];
+    snapshot.forEach((docSnap) => {
+      if (docSnap.exists()) {
+        msgs.push(docSnap.data() as ChatMessage);
+      }
+    });
+    if (isQuotaExceeded) clearQuotaExceeded();
+    return msgs;
+  } catch (err: any) {
+    console.warn('Direct chat fetch error:', err?.message);
+    return [];
+  }
+}
+
+/**
  * Subscribes to the live `team_chat_messages` Firestore collection using onSnapshot.
  * Triggers callback with new or updated messages instantly when anyone posts or reacts.
  */
 export function subscribeToRealtimeChatMessages(
   onUpdate: (messages: ChatMessage[]) => void
 ): () => void {
-  if (isQuotaExceeded) return () => {};
-
   let unsubscribeFn: (() => void) | null = null;
   const safeUnsubscribe = () => {
     if (unsubscribeFn) {
@@ -569,41 +613,42 @@ export function subscribeToRealtimeChatMessages(
     const chatColRef = collection(db, 'team_chat_messages');
     const q = query(chatColRef, orderBy('timestamp', 'asc'), limit(500));
 
-    unsubscribeFn = onSnapshot(
-      q,
-      (snapshot) => {
-        const liveMessages: ChatMessage[] = [];
-        snapshot.forEach((docSnap) => {
-          if (docSnap.exists()) {
-            liveMessages.push(docSnap.data() as ChatMessage);
-          }
-        });
-        if (liveMessages.length > 0) {
-          onUpdate(liveMessages);
-        }
-      },
-      (error) => {
-        const isQuota =
-          error?.code === 'resource-exhausted' ||
-          error?.message?.includes('Quota') ||
-          error?.message?.includes('quota');
-
-        if (isQuota) {
-          markQuotaExceeded();
-          safeUnsubscribe();
-        } else {
-          console.info('Firestore chat operates in offline fallback:', error?.message);
-        }
+    const handleSnapshot = (snapshot: any) => {
+      if (isQuotaExceeded) {
+        clearQuotaExceeded();
       }
-    );
-  } catch (err: any) {
-    if (
-      err?.code === 'resource-exhausted' ||
-      err?.message?.includes('Quota') ||
-      err?.message?.includes('quota')
-    ) {
-      markQuotaExceeded();
+      const liveMessages: ChatMessage[] = [];
+      snapshot.forEach((docSnap: any) => {
+        if (docSnap.exists()) {
+          liveMessages.push(docSnap.data() as ChatMessage);
+        }
+      });
+      if (liveMessages.length > 0) {
+        onUpdate(liveMessages);
+      }
+    };
+
+    const handleError = (error: any) => {
+      const isQuota =
+        error?.code === 'resource-exhausted' ||
+        error?.message?.includes('Quota') ||
+        error?.message?.includes('quota');
+
+      if (isQuota) {
+        markQuotaExceeded();
+        safeUnsubscribe();
+      } else {
+        console.info('Firestore chat operates in offline fallback:', error?.message);
+      }
+    };
+
+    try {
+      unsubscribeFn = onSnapshot(q, handleSnapshot, handleError);
+    } catch {
+      unsubscribeFn = onSnapshot(chatColRef, handleSnapshot, handleError);
     }
+  } catch (err: any) {
+    console.warn('subscribeToRealtimeChatMessages error:', err?.message);
   }
 
   return safeUnsubscribe;

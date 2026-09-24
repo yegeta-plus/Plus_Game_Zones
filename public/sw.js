@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pluszone-erp-v1';
+const CACHE_NAME = 'pluszone-erp-v4';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -104,6 +104,22 @@ self.addEventListener('fetch', (event) => {
           status: 503
         });
       })
+    );
+    return;
+  }
+
+  // Network-First for HTML navigation so all devices immediately get newest bundles
+  if (event.request.mode === 'navigate' || event.request.destination === 'document') {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const copy = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match('/index.html'))
     );
     return;
   }

@@ -21,11 +21,12 @@ import { hashPassword } from '../../lib/auth';
 import { AppLogo } from '../common/AppLogo';
 import { auth } from '../../lib/firebase';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { getRememberSessionPreference, getRememberedUsername } from '../../lib/authSession';
 
 interface LoginPageProps {
   allUsers: UserProfile[];
   currentUser: UserProfile;
-  onLogin: (selectedUser: UserProfile) => void;
+  onLogin: (selectedUser: UserProfile, rememberSession?: boolean) => void;
   onRegisterUser?: (newUser: UserProfile) => void;
   theme?: 'dark' | 'light';
   onToggleTheme?: () => void;
@@ -41,11 +42,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   // Navigation mode between standard sign in and OTP email activation
   const [authTab, setAuthTab] = useState<'SIGN_IN' | 'ACTIVATE_OTP'>('SIGN_IN');
 
-  // Sign In credentials - initialized empty for strict security (no hardcoded credentials)
-  const [username, setUsername] = useState<string>('');
+  // Sign In credentials - pre-fill remembered username/email if available
+  const [username, setUsername] = useState<string>(() => getRememberedUsername());
   const [password, setPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [rememberMe, setRememberMe] = useState<boolean>(true);
+  const [rememberMe, setRememberMe] = useState<boolean>(() => getRememberSessionPreference());
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -290,7 +291,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       }
 
       triggerHaptic('success');
-      onLogin(matchedUser);
+      onLogin(matchedUser, rememberMe);
     }, 450);
   };
 
@@ -328,7 +329,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
     setTimeout(() => {
       setIsSubmitting(false);
-      onLogin(updatedUser);
+      onLogin(updatedUser, rememberMe);
     }, 400);
   };
 
@@ -426,7 +427,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     setTimeout(() => {
       setIsActivating(false);
       triggerHaptic('heavy');
-      onLogin(activatedUser);
+      onLogin(activatedUser, rememberMe);
     }, 450);
   };
 
@@ -469,7 +470,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       setIsSubmitting(false);
       setShowGoogleModal(false);
       triggerHaptic('success');
-      onLogin(matchedUser);
+      onLogin(matchedUser, rememberMe);
     } catch (popupErr: any) {
       console.warn('Google Popup auth error or blocked in iframe:', popupErr?.message);
 
@@ -504,7 +505,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
         setShowGoogleModal(false);
         triggerHaptic('success');
-        onLogin(matchedUser);
+        onLogin(matchedUser, rememberMe);
       } else {
         setIsSubmitting(false);
         setGoogleAuthError(
@@ -681,7 +682,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                         <input
                           type="checkbox"
                           checked={rememberMe}
-                          onChange={(e) => setRememberMe(e.target.checked)}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setRememberMe(checked);
+                            try {
+                              localStorage.setItem('pluszone_remember_session_pref', String(checked));
+                            } catch {}
+                          }}
                           className="w-4 h-4 rounded border-slate-800 text-[#00D4AA] focus:ring-0 bg-[#0D121F] cursor-pointer"
                         />
                         <span className="text-slate-300 text-[11px]">Remember login session</span>

@@ -25,6 +25,7 @@ import {
   isTransactionEditable,
   formatETB,
   mergeListById,
+  mergeChatMessages,
   syncReceivablesLateStatus,
   getWalletNickname,
   consolidateEqubSplitTransactions,
@@ -41,6 +42,8 @@ import {
   syncStateToFirebase,
   syncStateToFirebaseNow,
   fetchLatestFirebaseState,
+  fetchRealtimeChatMessages,
+  clearQuotaExceeded,
   isFirestoreQuotaExceeded,
   sendChatMessageToFirebase,
   updateChatMessageReactionInFirebase,
@@ -53,14 +56,52 @@ import { triggerHaptic } from './lib/haptics';
 import { SessionLockModal } from './components/auth/SessionLockModal';
 import { AppSplashScreen } from './components/common/AppSplashScreen';
 import { sendExternalNotification, formatRelativeNotifTime, playNotificationSound } from './lib/notifications';
+import {
+  saveAuthSession,
+  getActiveAuthSession,
+  clearAuthSession,
+  updateAuthSessionUser
+} from './lib/authSession';
 
 export default function App() {
   const [showSplashScreen, setShowSplashScreen] = useState<boolean>(true);
   const [state, setState] = useState<ERPState>(() => loadInitialState());
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [moreSubView, setMoreSubView] = useState<SubViewType>('HUB');
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    return Boolean(getActiveAuthSession());
+  });
   const [isSessionLocked, setIsSessionLocked] = useState<boolean>(false);
+
+  const handleLogout = useCallback(() => {
+    clearAuthSession();
+    setIsLoggedIn(false);
+    setIsSessionLocked(false);
+  }, []);
+
+  // Validate active auth session against current state users
+  useEffect(() => {
+    if (isLoggedIn) {
+      const session = getActiveAuthSession();
+      if (!session) {
+        setIsLoggedIn(false);
+        return;
+      }
+      const matched = state.users.find(
+        (u) =>
+          u.id === session.userId ||
+          (session.email && u.email?.toLowerCase() === session.email.toLowerCase())
+      );
+      if (matched) {
+        if (matched.active === false || matched.isApproved === false) {
+          clearAuthSession();
+          setIsLoggedIn(false);
+        } else if (state.currentUser.id !== matched.id) {
+          setState((prev) => ({ ...prev, currentUser: matched }));
+        }
+      }
+    }
+  }, [isLoggedIn, state.users, state.currentUser.id]);
   const [lastSeenChatTime, setLastSeenChatTime] = useState<number>(() => {
     const saved = localStorage.getItem('pgz_last_read_chat_time');
     return saved ? parseInt(saved, 10) : Date.now();
@@ -287,7 +328,11 @@ export default function App() {
 
   // Real-time Firebase Firestore Subscription & Chat Notifications
   const prevChatCountRef = useRef<number>(0);
+  const locallySentMsgIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
+    // Ensure any stale quota lockout is cleared so multi-device sync connects immediately
+    clearQuotaExceeded();
+
     const unsubscribe = subscribeToFirebaseState((remoteState) => {
       if (remoteState && typeof remoteState === 'object') {
         setState(prev => {
@@ -308,11 +353,11 @@ export default function App() {
           const mergedCategories = mergeListById(prev.categories, remoteState.categories, combinedDeletedIds);
           const mergedAuditLogs = mergeListById(prev.auditLogs, remoteState.auditLogs, combinedDeletedIds);
           const mergedPending = mergeListById(prev.pendingReviewTransactions, remoteState.pendingReviewTransactions, combinedDeletedIds);
-          const mergedChatMessages = mergeListById(
+          const mergedChatMessages = mergeChatMessages(
             prev.chatMessages || [],
             remoteState.chatMessages || [],
             combinedDeletedIds
-          ).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+          );
           const mergedChatChannels = mergeListById(
             prev.chatChannels || [],
             remoteState.chatChannels || [],
@@ -377,10 +422,11 @@ export default function App() {
           const existingIds = new Set(currentMsgs.map((m) => m.id));
           const brandNewMsgs = liveMessages.filter((m) => !existingIds.has(m.id));
 
-          // When a new message from a colleague arrives live: chime and notify!
+          // When a new message from another device arrives live: chime and notify!
           if (brandNewMsgs.length > 0) {
-            const latestNew = brandNewMsgs[brandNewMsgs.length - 1];
-            if (latestNew.senderId !== prev.currentUser?.id) {
+            const incomingFromOtherDevice = brandNewMsgs.filter(m => !locallySentMsgIdsRef.current.has(m.id));
+            if (incomingFromOtherDevice.length > 0) {
+              const latestNew = incomingFromOtherDevice[incomingFromOtherDevice.length - 1];
               playNotificationSound('chat');
               triggerHaptic('medium');
               sendExternalNotification(`Team Chat • ${latestNew.senderName}`, {
@@ -391,8 +437,7 @@ export default function App() {
           }
 
           const combinedDeleted = Array.isArray(prev.deletedEntityIds) ? prev.deletedEntityIds : [];
-          const merged = mergeListById(currentMsgs, liveMessages, combinedDeleted)
-            .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+          const merged = mergeChatMessages(currentMsgs, liveMessages, combinedDeleted);
 
           prevChatCountRef.current = merged.length;
           const updatedState = {
@@ -446,8 +491,12 @@ export default function App() {
       return;
     }
 
-    // 1. Fetch latest remote state directly from Firebase Firestore on manual refresh
-    const remoteState = await fetchLatestFirebaseState();
+    // 1. Fetch latest remote state and real-time chat messages directly from Firebase Firestore
+    const [remoteState, remoteChatMessages] = await Promise.all([
+      fetchLatestFirebaseState(),
+      fetchRealtimeChatMessages()
+    ]);
+
     if (remoteState && typeof remoteState === 'object') {
       setState(prev => {
         const remoteDeletedIds = Array.isArray(remoteState.deletedEntityIds) ? remoteState.deletedEntityIds : [];
@@ -467,6 +516,13 @@ export default function App() {
         const mergedCategories = mergeListById(prev.categories, remoteState.categories, combinedDeletedIds);
         const mergedAuditLogs = mergeListById(prev.auditLogs, remoteState.auditLogs, combinedDeletedIds);
         const mergedPending = mergeListById(prev.pendingReviewTransactions, remoteState.pendingReviewTransactions, combinedDeletedIds);
+        const mergedChat = mergeChatMessages(
+          prev.chatMessages || [],
+          remoteChatMessages && remoteChatMessages.length > 0
+            ? remoteChatMessages
+            : remoteState.chatMessages || [],
+          combinedDeletedIds
+        );
 
         const activeUser = (prev.currentUser?.email
           ? mergedUsers.find(u => u.email.toLowerCase() === prev.currentUser.email.toLowerCase())
@@ -493,9 +549,18 @@ export default function App() {
           categories: mergedCategories,
           auditLogs: mergedAuditLogs,
           pendingReviewTransactions: mergedPending,
+          chatMessages: mergedChat,
           calendarType: calType,
           currentUser: activeUser
         };
+        saveStateToStorage(updated);
+        return updated;
+      });
+    } else if (remoteChatMessages && remoteChatMessages.length > 0) {
+      setState(prev => {
+        const combinedDeletedIds = Array.isArray(prev.deletedEntityIds) ? prev.deletedEntityIds : [];
+        const mergedChat = mergeChatMessages(prev.chatMessages || [], remoteChatMessages, combinedDeletedIds);
+        const updated = { ...prev, chatMessages: mergedChat };
         saveStateToStorage(updated);
         return updated;
       });
@@ -2718,6 +2783,8 @@ export default function App() {
       timestamp: new Date().toISOString()
     };
 
+    locallySentMsgIdsRef.current.add(newMsg.id);
+
     // Instant real-time Firestore broadcast to all team members
     sendChatMessageToFirebase(newMsg);
 
@@ -2816,7 +2883,8 @@ export default function App() {
       <LoginPage
         allUsers={state.users}
         currentUser={state.currentUser}
-        onLogin={(selectedUser: UserProfile) => {
+        onLogin={(selectedUser: UserProfile, rememberSession: boolean = true) => {
+          saveAuthSession(selectedUser, rememberSession);
           setState((prev) => ({
             ...prev,
             currentUser: selectedUser,
@@ -2885,8 +2953,11 @@ export default function App() {
       <Header
         currentUser={state.currentUser}
         allUsers={state.users}
-        onSwitchUser={(user: UserProfile) => setState(prev => ({ ...prev, currentUser: user }))}
-        onLogout={() => setIsLoggedIn(false)}
+        onSwitchUser={(user: UserProfile) => {
+          setState(prev => ({ ...prev, currentUser: user }));
+          updateAuthSessionUser(user);
+        }}
+        onLogout={handleLogout}
         onLockSession={() => setIsSessionLocked(true)}
         theme={state.theme}
         onToggleTheme={() => setState(prev => ({ ...prev, theme: prev.theme === 'dark' ? 'light' : 'dark' }))}
@@ -3038,7 +3109,7 @@ export default function App() {
             state={state}
             onUpdateState={setState}
             onOpenAiAssistant={(prompt, mode) => handleOpenAiAssistant(prompt, mode || 'simulator')}
-            onLogout={() => setIsLoggedIn(false)}
+            onLogout={handleLogout}
             initialSubView={moreSubView}
             onNavigateTab={(tab) => handleNavigateTab(tab)}
             onCollectReceivable={handleCollectReceivable}
@@ -3148,17 +3219,13 @@ export default function App() {
         isOpen={isSessionLocked}
         onClose={() => {
           // If closed in locked state without authentication, log out safely
-          setIsSessionLocked(false);
-          setIsLoggedIn(false);
+          handleLogout();
         }}
         userEmail={state.currentUser.email}
         userName={state.currentUser.name}
         currentUserPassword={state.currentUser.password || 'password123'}
         onSuccess={() => setIsSessionLocked(false)}
-        onLogout={() => {
-          setIsSessionLocked(false);
-          setIsLoggedIn(false);
-        }}
+        onLogout={handleLogout}
         mode="SESSION_UNLOCK"
       />
 

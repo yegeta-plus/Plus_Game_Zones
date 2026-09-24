@@ -35,6 +35,7 @@ import {
   VERIFIED_RECEIVABLES
 } from '../data/verifiedLedgerTransactions';
 import { normalizeTransactionScopes, isPersonalExpense, resolveExpenseScope } from './expenseClassifier';
+import { getActiveAuthSession } from './authSession';
 
 export type { ERPState } from '../types';
 export { isPersonalExpense, resolveExpenseScope, normalizeTransactionScopes };
@@ -690,7 +691,22 @@ export function loadInitialState(): ERPState {
         }
 
         // Preserve currently logged-in user session if available
-        if (parsed.currentUser && parsed.currentUser.id && Array.isArray(parsed.users)) {
+        const activeAuthSession = getActiveAuthSession();
+        if (activeAuthSession && Array.isArray(parsed.users)) {
+          const authUser = parsed.users.find(
+            (u: UserProfile) =>
+              u.id === activeAuthSession.userId ||
+              (activeAuthSession.email && u.email?.toLowerCase() === activeAuthSession.email.toLowerCase())
+          );
+          if (authUser && authUser.active !== false) {
+            parsed.currentUser = authUser;
+          } else if (parsed.currentUser && parsed.currentUser.id) {
+            const matchingUser = parsed.users.find((u: UserProfile) => u.id === parsed.currentUser.id || u.email?.toLowerCase() === parsed.currentUser.email?.toLowerCase());
+            parsed.currentUser = matchingUser || DEFAULT_USERS[0];
+          } else {
+            parsed.currentUser = parsed.users?.[0] || DEFAULT_USERS[0];
+          }
+        } else if (parsed.currentUser && parsed.currentUser.id && Array.isArray(parsed.users)) {
           const matchingUser = parsed.users.find((u: UserProfile) => u.id === parsed.currentUser.id || u.email?.toLowerCase() === parsed.currentUser.email?.toLowerCase());
           parsed.currentUser = matchingUser || DEFAULT_USERS[0];
         } else {
@@ -710,8 +726,17 @@ export function loadInitialState(): ERPState {
 }
 
 function createInitialState(): ERPState {
+  const activeAuthSession = getActiveAuthSession();
+  const sessionUser = activeAuthSession
+    ? DEFAULT_USERS.find(
+        (u) =>
+          u.id === activeAuthSession.userId ||
+          (activeAuthSession.email && u.email?.toLowerCase() === activeAuthSession.email.toLowerCase())
+      )
+    : undefined;
+
   return {
-    currentUser: DEFAULT_USERS[0],
+    currentUser: sessionUser || DEFAULT_USERS[0],
     users: DEFAULT_USERS,
     wallets: DEFAULT_WALLETS,
     transactions: consolidateEqubSplitTransactions(DEFAULT_TRANSACTIONS, DEFAULT_WALLETS),
@@ -1523,6 +1548,37 @@ export function mergeListById<T extends { id: string }>(
   }
 
   return merged;
+}
+
+/**
+ * Merges chat messages prioritizing authoritative server messages while preserving
+ * locally queued / optimistic messages and sorting strictly by timestamp.
+ */
+export function mergeChatMessages(
+  localList: ChatMessage[] = [],
+  liveList: ChatMessage[] = [],
+  deletedEntityIds: string[] = []
+): ChatMessage[] {
+  const deletedSet = new Set(Array.isArray(deletedEntityIds) ? deletedEntityIds : []);
+  const map = new Map<string, ChatMessage>();
+
+  // 1. First add local messages (optimistic / pending)
+  (Array.isArray(localList) ? localList : []).forEach(item => {
+    if (item && item.id && !deletedSet.has(item.id)) {
+      map.set(item.id, item);
+    }
+  });
+
+  // 2. Authoritative live server messages overwrite local copies (getting newest reactions, server timestamps, etc.)
+  (Array.isArray(liveList) ? liveList : []).forEach(item => {
+    if (item && item.id && !deletedSet.has(item.id)) {
+      map.set(item.id, item);
+    }
+  });
+
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  );
 }
 
 /**
