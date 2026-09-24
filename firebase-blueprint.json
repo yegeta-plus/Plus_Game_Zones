@@ -48,6 +48,29 @@
         "matchedIncomeId": { "type": "string" }
       },
       "required": ["id", "provider", "rawSmsText", "sender", "amount", "referenceNumber", "transactionDate", "receivedAt", "matched"]
+    },
+    "TeamChatMessage": {
+      "title": "Team Chat Message",
+      "description": "Real-time communication message between team members with optional financial attachments",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "channelId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "senderRole": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "senderAvatar": { "type": "string" },
+        "fileUrl": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileType": { "type": "string" },
+        "replyToId": { "type": "string" },
+        "replyToText": { "type": "string" },
+        "replyToSenderName": { "type": "string" },
+        "isAnnouncement": { "type": "boolean" }
+      },
+      "required": ["id", "channelId", "senderId", "senderName", "text", "timestamp"]
     }
   },
   "firestore": {
@@ -62,6 +85,10 @@
     "/transactions_confirmed/{confirmationId}": {
       "schema": "TransactionConfirmed",
       "description": "SMS bank confirmations written exclusively via Admin SDK / webhook"
+    },
+    "/team_chat_messages/{messageId}": {
+      "schema": "TeamChatMessage",
+      "description": "Real-time team chat messages synced instantaneously across all devices"
     }
   }
 }

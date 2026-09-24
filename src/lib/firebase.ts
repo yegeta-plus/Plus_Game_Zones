@@ -3,15 +3,22 @@ import {
   initializeFirestore,
   memoryLocalCache,
   doc,
+  collection,
+  query,
+  orderBy,
+  limit,
   onSnapshot,
   setDoc,
   getDoc,
+  getDocs,
+  updateDoc,
   disableNetwork,
   enableNetwork
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import config from '../../firebase-applet-config.json';
 import { ERPState } from './store';
+import { ChatMessage, ChatMessageReaction } from '../types';
 
 const metaEnv = (import.meta as unknown as { env?: Record<string, string> }).env || {};
 
@@ -279,7 +286,12 @@ function getStateFingerprint(state: ERPState): string {
     const loansCount = state.loans?.length || 0;
     const rcvCount = state.receivables?.length || 0;
     const usersCount = state.users?.length || 0;
-    return `${txLen}:${lastTx}:${walletsSum}:${equbsCount}:${loansCount}:${rcvCount}:${usersCount}`;
+    const chatLen = state.chatMessages?.length || 0;
+    const lastChat = chatLen > 0 ? state.chatMessages![chatLen - 1]?.id : '';
+    const chatReactionsSum = (state.chatMessages || [])
+      .map((m) => (m.reactions || []).map((r) => `${r.emoji}:${r.count}`).join(','))
+      .join('|');
+    return `${txLen}:${lastTx}:${walletsSum}:${equbsCount}:${loansCount}:${rcvCount}:${usersCount}:${chatLen}:${lastChat}:${chatReactionsSum}`;
   } catch (_) {
     return String(Date.now());
   }
@@ -482,4 +494,138 @@ export async function syncStateToFirebase(state: ERPState): Promise<void> {
 
 export function isFirestoreQuotaExceeded(): boolean {
   return isQuotaExceeded;
+}
+
+/**
+ * Sends a chat message directly to the Firestore `team_chat_messages` collection.
+ * This guarantees instantaneous, live sub-second delivery to all active devices.
+ */
+export async function sendChatMessageToFirebase(msg: ChatMessage): Promise<void> {
+  if (isQuotaExceeded) return;
+  try {
+    const msgRef = doc(db, 'team_chat_messages', msg.id);
+    const cleanMsg = JSON.parse(JSON.stringify(msg));
+    await setDoc(msgRef, cleanMsg);
+  } catch (err: any) {
+    if (
+      err?.code === 'resource-exhausted' ||
+      err?.message?.includes('Quota') ||
+      err?.message?.includes('quota')
+    ) {
+      markQuotaExceeded();
+      return;
+    }
+    console.warn('Realtime chat message send fallback:', err?.message);
+    handleFirestoreError(err, OperationType.WRITE, `team_chat_messages/${msg.id}`);
+  }
+}
+
+/**
+ * Updates emoji reactions on a specific chat message in Firestore in real time.
+ */
+export async function updateChatMessageReactionInFirebase(
+  messageId: string,
+  reactions: ChatMessageReaction[]
+): Promise<void> {
+  if (isQuotaExceeded) return;
+  try {
+    const msgRef = doc(db, 'team_chat_messages', messageId);
+    await updateDoc(msgRef, {
+      reactions: JSON.parse(JSON.stringify(reactions))
+    });
+  } catch (err: any) {
+    if (
+      err?.code === 'resource-exhausted' ||
+      err?.message?.includes('Quota') ||
+      err?.message?.includes('quota')
+    ) {
+      markQuotaExceeded();
+      return;
+    }
+    console.warn('Realtime chat reaction update fallback:', err?.message);
+  }
+}
+
+/**
+ * Subscribes to the live `team_chat_messages` Firestore collection using onSnapshot.
+ * Triggers callback with new or updated messages instantly when anyone posts or reacts.
+ */
+export function subscribeToRealtimeChatMessages(
+  onUpdate: (messages: ChatMessage[]) => void
+): () => void {
+  if (isQuotaExceeded) return () => {};
+
+  let unsubscribeFn: (() => void) | null = null;
+  const safeUnsubscribe = () => {
+    if (unsubscribeFn) {
+      try {
+        unsubscribeFn();
+      } catch (_) {}
+      unsubscribeFn = null;
+    }
+  };
+
+  try {
+    const chatColRef = collection(db, 'team_chat_messages');
+    const q = query(chatColRef, orderBy('timestamp', 'asc'), limit(500));
+
+    unsubscribeFn = onSnapshot(
+      q,
+      (snapshot) => {
+        const liveMessages: ChatMessage[] = [];
+        snapshot.forEach((docSnap) => {
+          if (docSnap.exists()) {
+            liveMessages.push(docSnap.data() as ChatMessage);
+          }
+        });
+        if (liveMessages.length > 0) {
+          onUpdate(liveMessages);
+        }
+      },
+      (error) => {
+        const isQuota =
+          error?.code === 'resource-exhausted' ||
+          error?.message?.includes('Quota') ||
+          error?.message?.includes('quota');
+
+        if (isQuota) {
+          markQuotaExceeded();
+          safeUnsubscribe();
+        } else {
+          console.info('Firestore chat operates in offline fallback:', error?.message);
+        }
+      }
+    );
+  } catch (err: any) {
+    if (
+      err?.code === 'resource-exhausted' ||
+      err?.message?.includes('Quota') ||
+      err?.message?.includes('quota')
+    ) {
+      markQuotaExceeded();
+    }
+  }
+
+  return safeUnsubscribe;
+}
+
+/**
+ * Seeds initial default messages into the Firestore `team_chat_messages` collection
+ * if it is empty, ensuring new devices and existing chats are fully synchronized.
+ */
+export async function seedInitialChatMessagesIfEmpty(messages: ChatMessage[]): Promise<void> {
+  if (isQuotaExceeded || !messages || messages.length === 0) return;
+  try {
+    const chatColRef = collection(db, 'team_chat_messages');
+    const snap = await getDocs(query(chatColRef, limit(1)));
+    if (snap.empty) {
+      for (const msg of messages) {
+        const msgRef = doc(db, 'team_chat_messages', msg.id);
+        await setDoc(msgRef, JSON.parse(JSON.stringify(msg)));
+      }
+    }
+  } catch (err) {
+    // Non-fatal, fallback to local state
+    console.info('Chat seed skipped:', err);
+  }
 }

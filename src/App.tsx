@@ -41,9 +41,13 @@ import {
   syncStateToFirebase,
   syncStateToFirebaseNow,
   fetchLatestFirebaseState,
-  isFirestoreQuotaExceeded
+  isFirestoreQuotaExceeded,
+  sendChatMessageToFirebase,
+  updateChatMessageReactionInFirebase,
+  subscribeToRealtimeChatMessages,
+  seedInitialChatMessagesIfEmpty
 } from './lib/firebase';
-import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest, ChatMessage, ChatChannel, AuditLogEntry } from './types';
+import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest, ChatMessage, ChatMessageReaction, ChatChannel, AuditLogEntry } from './types';
 import { CheckCircle2, Sparkles } from 'lucide-react';
 import { triggerHaptic } from './lib/haptics';
 import { SessionLockModal } from './components/auth/SessionLockModal';
@@ -304,6 +308,16 @@ export default function App() {
           const mergedCategories = mergeListById(prev.categories, remoteState.categories, combinedDeletedIds);
           const mergedAuditLogs = mergeListById(prev.auditLogs, remoteState.auditLogs, combinedDeletedIds);
           const mergedPending = mergeListById(prev.pendingReviewTransactions, remoteState.pendingReviewTransactions, combinedDeletedIds);
+          const mergedChatMessages = mergeListById(
+            prev.chatMessages || [],
+            remoteState.chatMessages || [],
+            combinedDeletedIds
+          ).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+          const mergedChatChannels = mergeListById(
+            prev.chatChannels || [],
+            remoteState.chatChannels || [],
+            combinedDeletedIds
+          );
 
           const activeUser = (prev.currentUser?.email
             ? mergedUsers.find(u => u.email.toLowerCase() === prev.currentUser.email.toLowerCase())
@@ -315,7 +329,7 @@ export default function App() {
           const calType = userCalPref || prev.calendarType || remoteState.calendarType || 'GREGORIAN';
 
           // Check for new chat messages from other team members
-          const incomingMsgs = remoteState.chatMessages || [];
+          const incomingMsgs = mergedChatMessages || [];
           if (incomingMsgs.length > prevChatCountRef.current && prevChatCountRef.current > 0) {
             const latestMsg = incomingMsgs[incomingMsgs.length - 1];
             if (latestMsg && latestMsg.senderId !== activeUser.id) {
@@ -345,6 +359,8 @@ export default function App() {
             transfers: mergedTransfers,
             auditLogs: mergedAuditLogs,
             pendingReviewTransactions: mergedPending,
+            chatMessages: mergedChatMessages,
+            chatChannels: mergedChatChannels,
             calendarType: calType,
             users: mergedUsers,
             currentUser: activeUser
@@ -352,8 +368,51 @@ export default function App() {
         });
       }
     });
+
+    // Dedicated real-time instant Firestore subscription for live Team Chat
+    const unsubscribeChat = subscribeToRealtimeChatMessages((liveMessages) => {
+      if (Array.isArray(liveMessages) && liveMessages.length > 0) {
+        setState((prev) => {
+          const currentMsgs = prev.chatMessages || [];
+          const existingIds = new Set(currentMsgs.map((m) => m.id));
+          const brandNewMsgs = liveMessages.filter((m) => !existingIds.has(m.id));
+
+          // When a new message from a colleague arrives live: chime and notify!
+          if (brandNewMsgs.length > 0) {
+            const latestNew = brandNewMsgs[brandNewMsgs.length - 1];
+            if (latestNew.senderId !== prev.currentUser?.id) {
+              playNotificationSound('chat');
+              triggerHaptic('medium');
+              sendExternalNotification(`Team Chat • ${latestNew.senderName}`, {
+                body: latestNew.text || 'Sent an attachment or financial reference.',
+                tag: `chat-${latestNew.id}`
+              });
+            }
+          }
+
+          const combinedDeleted = Array.isArray(prev.deletedEntityIds) ? prev.deletedEntityIds : [];
+          const merged = mergeListById(currentMsgs, liveMessages, combinedDeleted)
+            .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+          prevChatCountRef.current = merged.length;
+          const updatedState = {
+            ...prev,
+            chatMessages: merged
+          };
+          saveStateToStorage(updatedState);
+          return updatedState;
+        });
+      }
+    });
+
+    // Seed existing chat messages to Firestore if empty
+    if (state.chatMessages && state.chatMessages.length > 0) {
+      seedInitialChatMessagesIfEmpty(state.chatMessages);
+    }
+
     return () => {
       if (unsubscribe) unsubscribe();
+      if (unsubscribeChat) unsubscribeChat();
     };
   }, []);
 
@@ -2020,6 +2079,9 @@ export default function App() {
       }
     };
 
+    // Realtime chat broadcast for approvals channel
+    sendChatMessageToFirebase(chatMsg);
+
     setState(prev => {
       const updatedState = {
         ...prev,
@@ -2072,6 +2134,8 @@ export default function App() {
     };
 
     let toastText = `✅ Approval granted for "${req.targetTitle}". Change automatically executed!`;
+
+    sendChatMessageToFirebase(approveMsg);
 
     setState(prev => {
       let updatedTransactions = prev.transactions;
@@ -2480,6 +2544,8 @@ export default function App() {
       }
     };
 
+    sendChatMessageToFirebase(rejectMsg);
+
     setState(prev => {
       const updatedState = {
         ...prev,
@@ -2652,6 +2718,9 @@ export default function App() {
       timestamp: new Date().toISOString()
     };
 
+    // Instant real-time Firestore broadcast to all team members
+    sendChatMessageToFirebase(newMsg);
+
     setState(prev => {
       const updatedMsgs = [...(prev.chatMessages || []), newMsg];
       const updatedState = {
@@ -2666,6 +2735,7 @@ export default function App() {
 
   const handleAddChatReaction = (messageId: string, emoji: string) => {
     setState(prev => {
+      let finalReactions: ChatMessageReaction[] = [];
       const updatedMsgs = (prev.chatMessages || []).map(msg => {
         if (msg.id !== messageId) return msg;
 
@@ -2702,8 +2772,14 @@ export default function App() {
           });
         }
 
+        finalReactions = currentReactions;
         return { ...msg, reactions: currentReactions };
       });
+
+      // Push real-time reaction update to Firestore
+      if (finalReactions) {
+        updateChatMessageReactionInFirebase(messageId, finalReactions);
+      }
 
       const updatedState = { ...prev, chatMessages: updatedMsgs };
       saveStateToStorage(updatedState);

@@ -237,9 +237,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
             <div>
               <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
                 Team Chat Room
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Sync
+                </span>
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-[#8899BB] truncate">
-                Main communication channel for all active team members
+                Real-time instant communication across all active team members
               </p>
             </div>
           </div>
