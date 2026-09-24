@@ -59,8 +59,7 @@ export const DEFAULT_SENT_REPORT_LOGS: SentReportEmailLog[] = [
     period: 'July 2026',
     sentAt: '2026-08-02T08:00:00.000Z',
     recipients: [
-      { email: 'yegeta.huawei@gmail.com', name: 'Yegeta Huawei', role: 'SuperAdmin' },
-      { email: 'kirubel@pluszone.com', name: 'Kirubel Haile', role: 'Admin' }
+      { email: 'yegeta.huawei@gmail.com', name: 'Yegeta Huawei', role: 'SuperAdmin' }
     ],
     status: 'DELIVERED',
     subject: '[PlusZone ERP] Monthly Financial Statement & Banking Report - July 2026',
@@ -123,7 +122,7 @@ const DEFAULT_USERS: UserProfile[] = [
   {
     id: 'u-1',
     name: 'Yegeta Huawei',
-    email: 'ygyegeta@gmail.com',
+    email: 'yegeta.huawei@gmail.com',
     username: 'yegeta',
     role: 'SuperAdmin',
     active: true,
@@ -138,60 +137,6 @@ const DEFAULT_USERS: UserProfile[] = [
     permissions: DEFAULT_ROLE_PERMISSIONS.SuperAdmin,
     branch: 'Addis Ababa HQ',
     lastActive: 'Just now'
-  },
-  {
-    id: 'u-2',
-    name: 'Kirubel Haile',
-    email: 'kirubel@pluszone.com',
-    username: 'kirubel',
-    role: 'Admin',
-    active: true,
-    isApproved: true,
-    isDigitalMoneyManager: false,
-    invitationCode: 'PZ-ADM-2026',
-    hasSetPassword: true,
-    password: 'password123',
-    isTemporaryPassword: false,
-    mustChangePassword: false,
-    permissions: DEFAULT_ROLE_PERMISSIONS.Admin,
-    branch: 'Addis Ababa HQ',
-    lastActive: '10 mins ago'
-  },
-  {
-    id: 'u-3',
-    name: 'Bethelhem Tadesse',
-    email: 'bethelhem@pluszone.com',
-    username: 'bethelhem',
-    role: 'Partner',
-    active: true,
-    isApproved: true,
-    isDigitalMoneyManager: false,
-    invitationCode: 'PZ-PTR-3030',
-    hasSetPassword: true,
-    password: 'password123',
-    isTemporaryPassword: false,
-    mustChangePassword: false,
-    permissions: DEFAULT_ROLE_PERMISSIONS.Partner,
-    branch: 'Bole Branch',
-    lastActive: '1 hour ago'
-  },
-  {
-    id: 'u-4',
-    name: 'Dagmawi Bekele',
-    email: 'dagmawi@pluszone.com',
-    username: 'dagmawi',
-    role: 'Partner',
-    active: true,
-    isApproved: true,
-    isDigitalMoneyManager: false,
-    invitationCode: 'PZ-PTR-4040',
-    hasSetPassword: true,
-    password: 'password123',
-    isTemporaryPassword: false,
-    mustChangePassword: false,
-    permissions: DEFAULT_ROLE_PERMISSIONS.Partner,
-    branch: 'Addis Ababa HQ',
-    lastActive: 'Yesterday'
   }
 ];
 
@@ -445,20 +390,37 @@ export function loadInitialState(): ERPState {
       const parsed = JSON.parse(raw);
       if (parsed) {
         if (Array.isArray(parsed.users) && parsed.users.length > 0) {
-          parsed.users = parsed.users.map((u: UserProfile) => {
-            if (u.email === 'ygyegeta@gmail.com' || u.email === 'yegeta.huawei@gmail.com' || u.username === 'yegeta') {
-              return {
-                ...u,
-                role: 'SuperAdmin' as UserRole,
-                isApproved: true,
-                active: true,
-                hasSetPassword: true,
-                password: u.password || 'password123',
-                permissions: DEFAULT_ROLE_PERMISSIONS.SuperAdmin
-              };
-            }
-            return u;
-          });
+          const sampleUserIds = new Set(['u-2', 'u-3', 'u-4']);
+          const sampleEmails = new Set(['kirubel@pluszone.com', 'bethelhem@pluszone.com', 'dagmawi@pluszone.com']);
+          const sampleNames = new Set(['Kirubel Haile', 'Bethelhem Tadesse', 'Dagmawi Bekele']);
+
+          parsed.users = parsed.users
+            .filter((u: UserProfile) => {
+              if (!u) return false;
+              if (sampleUserIds.has(u.id)) return false;
+              if (u.email && (sampleEmails.has(u.email.toLowerCase()) || u.email.toLowerCase().endsWith('@pluszone.com'))) return false;
+              if (u.name && sampleNames.has(u.name)) return false;
+              return true;
+            })
+            .map((u: UserProfile) => {
+              if (u.email === 'ygyegeta@gmail.com' || u.email === 'yegeta.huawei@gmail.com' || u.username === 'yegeta') {
+                return {
+                  ...u,
+                  role: 'SuperAdmin' as UserRole,
+                  isApproved: true,
+                  active: true,
+                  hasSetPassword: true,
+                  password: u.password || 'password123',
+                  permissions: DEFAULT_ROLE_PERMISSIONS.SuperAdmin
+                };
+              }
+              return u;
+            });
+
+          const hasSuper = parsed.users.some((u: UserProfile) => u.role === 'SuperAdmin' || u.id === 'u-1');
+          if (!hasSuper) {
+            parsed.users = [DEFAULT_USERS[0], ...parsed.users];
+          }
         } else {
           parsed.users = DEFAULT_USERS;
         }
@@ -710,11 +672,18 @@ export function loadInitialState(): ERPState {
         parsed.sentReportEmailLogs = Array.isArray(parsed.sentReportEmailLogs) && parsed.sentReportEmailLogs.length > 0 ? parsed.sentReportEmailLogs : DEFAULT_SENT_REPORT_LOGS;
         parsed.deletedEntityIds = Array.isArray(parsed.deletedEntityIds) ? parsed.deletedEntityIds : [];
 
-        // Ensure users list is populated with multi-user accounts
+        // Ensure users list is populated without any legacy sample accounts
+        const sampleUserIds = new Set(['u-2', 'u-3', 'u-4']);
+        const sampleEmails = new Set(['kirubel@pluszone.com', 'bethelhem@pluszone.com', 'dagmawi@pluszone.com']);
+
         if (Array.isArray(parsed.users)) {
           const userMap = new Map<string, UserProfile>();
           for (const u of DEFAULT_USERS) userMap.set(u.id, u);
-          for (const u of parsed.users) userMap.set(u.id, u);
+          for (const u of parsed.users) {
+            if (!sampleUserIds.has(u.id) && !sampleEmails.has((u.email || '').toLowerCase()) && !(u.email || '').toLowerCase().endsWith('@pluszone.com')) {
+              userMap.set(u.id, u);
+            }
+          }
           parsed.users = Array.from(userMap.values());
         } else {
           parsed.users = DEFAULT_USERS;
@@ -723,7 +692,7 @@ export function loadInitialState(): ERPState {
         // Preserve currently logged-in user session if available
         if (parsed.currentUser && parsed.currentUser.id && Array.isArray(parsed.users)) {
           const matchingUser = parsed.users.find((u: UserProfile) => u.id === parsed.currentUser.id || u.email?.toLowerCase() === parsed.currentUser.email?.toLowerCase());
-          parsed.currentUser = matchingUser || parsed.currentUser;
+          parsed.currentUser = matchingUser || DEFAULT_USERS[0];
         } else {
           parsed.currentUser = parsed.users?.[0] || DEFAULT_USERS[0];
         }

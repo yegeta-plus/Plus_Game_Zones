@@ -36,6 +36,9 @@ export interface UserProfile {
   isApproved?: boolean;
   isDigitalMoneyManager?: boolean; // Only one user across the company holds this designation
   invitationCode?: string;
+  otp?: string;
+  otpExpiresAt?: string;
+  invitationStatus?: 'PENDING_ACTIVATION' | 'ACTIVE' | 'EXPIRED';
   hasSetPassword?: boolean;
   password?: string;
   passwordHash?: string;

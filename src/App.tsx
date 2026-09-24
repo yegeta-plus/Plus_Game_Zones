@@ -117,9 +117,29 @@ export default function App() {
   const [activeTourTitle, setActiveTourTitle] = useState<string | undefined>(undefined);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState<boolean>(false);
 
-  const handleOpenHelp = useCallback(() => {
-    setIsHelpModalOpen(true);
-  }, []);
+  const handleOpenHelp = useCallback((tabOrSubView?: any, maybeSubView?: string) => {
+    setIsHelpModalOpen(false);
+    triggerHaptic('medium');
+
+    let targetTab: NavTab = activeTab;
+    let targetSubView: string = moreSubView;
+
+    if (typeof tabOrSubView === 'string') {
+      if (['dashboard', 'transactions', 'wallets', 'equb', 'chat', 'more'].includes(tabOrSubView)) {
+        targetTab = tabOrSubView as NavTab;
+        if (maybeSubView !== undefined) targetSubView = maybeSubView;
+      } else {
+        targetTab = activeTab;
+        targetSubView = tabOrSubView;
+      }
+    }
+
+    const { steps, title } = getPageTourSteps(targetTab, targetSubView);
+    setActiveTourSteps(steps);
+    setActiveTourTitle(title);
+    setTourStepIndex(0);
+    setIsTourActive(true);
+  }, [activeTab, moreSubView]);
 
   const handleStartTour = useCallback(() => {
     setActiveTourSteps(undefined);

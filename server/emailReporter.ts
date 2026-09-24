@@ -857,3 +857,213 @@ export function getDispatchHistory() {
 export function getLastDispatchedMonth() {
   return lastDispatchedMonth;
 }
+
+export interface UserInviteEmailOptions {
+  email: string;
+  name: string;
+  role: string;
+  otp: string;
+  invitationCode: string;
+  branch?: string;
+  invitedBy?: string;
+  expiresInHours?: number;
+  appUrl?: string;
+}
+
+export async function sendUserInviteEmail(options: UserInviteEmailOptions): Promise<{
+  success: boolean;
+  messageId?: string;
+  simulated: boolean;
+  message: string;
+  otp: string;
+}> {
+  const {
+    email,
+    name,
+    role,
+    otp,
+    invitationCode,
+    branch = 'Addis Ababa HQ',
+    invitedBy = 'Super Administrator',
+    expiresInHours = 24,
+    appUrl = process.env.APP_URL || ''
+  } = options;
+
+  const subject = `🔐 Plus Game Zone Access Invitation & One-Time Passcode: ${otp}`;
+  const activationUrl = appUrl
+    ? `${appUrl}?action=activate&email=${encodeURIComponent(email)}&otp=${encodeURIComponent(otp)}`
+    : '';
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${subject}</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #070A12; color: #F1F5F9; margin: 0; padding: 24px;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 580px; margin: 0 auto; background-color: #0D121F; border: 1px solid #1E293B; border-radius: 20px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+    <!-- Header Banner -->
+    <tr>
+      <td style="padding: 32px 32px 24px 32px; background: linear-gradient(135deg, #064E3B 0%, #0F172A 100%); border-bottom: 1px solid #1E293B;">
+        <table width="100%" border="0" cellspacing="0" cellpadding="0">
+          <tr>
+            <td>
+              <div style="display: inline-block; padding: 8px 14px; background: #00D4AA; border-radius: 10px; color: #070A12; font-weight: 900; font-size: 14px; letter-spacing: 0.5px;">
+                PLUS GAME ZONE
+              </div>
+              <p style="margin: 8px 0 0 0; color: #94A3B8; font-size: 12px; font-weight: 500;">
+                Enterprise Financial & Operations Management System
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Body Content -->
+    <tr>
+      <td style="padding: 32px;">
+        <h2 style="margin: 0 0 16px 0; color: #FFFFFF; font-size: 20px; font-weight: 800; letter-spacing: -0.5px;">
+          You've Been Invited to Join the Team!
+        </h2>
+        <p style="margin: 0 0 20px 0; color: #94A3B8; font-size: 14px; line-height: 1.6;">
+          Hello <strong style="color: #FFFFFF;">${name}</strong>,
+        </p>
+        <p style="margin: 0 0 24px 0; color: #94A3B8; font-size: 14px; line-height: 1.6;">
+          <strong style="color: #00D4AA;">${invitedBy}</strong> has registered an enterprise profile for you at <strong style="color: #FFFFFF;">${branch}</strong> with the role of <strong style="color: #38BDF8;">${role}</strong>.
+        </p>
+
+        <!-- OTP Callout Box -->
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 0 0 28px 0;">
+          <tr>
+            <td style="background-color: #0B101D; border: 2px dashed #00D4AA; border-radius: 16px; padding: 24px; text-align: center;">
+              <p style="margin: 0 0 8px 0; color: #94A3B8; font-size: 11px; text-transform: uppercase; font-weight: 800; letter-spacing: 2px;">
+                Your Security Activation OTP
+              </p>
+              <div style="font-family: 'SF Mono', Consolas, Menlo, Monaco, monospace; font-size: 40px; font-weight: 900; letter-spacing: 10px; color: #00D4AA; padding: 6px 0;">
+                ${otp}
+              </div>
+              <p style="margin: 8px 0 0 0; color: #F59E0B; font-size: 11px; font-weight: 600;">
+                ⏱️ One-Time Passcode expires in ${expiresInHours} hours
+              </p>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Invitation Details -->
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #131A2B; border-radius: 12px; padding: 16px; margin: 0 0 28px 0;">
+          <tr>
+            <td style="padding: 6px 0; color: #64748B; font-size: 12px;">Assigned Role:</td>
+            <td style="padding: 6px 0; color: #FFFFFF; font-size: 12px; font-weight: 700; text-align: right;">${role}</td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748B; font-size: 12px;">Assigned Branch:</td>
+            <td style="padding: 6px 0; color: #FFFFFF; font-size: 12px; font-weight: 700; text-align: right;">${branch}</td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748B; font-size: 12px;">Invitation Reference:</td>
+            <td style="padding: 6px 0; color: #00D4AA; font-family: monospace; font-size: 12px; font-weight: 700; text-align: right;">${invitationCode}</td>
+          </tr>
+        </table>
+
+        ${activationUrl ? `
+        <!-- Action Button -->
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 0 0 28px 0;">
+          <tr>
+            <td align="center">
+              <a href="${activationUrl}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #00D4AA 0%, #00B894 100%); color: #070A12; font-size: 14px; font-weight: 800; text-decoration: none; padding: 14px 32px; border-radius: 12px; box-shadow: 0 4px 14px rgba(0, 212, 170, 0.3);">
+                Activate Account &amp; Set Password &rarr;
+              </a>
+            </td>
+          </tr>
+        </table>
+        ` : ''}
+
+        <!-- Next Steps -->
+        <div style="border-top: 1px solid #1E293B; padding-top: 20px; color: #94A3B8; font-size: 12px; line-height: 1.6;">
+          <p style="margin: 0 0 8px 0; color: #FFFFFF; font-weight: 700;">How to complete your activation:</p>
+          <ol style="margin: 0; padding-left: 20px;">
+            <li style="margin-bottom: 6px;">Open the Plus Game Zone sign in page.</li>
+            <li style="margin-bottom: 6px;">Click on <strong>"Activate with Invite OTP"</strong>.</li>
+            <li style="margin-bottom: 6px;">Enter your email and the 6-digit OTP code <code>${otp}</code>.</li>
+            <li>Create your permanent secure password (minimum 8 characters).</li>
+          </ol>
+        </div>
+      </td>
+    </tr>
+
+    <!-- Footer -->
+    <tr>
+      <td style="padding: 24px 32px; background-color: #090D17; border-top: 1px solid #1E293B; text-align: center;">
+        <p style="margin: 0 0 4px 0; color: #64748B; font-size: 11px;">
+          This invitation was sent directly by Plus Game Zone Enterprise System.
+        </p>
+        <p style="margin: 0; color: #475569; font-size: 10px;">
+          If you were not expecting this invitation, you can safely disregard this email.
+        </p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+
+  const textContent = `
+PLUS GAME ZONE - Team Access Invitation & OTP
+==============================================
+Hello ${name},
+
+${invitedBy} has invited you to join the Plus Game Zone Financial Management System.
+- Role: ${role}
+- Branch: ${branch}
+- Invitation Code: ${invitationCode}
+
+YOUR 6-DIGIT ONE-TIME PASSCODE (OTP):
+>>>  ${otp}  <<<
+
+This OTP code will expire in ${expiresInHours} hours.
+
+Activation Steps:
+1. Go to the Sign In page.
+2. Select "Activate with Invite OTP".
+3. Enter your email (${email}) and the 6-digit OTP above.
+4. Set your permanent password to complete activation.
+${activationUrl ? `\nDirect activation link: ${activationUrl}\n` : ''}
+`;
+
+  const transporterInfo = getMailTransporter();
+
+  if (transporterInfo.isConfigured) {
+    try {
+      const info = await transporterInfo.transporter.sendMail({
+        from: transporterInfo.fromAddress,
+        to: `"${name}" <${email}>`,
+        subject,
+        text: textContent,
+        html: htmlContent
+      });
+
+      console.log(`[User Invite] Real email successfully delivered to ${email} (Message ID: ${info.messageId})`);
+      return {
+        success: true,
+        messageId: info.messageId,
+        simulated: false,
+        message: `Invitation email with 6-digit OTP sent to ${email}.`,
+        otp
+      };
+    } catch (sendErr: any) {
+      console.warn(`[User Invite] SMTP send failed (${sendErr.message}). Gracefully falling back to simulated dispatch.`);
+    }
+  }
+
+  // Fallback if SMTP not configured or failed
+  console.log(`[User Invite] Dispatched simulated invitation email to ${email} with OTP ${otp}`);
+  return {
+    success: true,
+    simulated: true,
+    message: `Invitation generated! (SMTP not configured on server; OTP: ${otp} logged). Configure SMTP in More > Financial Reports > Automated Email Settings for external live email delivery.`,
+    otp
+  };
+}

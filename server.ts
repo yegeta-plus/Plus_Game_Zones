@@ -10,7 +10,8 @@ import {
   getLastDispatchedMonth,
   setCustomSmtpConfig,
   getEffectiveSmtpConfig,
-  testSmtpConnection
+  testSmtpConnection,
+  sendUserInviteEmail
 } from './server/emailReporter';
 import { createConfirmSmsRouter } from './server/smsWebhook';
 
@@ -851,6 +852,72 @@ Hey partner! Based on our live ledger data:
     }
   });
 
+  // User Access Invitation with OTP via Email
+  app.post('/api/users/invite', async (req, res) => {
+    try {
+      const { email, name, role, branch, invitedBy, appUrl, permissions } = req.body;
+      if (!email || typeof email !== 'string' || !email.includes('@')) {
+        return res.status(400).json({ success: false, error: 'A valid recipient email address is required.' });
+      }
+
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanName = (name || email.split('@')[0]).trim();
+      const cleanRole = role || 'Partner';
+      const cleanBranch = branch || 'Addis Ababa HQ';
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const invitationCode = `PZ-INV-${Math.floor(1000 + Math.random() * 9000)}`;
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+      const emailResult = await sendUserInviteEmail({
+        email: cleanEmail,
+        name: cleanName,
+        role: cleanRole,
+        branch: cleanBranch,
+        invitedBy: invitedBy || 'Super Administrator',
+        otp,
+        invitationCode,
+        expiresInHours: 24,
+        appUrl: appUrl || `${req.protocol}://${req.get('host')}`
+      });
+
+      const newUser = {
+        id: `u-${Date.now()}`,
+        name: cleanName,
+        email: cleanEmail,
+        role: cleanRole,
+        branch: cleanBranch,
+        active: true,
+        isApproved: true,
+        hasSetPassword: false,
+        isTemporaryPassword: true,
+        mustChangePassword: true,
+        otp,
+        otpExpiresAt: expiresAt,
+        invitationCode,
+        invitationStatus: 'PENDING_ACTIVATION',
+        permissions: permissions || undefined,
+        createdBy: invitedBy || 'Super Administrator',
+        lastActive: 'Invited just now'
+      };
+
+      return res.json({
+        success: true,
+        emailSent: !emailResult.simulated,
+        message: emailResult.message,
+        otp,
+        invitationCode,
+        expiresAt,
+        user: newUser
+      });
+    } catch (err: any) {
+      console.error('[User Invite API] Error:', err);
+      return res.status(500).json({
+        success: false,
+        error: err.message || 'Failed to dispatch user invitation email with OTP.'
+      });
+    }
+  });
+
   // 2. Render / Preview Monthly Report HTML Template
   app.post('/api/reports/preview-html', async (req, res) => {
     try {
@@ -958,8 +1025,7 @@ Hey partner! Based on our live ledger data:
                 { name: 'Staff Salaries & Shift Allowances', amount: 30000, percentage: 20.7 }
               ],
               recipients: [
-                { name: 'Yegeta Huawei', email: 'yegeta.huawei@gmail.com', role: 'SuperAdmin' },
-                { name: 'Kirubel Haile', email: 'kirubel@pluszone.com', role: 'Admin' }
+                { name: 'Yegeta Huawei', email: 'yegeta.huawei@gmail.com', role: 'SuperAdmin' }
               ]
             },
             'AUTOMATIC_SCHEDULE'

@@ -78,17 +78,18 @@ export const SessionLockModal: React.FC<SessionLockModalProps> = ({
     setErrorMessage(null);
 
     setTimeout(() => {
-      const storedSecurityPin = localStorage.getItem('pluszone_security_pin') || '1234';
+      const storedSecurityPin = localStorage.getItem('pluszone_security_pin');
 
+      // Strictly verify against user's actual password or configured security PIN
       const isValid =
-        cleanInput === currentUserPassword ||
-        cleanInput === 'password123' ||
-        cleanInput === storedSecurityPin;
+        (currentUserPassword && cleanInput === currentUserPassword) ||
+        (storedSecurityPin && cleanInput === storedSecurityPin);
 
       if (isValid) {
         triggerHaptic('heavy');
         setIsSuccess(true);
         setIsVerifyingPassword(false);
+        setFailedAttempts(0);
         setTimeout(() => {
           onSuccess(userEmail);
         }, 500);
@@ -97,7 +98,11 @@ export const SessionLockModal: React.FC<SessionLockModalProps> = ({
         setIsVerifyingPassword(false);
         const newAttempts = failedAttempts + 1;
         setFailedAttempts(newAttempts);
-        setErrorMessage(`Invalid credentials (Attempt ${newAttempts}). Use your login password or PIN.`);
+        if (newAttempts >= 5) {
+          setErrorMessage('Too many failed attempts. For security, please log out and re-authenticate.');
+        } else {
+          setErrorMessage(`Invalid credentials (${5 - newAttempts} attempt${5 - newAttempts === 1 ? '' : 's'} remaining). Use your account password or PIN.`);
+        }
         setPasswordInput('');
         if (passwordInputRef.current) {
           passwordInputRef.current.focus();

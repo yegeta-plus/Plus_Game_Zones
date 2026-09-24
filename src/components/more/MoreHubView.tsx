@@ -94,7 +94,7 @@ interface MoreHubViewProps {
   onNavigateTab?: (tab: any) => void;
   onCollectReceivable?: (receivableId: string, walletId: string, amount: number) => void;
   onReplayTour?: () => void;
-  onOpenHelp?: () => void;
+  onOpenHelp?: (subView?: string) => void;
 }
 
 export const MoreHubView: React.FC<MoreHubViewProps> = ({
@@ -376,7 +376,7 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
                 id="btn-page-help-more-subview"
                 onClick={() => {
                   triggerHaptic('light');
-                  onOpenHelp();
+                  onOpenHelp(subView);
                 }}
                 className="p-1.5 sm:p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#131926] dark:hover:bg-[#1a2336] border border-slate-200 dark:border-[#1E2D40] text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer flex items-center justify-center shrink-0 active:scale-95"
                 title="Operations Help (?)"
@@ -697,7 +697,7 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
               id="btn-page-help-more-hub"
               onClick={() => {
                 triggerHaptic('light');
-                onOpenHelp();
+                onOpenHelp('HUB');
               }}
               className="p-2 rounded-xl bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-indigo-400 transition-colors cursor-pointer flex items-center justify-center shrink-0 active:scale-95"
               title="More Hub Help (?)"
