@@ -30,6 +30,7 @@ import { ERPState, ChatMessage, ChatChannel, UserProfile, Transaction, Wallet as
 import { triggerHaptic } from '../../lib/haptics';
 import { EmojiPickerPopup } from './EmojiPickerPopup';
 import { QUICK_REACTION_EMOJIS } from './emojiData';
+import { compressImageForChat } from '../../lib/realtimeChat';
 
 interface ChatViewProps {
   state: ERPState;
@@ -41,6 +42,7 @@ interface ChatViewProps {
   onRejectRequest?: (reqId: string, note?: string) => void;
   onMarkRead?: () => void;
   onOpenHelp?: () => void;
+  onSwitchUser?: (user: UserProfile) => void;
 }
 
 const COMMON_EMOJIS = ['👍', '❤️', '🚀', '💡', '💰', '✅', '🔥', '🙏', '👏', '🎯'];
@@ -107,7 +109,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
   onApproveRequest,
   onRejectRequest,
   onMarkRead,
-  onOpenHelp
+  onOpenHelp,
+  onSwitchUser
 }) => {
   const currentUser = state.currentUser;
   const chatMessages = state.chatMessages || [];
@@ -117,6 +120,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isAnnouncement, setIsAnnouncement] = useState(false);
+  const [showUserSwitcher, setShowUserSwitcher] = useState(false);
 
   // Reply state
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
@@ -148,19 +152,32 @@ export const ChatView: React.FC<ChatViewProps> = ({
     return true;
   });
 
-  // Handle File Upload
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle File Upload with automatic image compression
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert('File size exceeds 5MB limit.');
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File size exceeds 10MB limit.');
       return;
+    }
+
+    const isImage = file.type.startsWith('image/');
+    if (isImage) {
+      try {
+        const compressedUrl = await compressImageForChat(file);
+        setAttachedFile({
+          url: compressedUrl,
+          name: file.name,
+          type: 'IMAGE'
+        });
+        triggerHaptic('light');
+        return;
+      } catch (_) {}
     }
 
     const reader = new FileReader();
     reader.onloadend = () => {
-      const isImage = file.type.startsWith('image/');
       setAttachedFile({
         url: reader.result as string,
         name: file.name,
@@ -250,6 +267,68 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
           {/* Chat search & controls */}
           <div className="flex items-center gap-2">
+            {/* Quick Profile Switcher for Effortless Multi-User Testing */}
+            {onSwitchUser && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowUserSwitcher(!showUserSwitcher)}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#1C2333] dark:hover:bg-[#252F44] text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
+                  title="Switch profile to test multi-user real-time chat"
+                >
+                  <UserCheck className="w-3.5 h-3.5 text-emerald-500" />
+                  <span className="hidden sm:inline">User:</span>
+                  <span className="text-emerald-600 dark:text-[#00D4AA] truncate max-w-[80px]">{currentUser.name.split(' ')[0]}</span>
+                </button>
+
+                {showUserSwitcher && (
+                  <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-[#1A2333] border border-slate-200 dark:border-[#2A374D] rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95">
+                    <div className="px-3 py-2 border-b border-slate-100 dark:border-[#252F44] mb-1">
+                      <p className="text-[11px] font-black text-slate-900 dark:text-white uppercase tracking-wider">Test Multi-User Chat</p>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400">Switch profile to test 0ms instant messaging</p>
+                    </div>
+                    <div className="max-h-60 overflow-y-auto space-y-1">
+                      {(state.users || []).map((u) => {
+                        const isCurrent = u.id === currentUser.id;
+                        return (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              onSwitchUser(u);
+                              setShowUserSwitcher(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between text-xs transition-colors cursor-pointer ${
+                              isCurrent
+                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-[#00D4AA] font-bold border border-emerald-500/20'
+                                : 'hover:bg-slate-100 dark:hover:bg-[#252F44] text-slate-700 dark:text-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <UserChatAvatar
+                                senderId={u.id}
+                                senderName={u.name}
+                                senderRole={u.role}
+                                senderAvatar={u.avatarUrl}
+                                users={state.users}
+                                size="sm"
+                              />
+                              <div className="min-w-0">
+                                <p className="font-bold truncate text-[11px]">{u.name}</p>
+                                <p className="text-[10px] text-slate-400">{u.role}</p>
+                              </div>
+                            </div>
+                            {isCurrent && <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <button
               onClick={() => setIsSearchOpen(!isSearchOpen)}
               className={`p-2 rounded-xl transition-colors cursor-pointer ${
@@ -559,6 +638,21 @@ export const ChatView: React.FC<ChatViewProps> = ({
               </button>
             </div>
           )}
+
+          {/* Identity & 0ms Cloud Sync Strip */}
+          <div className="px-4 py-1.5 bg-slate-50/80 dark:bg-[#0E1524] border-t border-slate-200/60 dark:border-[#1E2D40] flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+            <span className="flex items-center gap-1.5">
+              <span>Posting as:</span>
+              <strong className="text-slate-800 dark:text-white font-bold">{currentUser.name}</strong>
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                {currentUser.role}
+              </span>
+            </span>
+            <span className="flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-600 dark:text-[#00D4AA]">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              0ms Cloud Sync
+            </span>
+          </div>
 
           {/* INPUT FORM */}
           <form id="tour-chat-composer" data-tour="chat-composer" onSubmit={handleSend} className="p-3 bg-white dark:bg-[#131926] border-t border-slate-200 dark:border-[#1E2D40] flex items-center gap-2 shrink-0 relative">

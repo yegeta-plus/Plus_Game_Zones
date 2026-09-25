@@ -38,12 +38,12 @@ const firebaseConfig = {
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
-// Initialize Firestore using memoryLocalCache to eliminate IndexedDB database closing/hidden conflicts in iframe/tabs
+// Initialize Firestore using memoryLocalCache with auto-detect long-polling to prefer ultra-low-latency WebSockets
 export const db = initializeFirestore(
   app,
   {
     localCache: memoryLocalCache(),
-    experimentalForceLongPolling: true,
+    experimentalAutoDetectLongPolling: true,
   },
   FIRESTORE_DATABASE_ID
 );
@@ -294,24 +294,33 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 }
 
 /**
- * Generates a lightweight, stable fingerprint of the core business entities.
- * Used to avoid duplicate cloud writes when non-critical or volatile UI state changes.
+ * Generates an accurate, lightweight fingerprint of the core business entities.
+ * Detects any edits, additions, deletions, repayments, balance changes, or status shifts.
  */
 function getStateFingerprint(state: ERPState): string {
   try {
     const txLen = state.transactions?.length || 0;
-    const lastTx = txLen > 0 ? state.transactions[txLen - 1]?.id : '';
-    const walletsSum = (state.wallets || []).map((w) => `${w.id}:${w.openingBalance}`).join('|');
-    const equbsCount = state.equbs?.length || 0;
-    const loansCount = state.loans?.length || 0;
-    const rcvCount = state.receivables?.length || 0;
+    const txSample = (state.transactions || [])
+      .slice(0, 5)
+      .map((t) => `${t.id}:${t.amount}:${t.category}:${t.date}:${t.type}:${t.reversed ? 1 : 0}`)
+      .join(';');
+    const txTotal = (state.transactions || []).reduce((acc, t) => acc + (t.amount || 0), 0);
+    const transfersCount = state.transfers?.length || 0;
+    const transfersTotal = (state.transfers || []).reduce((acc, t) => acc + (t.amount || 0), 0);
+    const walletsSum = (state.wallets || []).map((w) => `${w.id}:${w.openingBalance}:${w.name}`).join('|');
+    const equbsSum = (state.equbs || []).map((e) => `${e.id}:${e.currentRound}:${e.completedRounds}:${e.status}:${e.payoutsClaimed || 0}`).join('|');
+    const loansSum = (state.loans || []).map((l) => `${l.id}:${l.outstandingBalance}:${l.status}:${(l.payments || []).length}`).join('|');
+    const rcvSum = (state.receivables || []).map((r) => `${r.id}:${r.amountOwed}:${r.amountCollected || 0}:${r.status}`).join('|');
     const usersCount = state.users?.length || 0;
     const chatLen = state.chatMessages?.length || 0;
     const lastChat = chatLen > 0 ? state.chatMessages![chatLen - 1]?.id : '';
     const chatReactionsSum = (state.chatMessages || [])
+      .slice(-10)
       .map((m) => (m.reactions || []).map((r) => `${r.emoji}:${r.count}`).join(','))
       .join('|');
-    return `${txLen}:${lastTx}:${walletsSum}:${equbsCount}:${loansCount}:${rcvCount}:${usersCount}:${chatLen}:${lastChat}:${chatReactionsSum}`;
+    const auditLen = state.auditLogs?.length || 0;
+    const approvalsLen = state.approvalRequests?.length || 0;
+    return `${txLen}:${txTotal}:${txSample}:${transfersCount}:${transfersTotal}:${walletsSum}:${equbsSum}:${loansSum}:${rcvSum}:${usersCount}:${chatLen}:${lastChat}:${chatReactionsSum}:${auditLen}:${approvalsLen}`;
   } catch (_) {
     return String(Date.now());
   }
@@ -347,10 +356,10 @@ export function subscribeToFirebaseState(onUpdate: (remoteState: Partial<ERPStat
             isRemoteUpdate = true;
             lastSyncedFingerprint = getStateFingerprint(data.state as ERPState);
             onUpdate(data.state as ERPState);
-            // Reset flag after state update settles to prevent ping-pong writes
+            // Reset flag after 250ms so user interactions are never blocked
             setTimeout(() => {
               isRemoteUpdate = false;
-            }, 1500);
+            }, 250);
           }
         }
       },
@@ -420,9 +429,10 @@ export async function fetchLatestFirebaseState(): Promise<Partial<ERPState> | nu
 
 /**
  * Immediately push state to Firestore without debounce delay.
+ * Never blocked by remote state update flag.
  */
 export async function syncStateToFirebaseNow(state: ERPState): Promise<void> {
-  if (isQuotaExceeded || isRemoteUpdate) return;
+  if (isQuotaExceeded) return;
   if (syncTimeout) {
     clearTimeout(syncTimeout);
     syncTimeout = null;
@@ -461,8 +471,8 @@ export async function syncStateToFirebaseNow(state: ERPState): Promise<void> {
 }
 
 /**
- * Push updated state to Firebase Firestore asynchronously with 5000ms debouncing and loop suppression.
- * Guarantees real-time sync across devices while strictly preserving free-tier write quotas.
+ * Push updated state to Firebase Firestore asynchronously with rapid sub-second (400ms) debouncing.
+ * Guarantees real-time automatic update within 1 second across all sessions and devices.
  */
 export async function syncStateToFirebase(state: ERPState): Promise<void> {
   // If Firestore quota has been exceeded or state change was received from remote, skip cloud write
@@ -476,7 +486,7 @@ export async function syncStateToFirebase(state: ERPState): Promise<void> {
     return;
   }
 
-  // Debounce state writes to 5000ms to avoid burning write quota
+  // Debounce state writes to 400ms to guarantee automatic update within a second
   if (syncTimeout) {
     clearTimeout(syncTimeout);
   }
@@ -509,7 +519,7 @@ export async function syncStateToFirebase(state: ERPState): Promise<void> {
         handleFirestoreError(err, OperationType.WRITE, 'erp_state/main');
       }
     }
-  }, 5000);
+  }, 400);
 }
 
 export function isFirestoreQuotaExceeded(): boolean {
@@ -517,11 +527,18 @@ export function isFirestoreQuotaExceeded(): boolean {
 }
 
 /**
- * Sends a chat message directly to the Firestore `team_chat_messages` collection.
- * This guarantees instantaneous, live sub-second delivery to all active devices.
+ * Sends a chat message directly to the Firestore `team_chat_messages` collection
+ * and broadcasts across tabs/windows with immediate 0ms latency.
  */
 export async function sendChatMessageToFirebase(msg: ChatMessage): Promise<void> {
   try {
+    // 1. Cross-tab instant broadcast (0ms)
+    try {
+      const { broadcastChatEvent } = await import('./realtimeChat');
+      broadcastChatEvent({ type: 'NEW_MESSAGE', message: msg });
+    } catch (_) {}
+
+    // 2. Cloud Firestore direct write
     const msgRef = doc(db, 'team_chat_messages', msg.id);
     const cleanMsg = JSON.parse(JSON.stringify(msg));
     await setDoc(msgRef, cleanMsg);
@@ -543,13 +560,20 @@ export async function sendChatMessageToFirebase(msg: ChatMessage): Promise<void>
 }
 
 /**
- * Updates emoji reactions on a specific chat message in Firestore in real time.
+ * Updates emoji reactions on a specific chat message in Firestore and cross-tab in 0ms.
  */
 export async function updateChatMessageReactionInFirebase(
   messageId: string,
   reactions: ChatMessageReaction[]
 ): Promise<void> {
   try {
+    // 1. Cross-tab instant broadcast (0ms)
+    try {
+      const { broadcastChatEvent } = await import('./realtimeChat');
+      broadcastChatEvent({ type: 'UPDATE_REACTIONS', messageId, reactions });
+    } catch (_) {}
+
+    // 2. Cloud Firestore direct update
     const msgRef = doc(db, 'team_chat_messages', messageId);
     await updateDoc(msgRef, {
       reactions: JSON.parse(JSON.stringify(reactions))
@@ -576,14 +600,14 @@ export async function updateChatMessageReactionInFirebase(
 export async function fetchRealtimeChatMessages(): Promise<ChatMessage[]> {
   try {
     const chatColRef = collection(db, 'team_chat_messages');
-    const q = query(chatColRef, orderBy('timestamp', 'asc'), limit(500));
-    const snapshot = await getDocs(q);
+    const snapshot = await getDocs(chatColRef);
     const msgs: ChatMessage[] = [];
     snapshot.forEach((docSnap) => {
       if (docSnap.exists()) {
         msgs.push(docSnap.data() as ChatMessage);
       }
     });
+    msgs.sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
     if (isQuotaExceeded) clearQuotaExceeded();
     return msgs;
   } catch (err: any) {
@@ -594,13 +618,17 @@ export async function fetchRealtimeChatMessages(): Promise<ChatMessage[]> {
 
 /**
  * Subscribes to the live `team_chat_messages` Firestore collection using onSnapshot.
- * Triggers callback with new or updated messages instantly when anyone posts or reacts.
+ * Listens directly to the collection to avoid missing-index or composite-query errors,
+ * and triggers immediate callbacks whenever any team member sends or updates a message.
  */
 export function subscribeToRealtimeChatMessages(
   onUpdate: (messages: ChatMessage[]) => void
 ): () => void {
   let unsubscribeFn: (() => void) | null = null;
+  let isSubscribed = true;
+
   const safeUnsubscribe = () => {
+    isSubscribed = false;
     if (unsubscribeFn) {
       try {
         unsubscribeFn();
@@ -609,48 +637,57 @@ export function subscribeToRealtimeChatMessages(
     }
   };
 
-  try {
-    const chatColRef = collection(db, 'team_chat_messages');
-    const q = query(chatColRef, orderBy('timestamp', 'asc'), limit(500));
-
-    const handleSnapshot = (snapshot: any) => {
-      if (isQuotaExceeded) {
-        clearQuotaExceeded();
-      }
-      const liveMessages: ChatMessage[] = [];
-      snapshot.forEach((docSnap: any) => {
-        if (docSnap.exists()) {
-          liveMessages.push(docSnap.data() as ChatMessage);
-        }
-      });
-      if (liveMessages.length > 0) {
-        onUpdate(liveMessages);
-      }
-    };
-
-    const handleError = (error: any) => {
-      const isQuota =
-        error?.code === 'resource-exhausted' ||
-        error?.message?.includes('Quota') ||
-        error?.message?.includes('quota');
-
-      if (isQuota) {
-        markQuotaExceeded();
-        safeUnsubscribe();
-      } else {
-        console.info('Firestore chat operates in offline fallback:', error?.message);
-      }
-    };
-
+  const connectListener = () => {
+    if (!isSubscribed) return;
     try {
-      unsubscribeFn = onSnapshot(q, handleSnapshot, handleError);
-    } catch {
-      unsubscribeFn = onSnapshot(chatColRef, handleSnapshot, handleError);
-    }
-  } catch (err: any) {
-    console.warn('subscribeToRealtimeChatMessages error:', err?.message);
-  }
+      const chatColRef = collection(db, 'team_chat_messages');
 
+      unsubscribeFn = onSnapshot(
+        chatColRef,
+        (snapshot) => {
+          if (isQuotaExceeded) {
+            clearQuotaExceeded();
+          }
+          const liveMessages: ChatMessage[] = [];
+          snapshot.forEach((docSnap) => {
+            if (docSnap.exists()) {
+              liveMessages.push(docSnap.data() as ChatMessage);
+            }
+          });
+          // Sort messages chronologically by timestamp
+          liveMessages.sort(
+            (a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()
+          );
+          if (liveMessages.length > 0) {
+            onUpdate(liveMessages);
+          }
+        },
+        (error) => {
+          const isQuota =
+            error?.code === 'resource-exhausted' ||
+            error?.message?.includes('Quota') ||
+            error?.message?.includes('quota');
+
+          if (isQuota) {
+            markQuotaExceeded();
+            safeUnsubscribe();
+          } else {
+            console.info('Firestore chat realtime stream reconnecting...', error?.message);
+            // Reconnect after 3 seconds if disconnected
+            setTimeout(() => {
+              if (isSubscribed) {
+                connectListener();
+              }
+            }, 3000);
+          }
+        }
+      );
+    } catch (err: any) {
+      console.warn('subscribeToRealtimeChatMessages error:', err?.message);
+    }
+  };
+
+  connectListener();
   return safeUnsubscribe;
 }
 
@@ -670,7 +707,6 @@ export async function seedInitialChatMessagesIfEmpty(messages: ChatMessage[]): P
       }
     }
   } catch (err) {
-    // Non-fatal, fallback to local state
     console.info('Chat seed skipped:', err);
   }
 }

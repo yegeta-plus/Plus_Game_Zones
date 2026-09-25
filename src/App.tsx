@@ -50,6 +50,11 @@ import {
   subscribeToRealtimeChatMessages,
   seedInitialChatMessagesIfEmpty
 } from './lib/firebase';
+import {
+  sendChatMessageImmediately,
+  updateChatReactionImmediately,
+  registerChatEventListener
+} from './lib/realtimeChat';
 import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest, ChatMessage, ChatMessageReaction, ChatChannel, AuditLogEntry } from './types';
 import { CheckCircle2, Sparkles } from 'lucide-react';
 import { triggerHaptic } from './lib/haptics';
@@ -99,6 +104,13 @@ export default function App() {
         } else if (state.currentUser.id !== matched.id) {
           setState((prev) => ({ ...prev, currentUser: matched }));
         }
+      } else if (session.user) {
+        // If matched user is not yet in state.users, preserve remembered session user profile
+        setState((prev) => ({
+          ...prev,
+          currentUser: session.user!,
+          users: prev.users.some(u => u.id === session.user!.id) ? prev.users : [...prev.users, session.user!]
+        }));
       }
     }
   }, [isLoggedIn, state.users, state.currentUser.id]);
@@ -260,13 +272,13 @@ export default function App() {
     }
   });
 
-  // Banking Inactivity Auto-Lock Timeout logic
+  // Banking Inactivity Auto-Lock Timeout logic (0 = disabled to preserve continuous active session)
   const [sessionTimeoutMins, setSessionTimeoutMins] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('pluszone_session_timeout_mins');
-      return saved ? parseInt(saved, 10) : 5;
+      return saved ? parseInt(saved, 10) : 0;
     } catch {
-      return 5;
+      return 0;
     }
   });
 
@@ -422,9 +434,11 @@ export default function App() {
           const existingIds = new Set(currentMsgs.map((m) => m.id));
           const brandNewMsgs = liveMessages.filter((m) => !existingIds.has(m.id));
 
-          // When a new message from another device arrives live: chime and notify!
+          // When a new message from another user arrives live: chime and notify!
           if (brandNewMsgs.length > 0) {
-            const incomingFromOtherDevice = brandNewMsgs.filter(m => !locallySentMsgIdsRef.current.has(m.id));
+            const incomingFromOtherDevice = brandNewMsgs.filter(
+              m => !locallySentMsgIdsRef.current.has(m.id) && m.senderId !== prev.currentUser.id
+            );
             if (incomingFromOtherDevice.length > 0) {
               const latestNew = incomingFromOtherDevice[incomingFromOtherDevice.length - 1];
               playNotificationSound('chat');
@@ -450,6 +464,53 @@ export default function App() {
       }
     });
 
+    // Dedicated 0ms cross-tab/cross-window broadcast channel listener for multi-user testing
+    const unsubscribeBroadcast = registerChatEventListener((event) => {
+      if (event.type === 'NEW_MESSAGE') {
+        const incomingMsg = event.message;
+        setState((prev) => {
+          const currentMsgs = prev.chatMessages || [];
+          if (currentMsgs.some((m) => m.id === incomingMsg.id)) {
+            return prev;
+          }
+
+          // If incoming from another user, chime and notify immediately
+          if (incomingMsg.senderId !== prev.currentUser.id) {
+            playNotificationSound('chat');
+            triggerHaptic('medium');
+            sendExternalNotification(`Team Chat • ${incomingMsg.senderName}`, {
+              body: incomingMsg.text || 'Sent an attachment or financial reference.',
+              tag: `chat-${incomingMsg.id}`
+            });
+          }
+
+          const combinedDeleted = Array.isArray(prev.deletedEntityIds) ? prev.deletedEntityIds : [];
+          const merged = mergeChatMessages(currentMsgs, [incomingMsg], combinedDeleted);
+          const updatedState = { ...prev, chatMessages: merged };
+          saveStateToStorage(updatedState);
+          return updatedState;
+        });
+      } else if (event.type === 'UPDATE_REACTIONS') {
+        setState((prev) => {
+          const currentMsgs = prev.chatMessages || [];
+          const updated = currentMsgs.map((m) =>
+            m.id === event.messageId ? { ...m, reactions: event.reactions } : m
+          );
+          const updatedState = { ...prev, chatMessages: updated };
+          saveStateToStorage(updatedState);
+          return updatedState;
+        });
+      } else if (event.type === 'DELETE_MESSAGE') {
+        setState((prev) => {
+          const currentMsgs = prev.chatMessages || [];
+          const updated = currentMsgs.filter((m) => m.id !== event.messageId);
+          const updatedState = { ...prev, chatMessages: updated };
+          saveStateToStorage(updatedState);
+          return updatedState;
+        });
+      }
+    });
+
     // Seed existing chat messages to Firestore if empty
     if (state.chatMessages && state.chatMessages.length > 0) {
       seedInitialChatMessagesIfEmpty(state.chatMessages);
@@ -458,6 +519,7 @@ export default function App() {
     return () => {
       if (unsubscribe) unsubscribe();
       if (unsubscribeChat) unsubscribeChat();
+      if (unsubscribeBroadcast) unsubscribeBroadcast();
     };
   }, []);
 
@@ -790,13 +852,16 @@ export default function App() {
           })
         : prev.loans;
 
-      return {
+      const updatedState = {
         ...prev,
         transactions: [newTx, ...prev.transactions],
         equbs: updatedEqubs,
         loans: updatedLoans,
         auditLogs: [newAuditLog, ...prev.auditLogs]
       };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
     });
 
     if (targetEqub) {
@@ -838,10 +903,15 @@ export default function App() {
       creatorName: state.currentUser.name,
       branch: state.currentUser.branch
     };
-    setState(prev => ({
-      ...prev,
-      transactions: [newTx, ...prev.transactions]
-    }));
+    setState(prev => {
+      const updatedState = {
+        ...prev,
+        transactions: [newTx, ...prev.transactions]
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
     triggerToast(`🎮 ${formatETB(amount)} PS5 Gaming revenue logged to ${mainWallet.name}!`);
     sendExternalNotification('PlusZone ERP - Gaming Revenue 🎮', {
       body: `PS5 Revenue ${formatETB(amount)} logged (${category}) to ${mainWallet.name}.`
@@ -937,13 +1007,16 @@ export default function App() {
           })
         : prev.loans;
 
-      return {
+      const updatedState = {
         ...prev,
         transactions: [...newTxs, ...prev.transactions],
         equbs: updatedEqubs,
         loans: updatedLoans,
         auditLogs: [newAuditLog, ...prev.auditLogs]
       };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
     });
 
     if (targetEqub) {
@@ -997,11 +1070,16 @@ export default function App() {
       branch: state.currentUser.branch
     };
 
-    setState(prev => ({
-      ...prev,
-      transfers: [newTransfer, ...prev.transfers],
-      auditLogs: [newAuditLog, ...prev.auditLogs]
-    }));
+    setState(prev => {
+      const updatedState = {
+        ...prev,
+        transfers: [newTransfer, ...prev.transfers],
+        auditLogs: [newAuditLog, ...prev.auditLogs]
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
 
     triggerToast(`${formatETB(data.amount)} transferred from ${fromW?.name} to ${toW?.name}`);
     sendExternalNotification('PlusZone ERP - Wallet Transfer 🔄', {
@@ -1042,21 +1120,26 @@ export default function App() {
       branch: state.currentUser.branch
     };
 
-    setState(prev => ({
-      ...prev,
-      transfers: prev.transfers.map(t =>
-        t.id === transferId
-          ? {
-              ...t,
-              fromWalletId: data.fromWalletId,
-              toWalletId: data.toWalletId,
-              amount: data.amount,
-              reason: data.reason
-            }
-          : t
-      ),
-      auditLogs: [newAuditLog, ...prev.auditLogs]
-    }));
+    setState(prev => {
+      const updatedState = {
+        ...prev,
+        transfers: prev.transfers.map(t =>
+          t.id === transferId
+            ? {
+                ...t,
+                fromWalletId: data.fromWalletId,
+                toWalletId: data.toWalletId,
+                amount: data.amount,
+                reason: data.reason
+              }
+            : t
+        ),
+        auditLogs: [newAuditLog, ...prev.auditLogs]
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
 
     triggerToast(`Transfer updated: ${formatETB(data.amount)} from ${fromW?.name} to ${toW?.name}`);
     performRefresh(true);
@@ -1082,11 +1165,16 @@ export default function App() {
       branch: state.currentUser.branch
     };
 
-    setState(prev => ({
-      ...prev,
-      transfers: prev.transfers.filter(t => t.id !== transferId),
-      auditLogs: [newAuditLog, ...prev.auditLogs]
-    }));
+    setState(prev => {
+      const updatedState = {
+        ...prev,
+        transfers: prev.transfers.filter(t => t.id !== transferId),
+        auditLogs: [newAuditLog, ...prev.auditLogs]
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
 
     triggerToast(`Transfer of ${formatETB(targetTransfer.amount)} reversed/deleted successfully.`);
     performRefresh(true);
@@ -1235,11 +1323,14 @@ export default function App() {
         branch: prev.currentUser.branch
       };
 
-      return {
+      const updatedState = {
         ...prev,
         transactions: updatedTxs,
         auditLogs: [newAuditLog, ...prev.auditLogs]
       };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
     });
 
     triggerToast(`Transaction successfully updated!`);
@@ -1365,11 +1456,14 @@ export default function App() {
         diffAfter: { clearedCount: prev.transactions.length },
         branch: prev.currentUser.branch
       };
-      return {
+      const updatedState = {
         ...prev,
         transactions: [],
         auditLogs: [newAuditLog, ...prev.auditLogs]
       };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
     });
     triggerToast(`🗑️ All transactions cleared! You can now add entries manually.`);
     performRefresh(true);
@@ -1444,12 +1538,15 @@ export default function App() {
         };
       });
 
-      return {
+      const updatedState = {
         ...prev,
         transactions: consolidateEqubSplitTransactions([newTx, ...prev.transactions], prev.wallets),
         equbs: updatedEqubs,
         auditLogs: [newAuditLog, ...(prev.auditLogs || [])]
       };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
     });
 
     if (splits.length > 1) {
@@ -1484,11 +1581,16 @@ export default function App() {
       refId: equbId
     };
 
-    setState(prev => ({
-      ...prev,
-      transactions: [newTx, ...prev.transactions],
-      equbs: prev.equbs.map(e => e.id === equbId ? { ...e, payoutsClaimed: (e.payoutsClaimed || 0) + 1 } : e)
-    }));
+    setState(prev => {
+      const updatedState = {
+        ...prev,
+        transactions: [newTx, ...prev.transactions],
+        equbs: prev.equbs.map(e => e.id === equbId ? { ...e, payoutsClaimed: (e.payoutsClaimed || 0) + 1 } : e)
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
 
     triggerToast(`🎉 ${formatETB(netPool)} Equb Payout credited to ${targetWallet?.name}!`);
     sendExternalNotification('PlusZone ERP - Equb Payout Claimed 🎉', {
@@ -1621,10 +1723,15 @@ export default function App() {
       status: 'ACTIVE'
     };
 
-    setState(prev => ({
-      ...prev,
-      equbs: [...prev.equbs, created]
-    }));
+    setState(prev => {
+      const updatedState = {
+        ...prev,
+        equbs: [...prev.equbs, created]
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
 
     triggerToast(`Equb circle "${created.name}" launched.`);
     performRefresh(true);
@@ -1658,11 +1765,16 @@ export default function App() {
       refId: created.id
     };
 
-    setState(prev => ({
-      ...prev,
-      loans: [created, ...prev.loans],
-      transactions: [tx, ...prev.transactions]
-    }));
+    setState(prev => {
+      const updatedState = {
+        ...prev,
+        loans: [created, ...prev.loans],
+        transactions: [tx, ...prev.transactions]
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
 
     triggerToast(isLent ? `Lent loan recorded for ${created.counterparty}` : `Borrowed loan "${created.title}" recorded.`);
     sendExternalNotification('PlusZone ERP - Loan Activity 🏦', {
@@ -1751,21 +1863,26 @@ export default function App() {
       branch: state.currentUser.branch
     };
 
-    setState(prev => ({
-      ...prev,
-      loans: prev.loans.map(l =>
-        l.id === loanId
-          ? {
-              ...l,
-              outstandingBalance: newBal,
-              status: isPaid ? 'PAID' : 'ACTIVE',
-              payments: [...paymentRecords, ...l.payments]
-            }
-          : l
-      ),
-      transactions: [...newTransactions, ...prev.transactions],
-      auditLogs: [newAuditLog, ...prev.auditLogs]
-    }));
+    setState(prev => {
+      const updatedState = {
+        ...prev,
+        loans: prev.loans.map(l =>
+          l.id === loanId
+            ? {
+                ...l,
+                outstandingBalance: newBal,
+                status: (isPaid ? 'PAID' : 'ACTIVE') as 'ACTIVE' | 'PAID',
+                payments: [...paymentRecords, ...l.payments]
+              }
+            : l
+        ),
+        transactions: [...newTransactions, ...prev.transactions],
+        auditLogs: [newAuditLog, ...prev.auditLogs]
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
 
     triggerToast(
       isLent
@@ -1791,10 +1908,15 @@ export default function App() {
       createdDate: new Date().toISOString()
     };
 
-    setState(prev => ({
-      ...prev,
-      receivables: [created, ...prev.receivables]
-    }));
+    setState(prev => {
+      const updatedState = {
+        ...prev,
+        receivables: [created, ...prev.receivables]
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
 
     triggerToast(`Receivable invoice for ${created.customerName} recorded.`);
     performRefresh(true);
@@ -1890,12 +2012,15 @@ export default function App() {
           : r
       ));
 
-      return {
+      const updatedState = {
         ...prev,
         receivables: updatedReceivables,
         transactions: [newTx, ...prev.transactions],
         auditLogs: [newAuditLog, ...(prev.auditLogs || [])]
       };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
     });
 
     triggerToast(`✓ Collected ${formatETB(amount)} from ${customerName} → Recorded in ${walletName}!`);
@@ -1909,24 +2034,29 @@ export default function App() {
     const targetEqub = state.equbs.find(e => e.id === equbId);
     if (!targetEqub) return;
 
-    setState(prev => ({
-      ...prev,
-      equbs: prev.equbs.map(e => e.id === equbId ? { ...e, ...updates } : e),
-      auditLogs: [
-        {
-          id: `aud-${Date.now()}`,
-          timestamp: new Date().toISOString(),
-          actorId: prev.currentUser.id,
-          actorName: prev.currentUser.name,
-          action: 'UPDATE_EQUB',
-          entity: 'Equb',
-          entityId: equbId,
-          diffAfter: updates,
-          branch: prev.currentUser.branch
-        },
-        ...prev.auditLogs
-      ]
-    }));
+    setState(prev => {
+      const updatedState = {
+        ...prev,
+        equbs: prev.equbs.map(e => e.id === equbId ? { ...e, ...updates } : e),
+        auditLogs: [
+          {
+            id: `aud-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            actorId: prev.currentUser.id,
+            actorName: prev.currentUser.name,
+            action: 'UPDATE_EQUB',
+            entity: 'Equb',
+            entityId: equbId,
+            diffAfter: updates,
+            branch: prev.currentUser.branch
+          },
+          ...prev.auditLogs
+        ]
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
 
     triggerToast(`Equb circle "${updates.name || targetEqub.name}" updated.`);
     performRefresh(true);
@@ -1976,24 +2106,29 @@ export default function App() {
     const targetLoan = state.loans.find(l => l.id === loanId);
     if (!targetLoan) return;
 
-    setState(prev => ({
-      ...prev,
-      loans: prev.loans.map(l => l.id === loanId ? { ...l, ...updates } : l),
-      auditLogs: [
-        {
-          id: `aud-${Date.now()}`,
-          timestamp: new Date().toISOString(),
-          actorId: prev.currentUser.id,
-          actorName: prev.currentUser.name,
-          action: 'UPDATE_LOAN',
-          entity: 'Loan',
-          entityId: loanId,
-          diffAfter: updates,
-          branch: prev.currentUser.branch
-        },
-        ...prev.auditLogs
-      ]
-    }));
+    setState(prev => {
+      const updatedState = {
+        ...prev,
+        loans: prev.loans.map(l => l.id === loanId ? { ...l, ...updates } : l),
+        auditLogs: [
+          {
+            id: `aud-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            actorId: prev.currentUser.id,
+            actorName: prev.currentUser.name,
+            action: 'UPDATE_LOAN',
+            entity: 'Loan',
+            entityId: loanId,
+            diffAfter: updates,
+            branch: prev.currentUser.branch
+          },
+          ...prev.auditLogs
+        ]
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
 
     triggerToast(`Loan contract "${updates.title || targetLoan.title}" updated.`);
     performRefresh(true);
@@ -2785,9 +2920,7 @@ export default function App() {
 
     locallySentMsgIdsRef.current.add(newMsg.id);
 
-    // Instant real-time Firestore broadcast to all team members
-    sendChatMessageToFirebase(newMsg);
-
+    // 1. Immediate optimistic UI update (0ms local delay)
     setState(prev => {
       const updatedMsgs = [...(prev.chatMessages || []), newMsg];
       const updatedState = {
@@ -2795,8 +2928,16 @@ export default function App() {
         chatMessages: updatedMsgs
       };
       saveStateToStorage(updatedState);
-      syncStateToFirebaseNow(updatedState);
       return updatedState;
+    });
+
+    // 2. Immediate 0ms cross-tab broadcast + direct Firestore write
+    sendChatMessageImmediately(newMsg);
+
+    // 3. Keep full ERP state synced to cloud
+    setState(prev => {
+      syncStateToFirebaseNow(prev);
+      return prev;
     });
   };
 
@@ -2843,9 +2984,9 @@ export default function App() {
         return { ...msg, reactions: currentReactions };
       });
 
-      // Push real-time reaction update to Firestore
+      // Push real-time reaction update to 0ms cross-tab broadcast and Firestore
       if (finalReactions) {
-        updateChatMessageReactionInFirebase(messageId, finalReactions);
+        updateChatReactionImmediately(messageId, finalReactions);
       }
 
       const updatedState = { ...prev, chatMessages: updatedMsgs };
@@ -3101,6 +3242,10 @@ export default function App() {
             onRejectRequest={handleRejectRequest}
             onMarkRead={markChatAsRead}
             onOpenHelp={handleOpenHelp}
+            onSwitchUser={(user: UserProfile) => {
+              setState(prev => ({ ...prev, currentUser: user }));
+              updateAuthSessionUser(user);
+            }}
           />
         )}
 
@@ -3217,10 +3362,7 @@ export default function App() {
       {/* Session Lock Screen Password & PIN Unlock Modal */}
       <SessionLockModal
         isOpen={isSessionLocked}
-        onClose={() => {
-          // If closed in locked state without authentication, log out safely
-          handleLogout();
-        }}
+        onClose={() => setIsSessionLocked(false)}
         userEmail={state.currentUser.email}
         userName={state.currentUser.name}
         currentUserPassword={state.currentUser.password || 'password123'}

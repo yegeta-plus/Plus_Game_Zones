@@ -21,7 +21,7 @@ import { hashPassword } from '../../lib/auth';
 import { AppLogo } from '../common/AppLogo';
 import { auth } from '../../lib/firebase';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { getRememberSessionPreference, getRememberedUsername } from '../../lib/authSession';
+import { getRememberSessionPreference, getRememberedUsername, getRememberedUserProfile } from '../../lib/authSession';
 
 interface LoginPageProps {
   allUsers: UserProfile[];
@@ -43,7 +43,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [authTab, setAuthTab] = useState<'SIGN_IN' | 'ACTIVATE_OTP'>('SIGN_IN');
 
   // Sign In credentials - pre-fill remembered username/email if available
-  const [username, setUsername] = useState<string>(() => getRememberedUsername());
+  const [rememberedUser] = useState<UserProfile | null>(() => getRememberedUserProfile());
+  const [username, setUsername] = useState<string>(() => getRememberedUsername() || (rememberedUser?.username || rememberedUser?.email || ''));
   const [password, setPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [rememberMe, setRememberMe] = useState<boolean>(() => getRememberSessionPreference());
@@ -621,6 +622,35 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                           </span>
                         </p>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Quick Continue for Remembered User */}
+                  {rememberedUser && !isLockedOut && (
+                    <div className="p-3.5 rounded-2xl bg-gradient-to-r from-[#00D4AA]/15 via-[#00D4AA]/5 to-indigo-500/10 border border-[#00D4AA]/30 flex items-center justify-between gap-3 animate-fadeIn mb-1">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-[#00D4AA]/20 text-[#00D4AA] flex items-center justify-center font-bold text-xs shrink-0 border border-[#00D4AA]/30">
+                          {rememberedUser.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-white truncate flex items-center gap-1.5">
+                            <span>{rememberedUser.name}</span>
+                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Saved</span>
+                          </p>
+                          <p className="text-[10px] text-slate-400 font-mono truncate">{rememberedUser.role} • Remembered Session</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('success');
+                          onLogin(rememberedUser, true);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-[#00D4AA] hover:bg-[#00BF99] text-[#070A12] font-black text-xs shrink-0 flex items-center gap-1 shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                      >
+                        <span>Continue</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   )}
 

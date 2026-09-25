@@ -692,14 +692,21 @@ export function loadInitialState(): ERPState {
 
         // Preserve currently logged-in user session if available
         const activeAuthSession = getActiveAuthSession();
-        if (activeAuthSession && Array.isArray(parsed.users)) {
-          const authUser = parsed.users.find(
-            (u: UserProfile) =>
-              u.id === activeAuthSession.userId ||
-              (activeAuthSession.email && u.email?.toLowerCase() === activeAuthSession.email.toLowerCase())
-          );
+        if (activeAuthSession) {
+          const authUser =
+            (Array.isArray(parsed.users)
+              ? parsed.users.find(
+                  (u: UserProfile) =>
+                    u.id === activeAuthSession.userId ||
+                    (activeAuthSession.email && u.email?.toLowerCase() === activeAuthSession.email.toLowerCase())
+                )
+              : null) || activeAuthSession.user;
+
           if (authUser && authUser.active !== false) {
             parsed.currentUser = authUser;
+            if (Array.isArray(parsed.users) && !parsed.users.some((u: UserProfile) => u.id === authUser.id)) {
+              parsed.users.push(authUser);
+            }
           } else if (parsed.currentUser && parsed.currentUser.id) {
             const matchingUser = parsed.users.find((u: UserProfile) => u.id === parsed.currentUser.id || u.email?.toLowerCase() === parsed.currentUser.email?.toLowerCase());
             parsed.currentUser = matchingUser || DEFAULT_USERS[0];
@@ -728,16 +735,20 @@ export function loadInitialState(): ERPState {
 function createInitialState(): ERPState {
   const activeAuthSession = getActiveAuthSession();
   const sessionUser = activeAuthSession
-    ? DEFAULT_USERS.find(
+    ? (DEFAULT_USERS.find(
         (u) =>
           u.id === activeAuthSession.userId ||
           (activeAuthSession.email && u.email?.toLowerCase() === activeAuthSession.email.toLowerCase())
-      )
+      ) || activeAuthSession.user)
     : undefined;
+
+  const initialUsers = sessionUser && !DEFAULT_USERS.some(u => u.id === sessionUser.id)
+    ? [...DEFAULT_USERS, sessionUser]
+    : DEFAULT_USERS;
 
   return {
     currentUser: sessionUser || DEFAULT_USERS[0],
-    users: DEFAULT_USERS,
+    users: initialUsers,
     wallets: DEFAULT_WALLETS,
     transactions: consolidateEqubSplitTransactions(DEFAULT_TRANSACTIONS, DEFAULT_WALLETS),
     transfers: INITIAL_DATASET_JULY_AUG.transfers,
