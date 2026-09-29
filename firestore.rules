@@ -6,6 +6,13 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // User profile documents: Read accessible to authenticated users, write to owner
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && request.auth.uid == userId;
+      allow delete: if false;
+    }
+
     // ERP State collection security rules
     match /erp_state/{documentId} {
       allow read: if true;
@@ -28,8 +35,6 @@ service cloud.firestore {
 
     // income_pending_confirmation:
     // Clients/staff can create new pending payments with status 'pending' or 'flagged_unconfirmed'.
-    // Transitioning status to 'paid' and setting matchedConfirmationId is BLOCKED for client writes;
-    // only Admin SDK / Cloud Function backend trigger can transition status to 'paid'.
     match /income_pending_confirmation/{incomeId} {
       allow read: if true;
       allow create: if request.resource.data.status in ['pending', 'flagged_unconfirmed']
@@ -44,6 +49,12 @@ service cloud.firestore {
                     && (!('matchedConfirmationId' in request.resource.data) || request.resource.data.matchedConfirmationId == resource.data.matchedConfirmationId);
 
       allow delete: if resource.data.status != 'paid';
+    }
+
+    // Test connection document for connection validation
+    match /test/{documentId} {
+      allow read: if true;
+      allow write: if false;
     }
 
     // Fallback rule for other operational collections

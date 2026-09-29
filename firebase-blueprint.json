@@ -9,6 +9,24 @@
         "updatedBy": { "type": "string" }
       }
     },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Authenticated user profile data tracked via Firebase Auth & Firestore",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "username": { "type": "string" },
+        "role": { "type": "string" },
+        "active": { "type": "boolean" },
+        "avatarUrl": { "type": "string" },
+        "branch": { "type": "string" },
+        "lastLoginAt": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "role"]
+    },
     "IncomePendingConfirmation": {
       "title": "Income Pending Confirmation",
       "description": "Customer payments pending bank SMS confirmation",
@@ -74,6 +92,10 @@
     }
   },
   "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Persistent user profile documents synchronized with Firebase Authentication"
+    },
     "/erp_state/{documentId}": {
       "schema": "ERPState",
       "description": "Full ERP data state"

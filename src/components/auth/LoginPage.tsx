@@ -20,7 +20,7 @@ import { UserProfile, UserRole } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 import { hashPassword, DEFAULT_ROLE_PERMISSIONS } from '../../lib/auth';
 import { AppLogo } from '../common/AppLogo';
-import { auth } from '../../lib/firebase';
+import { auth, syncUserProfileToFirestore } from '../../lib/firebase';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { getRememberSessionPreference, getRememberedUsername, getRememberedUserProfile } from '../../lib/authSession';
 
@@ -681,6 +681,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       setIsSubmitting(false);
       setShowGoogleModal(false);
       triggerHaptic('success');
+      syncUserProfileToFirestore(matchedUser);
       onLogin(matchedUser, rememberMe);
     } catch (popupErr: any) {
       console.warn('Google Popup auth error or blocked in iframe:', popupErr?.message);

@@ -11,14 +11,15 @@ import {
   setDoc,
   getDoc,
   getDocs,
+  getDocFromServer,
   updateDoc,
   disableNetwork,
   enableNetwork
 } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import config from '../../firebase-applet-config.json';
 import { ERPState } from './store';
-import { ChatMessage, ChatMessageReaction } from '../types';
+import { ChatMessage, ChatMessageReaction, UserProfile } from '../types';
 
 const metaEnv = (import.meta as unknown as { env?: Record<string, string> }).env || {};
 
@@ -49,6 +50,18 @@ export const db = initializeFirestore(
 );
 
 export const auth = getAuth(app);
+
+// Validate Connection to Firestore on boot as mandated by Firebase skill
+async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error('Please check your Firebase configuration.');
+    }
+  }
+}
+testConnection();
 
 const getTodayStr = () => new Date().toISOString().split('T')[0];
 
@@ -206,7 +219,7 @@ if (typeof window !== 'undefined') {
 }
 
 // Graceful background connection check without throwing unhandled rejection
-async function testConnection() {
+async function checkConnectionHealth() {
   if (isQuotaExceeded) return;
   try {
     const docRef = doc(db, 'erp_state', 'main');
@@ -233,7 +246,7 @@ async function testConnection() {
   }
 }
 if (!isQuotaExceeded) {
-  testConnection().catch(() => {});
+  checkConnectionHealth().catch(() => {});
 }
 
 export enum OperationType {
@@ -690,3 +703,56 @@ export async function deleteChatMessageInFirebase(messageId: string): Promise<vo
   const { deleteChatMessageImmediately } = await import('./realtimeChat');
   return deleteChatMessageImmediately(messageId);
 }
+
+/**
+ * Persist or update an authenticated user profile in Firestore (/users/{userId})
+ */
+export async function syncUserProfileToFirestore(user: UserProfile): Promise<void> {
+  if (!user || !user.id) return;
+  try {
+    const userRef = doc(db, 'users', user.id);
+    const cleanPayload = {
+      id: user.id,
+      name: user.name || 'User',
+      email: user.email || '',
+      username: user.username || '',
+      role: user.role || 'Partner',
+      active: user.active !== false,
+      avatarUrl: user.avatarUrl || '',
+      branch: user.branch || 'Addis Ababa HQ',
+      lastLoginAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    await setDoc(userRef, cleanPayload, { merge: true });
+    console.log('[Firestore Auth] User profile synced to Firestore:', user.id);
+  } catch (err) {
+    console.warn('[Firestore Auth] Could not sync user profile to Firestore:', err);
+  }
+}
+
+/**
+ * Retrieve a user profile document from Firestore (/users/{userId})
+ */
+export async function fetchUserProfileFromFirestore(userId: string): Promise<UserProfile | null> {
+  if (!userId) return null;
+  try {
+    const userRef = doc(db, 'users', userId);
+    const snap = await getDoc(userRef);
+    if (snap.exists()) {
+      return snap.data() as UserProfile;
+    }
+  } catch (err) {
+    console.warn('[Firestore Auth] Could not fetch user profile from Firestore:', err);
+  }
+  return null;
+}
+
+/**
+ * Listen to Firebase Auth state changes and track user authentication
+ */
+export function listenToAuthChanges(callback: (firebaseUser: any) => void): () => void {
+  return onAuthStateChanged(auth, (user) => {
+    callback(user);
+  });
+}
+

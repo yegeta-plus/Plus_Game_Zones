@@ -214,15 +214,30 @@ async function startServer() {
   });
 
   // =========================================================================
-  // Gemini AI Partner & Financial Advisor Endpoint (Predictive Logic & Decision Simulator)
+  // Gemini AI Partner & Multi-Turn Chatbot Endpoint
+  // Supports: gemini-3.5-flash (general), gemini-3.1-pro-preview (complex), gemini-3.1-flash-lite (fast)
+  // Specific Chatbot Roles: Financial Controller, Lounge Partner, Equb Advisor, Speed Accountant
   // =========================================================================
-  app.post('/api/ai-assistant', async (req, res) => {
+  app.post(['/api/ai-assistant', '/api/gemini/chat'], async (req, res) => {
     try {
       const apiKey = process.env.GEMINI_API_KEY;
-      const { message, ledgerSummary, financialContext, scenarioData } = req.body;
+      const { message, history, model, role, ledgerSummary, financialContext, scenarioData } = req.body;
 
-      if (!message) {
-        return res.status(400).json({ error: 'Message prompt is required' });
+      if (!message && (!Array.isArray(history) || history.length === 0)) {
+        return res.status(400).json({ error: 'Message prompt or conversation history is required' });
+      }
+
+      // Determine model based on task requirement:
+      // gemini-3.1-pro-preview for complex tasks, gemini-3.5-flash for general tasks, gemini-3.1-flash-lite for fast tasks
+      let targetModel = 'gemini-3.5-flash';
+      if (model === 'gemini-3.1-pro-preview') {
+        targetModel = 'gemini-3.1-pro-preview';
+      } else if (model === 'gemini-3.1-flash-lite') {
+        targetModel = 'gemini-3.1-flash-lite';
+      } else if (model === 'gemini-3.5-flash') {
+        targetModel = 'gemini-3.5-flash';
+      } else if (model && typeof model === 'string' && !model.includes('gemini-3.8-flash')) {
+        targetModel = model;
       }
 
       // Partner Fallback Intelligence Engine if offline / no API key / API error
@@ -485,8 +500,63 @@ Selam partner! Here is our current financial position, future forecast, and tact
         }
       });
 
+      // Build role-specific system instruction to give chatbots distinct roles
+      let roleSpecificTitle = 'AI Business Partner';
+      let roleDirectives = 'You are a sharp, trusted co-owner who knows the numbers and cares whether the business wins.';
+      
+      switch (role) {
+        case 'FINANCIAL_CONTROLLER':
+          roleSpecificTitle = 'Chief Financial Controller & Compliance Auditor';
+          roleDirectives = `You are the Chief Financial Controller & Compliance Auditor for Plus Game Zone ERP in Addis Ababa, Ethiopia.
+Your specific role:
+- Conduct rigorous financial auditing, double-entry verification, and cash-drawer reconciliation.
+- Enforce strict payment fraud prevention (flag unverified mobile money screenshots, require CBE FT or Telebirr SMS verification).
+- Scrutinize expenses, analyze profit margins, and protect capital reserves.
+- Focus on accuracy, mathematical precision, and zero-trust verification.`;
+          break;
+
+        case 'LOUNGE_PARTNER':
+          roleSpecificTitle = 'PlayStation Lounge Operations & Gaming Strategist';
+          roleDirectives = `You are the PlayStation Lounge Operations Partner for Plus Game Zone in Addis Ababa, Ethiopia.
+Your specific role:
+- Maximize gaming station utilization (PS5 & PS4 lounges), tournament registrations (FC 26/27), and hourly rental revenue.
+- Advise on game release demand, controller repairs, snack/drink upsells, and gamer peak hours.
+- Keep recommendations energetic, practical, and focused on driving daily cash flow.`;
+          break;
+
+        case 'EQUB_ADVISOR':
+          roleSpecificTitle = 'Equb Savings & Capital Allocation Advisor';
+          roleDirectives = `You are the Equb Savings & Capital Allocation Advisor for Plus Game Zone.
+Your specific role:
+- Manage traditional Ethiopian rotating savings circles (Agerye & Leli Equbs).
+- Forecast round payouts, slot liabilities, winning pool reinvestment, and Ethiopian calendar schedules.
+- Advise partners on liquidity planning, debt clearance, and zero-interest peer capital leverage.`;
+          break;
+
+        case 'SPEED_ACCOUNTANT':
+          roleSpecificTitle = 'Speed Cashier & Instant Tally Calculator';
+          roleDirectives = `You are the Speed Cashier & Instant Tally Calculator for Plus Game Zone.
+Your specific role:
+- Deliver ultra-fast, direct numeric answers with zero preamble or filler text.
+- Provide instant wallet balances, rapid profit & loss totals, and immediate change calculations in 1-3 concise lines.
+- Format with clean numbers and compact ETB values.`;
+          break;
+
+        case 'GENERAL_PARTNER':
+        default:
+          roleSpecificTitle = 'PlusZone AI Business Partner';
+          roleDirectives = `You are the AI Business Partner inside PlusZone Finance, the ERP for Plus Game Zone in Addis Ababa, Ethiopia.
+Your specific role:
+- Deliver strategic, balanced operational and financial guidance across wallets, gaming stations, Equbs, loans, and expenses.
+- Be decisive, data-driven, and supportive of long-term business profitability.`;
+          break;
+      }
+
       const systemInstruction = `
-You are the AI business partner inside PlusZone Finance, the ERP for Plus Game Zone, a PlayStation gaming house and FC 26-27 booking business in Addis Ababa, Ethiopia. You are a sharp, trusted co-owner who knows the numbers and cares whether the business wins.
+You are the ${roleSpecificTitle} inside PlusZone Finance, the ERP for Plus Game Zone, a PlayStation gaming house and FC 26-27 booking business in Addis Ababa, Ethiopia.
+
+## Specific Role & Mission
+${roleDirectives}
 
 ## Speed & Conciseness Directives (CRITICAL)
 - Provide fast, clear, and direct answers immediately.
@@ -551,13 +621,48 @@ You are the AI business partner inside PlusZone Finance, the ERP for Plus Game Z
 ## Context
 Today: ${currentDate}
 User: ${userName} (${userRole})
+Model Assigned: ${targetModel}
+Chatbot Role: ${roleSpecificTitle}
 
-## DATA
+## FINANCIAL LEDGER DATA
 ${JSON.stringify(jsonSnapshot, null, 2)}
 
-## Partner Question
-"${message}"
+## Question / Instruction
+"${message || 'Provide a strategic overview of our financial position.'}"
 `;
+
+      // Construct multi-turn conversation contents array
+      const conversationContents: any[] = [];
+      if (Array.isArray(history) && history.length > 0) {
+        for (const turn of history) {
+          const tText = typeof turn.text === 'string' ? turn.text.trim() : (typeof turn.content === 'string' ? turn.content.trim() : '');
+          if (tText) {
+            conversationContents.push({
+              role: turn.role === 'model' || turn.role === 'ai' || turn.role === 'assistant' ? 'model' : 'user',
+              parts: [{ text: tText }]
+            });
+          }
+        }
+      }
+      // Append the latest user query with enriched data context
+      conversationContents.push({
+        role: 'user',
+        parts: [{ text: promptPayload }]
+      });
+
+      // Configure thinking level based on model capabilities
+      let modelConfig: any = {
+        systemInstruction,
+        temperature: 0.4
+      };
+
+      if (targetModel === 'gemini-3.1-pro-preview') {
+        modelConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
+      } else if (targetModel === 'gemini-3.1-flash-lite') {
+        modelConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.MINIMAL };
+      } else {
+        modelConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
+      }
 
       if (isStream) {
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -570,15 +675,9 @@ ${JSON.stringify(jsonSnapshot, null, 2)}
 
         try {
           const responseStream = await ai.models.generateContentStream({
-            model: 'gemini-3.8-flash',
-            contents: promptPayload,
-            config: {
-              systemInstruction,
-              temperature: 0.4,
-              thinkingConfig: {
-                thinkingLevel: ThinkingLevel.LOW
-              }
-            }
+            model: targetModel,
+            contents: conversationContents,
+            config: modelConfig
           });
 
           let yielded = false;
@@ -596,8 +695,8 @@ ${JSON.stringify(jsonSnapshot, null, 2)}
 
           res.write('data: [DONE]\n\n');
           return res.end();
-        } catch (genErr) {
-          console.warn('Gemini stream unavailable/failed, invoking fallback:', genErr);
+        } catch (genErr: any) {
+          console.warn(`[Gemini Chat] ${targetModel} stream failed, falling back:`, genErr?.message);
           const fallback = generatePartnerFallback();
           res.write(`data: ${JSON.stringify({ chunk: fallback })}\n\n`);
           res.write('data: [DONE]\n\n');
@@ -608,19 +707,13 @@ ${JSON.stringify(jsonSnapshot, null, 2)}
       let reply = '';
       try {
         const response = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: promptPayload,
-          config: {
-            systemInstruction,
-            temperature: 0.4,
-            thinkingConfig: {
-              thinkingLevel: ThinkingLevel.LOW
-            }
-          }
+          model: targetModel,
+          contents: conversationContents,
+          config: modelConfig
         });
         reply = response.text || generatePartnerFallback();
-      } catch (genErr) {
-        console.warn('Gemini API generateContent unavailable/failed, invoking Partner Fallback Engine:', genErr);
+      } catch (genErr: any) {
+        console.warn(`[Gemini Chat] ${targetModel} generateContent failed, invoking fallback:`, genErr?.message);
         reply = generatePartnerFallback();
       }
 
