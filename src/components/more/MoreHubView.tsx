@@ -17,7 +17,8 @@ import {
   Sliders,
   LogOut,
   MessageSquare,
-  HelpCircle
+  HelpCircle,
+  Radio
 } from 'lucide-react';
 import { ERPState, Receivable } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
@@ -95,6 +96,7 @@ interface MoreHubViewProps {
   onCollectReceivable?: (receivableId: string, walletId: string, amount: number) => void;
   onReplayTour?: () => void;
   onOpenHelp?: (subView?: string) => void;
+  onOpenPwaModal?: () => void;
 }
 
 export const MoreHubView: React.FC<MoreHubViewProps> = ({
@@ -106,7 +108,8 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
   onNavigateTab,
   onCollectReceivable,
   onReplayTour,
-  onOpenHelp
+  onOpenHelp,
+  onOpenPwaModal
 }) => {
   const [subView, setSubView] = useState<SubViewType>(() => normalizeSubView(initialSubView));
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabType | null>(null);
@@ -214,6 +217,19 @@ export const MoreHubView: React.FC<MoreHubViewProps> = ({
       onClick: () => {
         triggerHaptic('light');
         setSubView('PLAY_STORE_STANDARDS');
+      }
+    },
+    {
+      id: 'PWA_STANDARDS' as any,
+      title: 'PWA Service Worker & Web App Manifest Suite',
+      subtitle: 'Network Interception, Offline Cache, Background Sync, 10 Manifest APIs & Desktop Widgets',
+      icon: Radio,
+      color: '#06B6D4',
+      onClick: () => {
+        triggerHaptic('light');
+        if (onOpenPwaModal) {
+          onOpenPwaModal();
+        }
       }
     },
     {

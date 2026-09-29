@@ -118,6 +118,34 @@ async function generateIcons() {
       .toFile(outPath);
     console.log(`Generated standard PNG: ${t.file} (${t.size}x${t.size})`);
   }
+
+  // Generate maskable icons with 15% safe margin on dark background
+  const maskableTargets = [
+    { file: 'pwa-maskable-192.png', size: 192 },
+    { file: 'pwa-maskable-512.png', size: 512 },
+  ];
+
+  for (const m of maskableTargets) {
+    const innerSize = Math.round(m.size * 0.76); // 12% padding on all sides for safe-zone
+    const innerBuffer = await sharp(rgbaBuffer, { raw: { width: w, height: h, channels: 4 } })
+      .resize(innerSize, innerSize, { fit: 'contain', background: { r: bgR, g: bgG, b: bgB, alpha: 0 } })
+      .png()
+      .toBuffer();
+
+    const outPath = path.join(publicDir, m.file);
+    await sharp({
+      create: {
+        width: m.size,
+        height: m.size,
+        channels: 4,
+        background: { r: bgR, g: bgG, b: bgB, alpha: 1 }
+      }
+    })
+      .composite([{ input: innerBuffer, gravity: 'center' }])
+      .png({ compressionLevel: 9 })
+      .toFile(outPath);
+    console.log(`Generated maskable PNG: ${m.file} (${m.size}x${m.size}) with safe zone`);
+  }
 }
 
 generateIcons().catch(err => {

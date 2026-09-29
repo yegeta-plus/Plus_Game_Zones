@@ -40,7 +40,7 @@ import { getActiveAuthSession } from './authSession';
 export type { ERPState } from '../types';
 export { isPersonalExpense, resolveExpenseScope, normalizeTransactionScopes };
 
-const STORAGE_KEY = 'pluszone_fin_erp_state_v29_restored_history';
+const STORAGE_KEY = 'pluszone_fin_erp_state_v31_equb_round25_updated';
 
 export const DEFAULT_AUTOMATED_EMAIL_REPORTS: AutomatedEmailReportsSettings = {
   enabled: true,
@@ -239,6 +239,8 @@ const DEFAULT_CATEGORIES: Category[] = [
   { id: 'cat-12', name: 'Loan Repayments', type: 'EXPENSE', icon: 'ArrowUpRight', color: '#DC2626', active: true },
   { id: 'cat-bd', name: 'Bad Debt', type: 'EXPENSE', icon: 'AlertTriangle', color: '#DC2626', active: true },
   { id: 'cat-sec', name: 'Community & Security', type: 'EXPENSE', icon: 'Shield', color: '#3B82F6', active: true },
+  { id: 'cat-rent', name: 'Rent', type: 'EXPENSE', icon: 'Home', color: '#E11D48', active: true },
+  { id: 'cat-equb-payout', name: 'Equb Payout', type: 'INCOME', icon: 'Award', color: '#10B981', active: true },
   { id: 'cat-exp', name: 'Expense', type: 'EXPENSE', icon: 'MinusCircle', color: '#EF4444', active: true },
   { id: 'cat-rc', name: 'Receivable Created', type: 'INCOME', icon: 'Clock', color: '#6366F1', active: true },
   { id: 'cat-gen', name: 'Genesis / Setup', type: 'INCOME', icon: 'Settings', color: '#64748B', active: true },
@@ -386,7 +388,9 @@ export function loadInitialState(): ERPState {
     return createInitialState();
   }
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY) ||
+      localStorage.getItem('pluszone_fin_erp_state_v30_loans_equbs_included') ||
+      localStorage.getItem('pluszone_fin_erp_state_v29_restored_history');
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed) {
@@ -399,7 +403,7 @@ export function loadInitialState(): ERPState {
             .filter((u: UserProfile) => {
               if (!u) return false;
               if (sampleUserIds.has(u.id)) return false;
-              if (u.email && (sampleEmails.has(u.email.toLowerCase()) || u.email.toLowerCase().endsWith('@pluszone.com'))) return false;
+              if (u.email && sampleEmails.has(u.email.toLowerCase())) return false;
               if (u.name && sampleNames.has(u.name)) return false;
               return true;
             })
@@ -494,26 +498,54 @@ export function loadInitialState(): ERPState {
           }
         }
         // Strictly load verified transactions, transfers, receivables, and opening balances requested by user
-        // Ensure PS4 Pro purchase is in Purchase category and Sep 10 - 12 (closed days) are excluded
-        parsed.transactions = (COMBINED_TRANSACTIONS || []).map((t: Transaction) => {
+        // Ensure PS4 Pro purchase is in Purchase category and all verified canonical transactions (including loans, equbs, rent, Sep 10-12) are loaded
+        const baseTransactions = (COMBINED_TRANSACTIONS || []).map((t: Transaction) => {
           let category = t.category;
+          let description = t.description;
+          let refType = t.refType;
+          let refId = t.refId;
           if (t.id === 'tx-20260707-08' || (t.description && /ps.*pro.*purchase/i.test(t.description))) {
             category = 'Purchase';
+          }
+          if (t.id === 'tx-20260920-exp-ekub-1456' || (t.refId === 'eq-agerye' && /round\s*#?25/i.test(t.description || ''))) {
+            category = 'Equb Contribution';
+            description = 'Ekub round contribution: Agerye (Round 25)';
+            refType = 'EQUB';
+            refId = 'eq-agerye';
           }
           return {
             ...t,
             category,
+            description,
+            refType,
+            refId,
             expenseScope: t.type === 'EXPENSE' ? (t.expenseScope || 'BUSINESS') : undefined
           };
-        }).filter((t: Transaction) => {
-          const d = t.date ? t.date.slice(0, 10) : '';
-          return d !== '2026-09-10' && d !== '2026-09-11' && d !== '2026-09-12';
         });
 
-        parsed.transfers = (VERIFIED_TRANSFERS || []).filter((tr: Transfer) => {
-          const d = tr.date ? tr.date.slice(0, 10) : '';
-          return d !== '2026-09-10' && d !== '2026-09-11' && d !== '2026-09-12';
-        });
+        // Retain any user-created or registered transactions in storage so they are not wiped
+        const existingTxMap = new Map<string, Transaction>();
+        baseTransactions.forEach(t => existingTxMap.set(t.id, t));
+        if (Array.isArray(parsed.transactions)) {
+          parsed.transactions.forEach((t: Transaction) => {
+            if (t && t.id) {
+              if (!existingTxMap.has(t.id)) {
+                existingTxMap.set(t.id, t);
+              }
+            }
+          });
+        }
+        parsed.transactions = Array.from(existingTxMap.values());
+
+        const baseTransfers = VERIFIED_TRANSFERS || [];
+        const transferMap = new Map<string, Transfer>();
+        baseTransfers.forEach(tr => transferMap.set(tr.id, tr));
+        if (Array.isArray(parsed.transfers)) {
+          parsed.transfers.forEach((tr: Transfer) => {
+            if (tr && tr.id && !transferMap.has(tr.id)) transferMap.set(tr.id, tr);
+          });
+        }
+        parsed.transfers = Array.from(transferMap.values());
         parsed.receivables = VERIFIED_RECEIVABLES;
         if (Array.isArray(parsed.wallets)) {
           parsed.wallets = parsed.wallets.map((w: Wallet) => {
@@ -625,6 +657,12 @@ export function loadInitialState(): ERPState {
         if (!parsed.categories.some((c: Category) => c.name === 'Purchase')) {
           parsed.categories.push({ id: 'cat-purchase', name: 'Purchase', type: 'EXPENSE', icon: 'ShoppingBag', color: '#0EA5E9', active: true });
         }
+        if (!parsed.categories.some((c: Category) => c.name === 'Rent')) {
+          parsed.categories.push({ id: 'cat-rent', name: 'Rent', type: 'EXPENSE', icon: 'Home', color: '#E11D48', active: true });
+        }
+        if (!parsed.categories.some((c: Category) => c.name === 'Equb Payout')) {
+          parsed.categories.push({ id: 'cat-equb-payout', name: 'Equb Payout', type: 'INCOME', icon: 'Award', color: '#10B981', active: true });
+        }
         
         // Ensure default recurring schedules exist if empty or missing, filtering out removed rent
         let currentRecurring: RecurringTemplate[] = Array.isArray(parsed.recurring) ? parsed.recurring : [];
@@ -681,7 +719,7 @@ export function loadInitialState(): ERPState {
           const userMap = new Map<string, UserProfile>();
           for (const u of DEFAULT_USERS) userMap.set(u.id, u);
           for (const u of parsed.users) {
-            if (!sampleUserIds.has(u.id) && !sampleEmails.has((u.email || '').toLowerCase()) && !(u.email || '').toLowerCase().endsWith('@pluszone.com')) {
+            if (!sampleUserIds.has(u.id) && !sampleEmails.has((u.email || '').toLowerCase())) {
               userMap.set(u.id, u);
             }
           }
@@ -804,20 +842,9 @@ export function calculateWalletBalance(wallet: Wallet, transactions: Transaction
 
   // Active ledger period begins on 2026-09-07 where the user defined verified opening balances.
   // Prior period transactions (July 1 - Sep 6) are preserved for historical audit & reporting.
-  // Sep 10 - 12 the business was closed for Ethiopian New Year (0 transactions; strictly no effect on wallet balances).
   const activePeriodStart = '2026-09-07T00:00:00.000Z';
-  const activeTransactions = transactions.filter(tx => {
-    if (tx.date < activePeriodStart) return false;
-    const d = tx.date ? tx.date.slice(0, 10) : '';
-    if (d === '2026-09-10' || d === '2026-09-11' || d === '2026-09-12') return false;
-    return true;
-  });
-  const activeTransfers = transfers.filter(tr => {
-    if (tr.date < activePeriodStart) return false;
-    const d = tr.date ? tr.date.slice(0, 10) : '';
-    if (d === '2026-09-10' || d === '2026-09-11' || d === '2026-09-12') return false;
-    return true;
-  });
+  const activeTransactions = transactions.filter(tx => tx.date >= activePeriodStart);
+  const activeTransfers = transfers.filter(tr => tr.date >= activePeriodStart);
 
   for (const tx of activeTransactions) {
     if (tx.reversed) continue;
@@ -1568,9 +1595,13 @@ export function mergeListById<T extends { id: string }>(
 export function mergeChatMessages(
   localList: ChatMessage[] = [],
   liveList: ChatMessage[] = [],
-  deletedEntityIds: string[] = []
+  deletedMessageIds: string[] = []
 ): ChatMessage[] {
-  const deletedSet = new Set(Array.isArray(deletedEntityIds) ? deletedEntityIds : []);
+  const deletedSet = new Set(
+    (Array.isArray(deletedMessageIds) ? deletedMessageIds : []).filter(
+      (id) => typeof id === 'string' && id.length > 0
+    )
+  );
   const map = new Map<string, ChatMessage>();
 
   // 1. First add local messages (optimistic / pending)
@@ -1587,9 +1618,17 @@ export function mergeChatMessages(
     }
   });
 
-  return Array.from(map.values()).sort(
-    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-  );
+  const parseTs = (ts?: string | number) => {
+    if (!ts) return 0;
+    const n = typeof ts === 'number' ? ts : new Date(ts).getTime();
+    return isNaN(n) ? 0 : n;
+  };
+
+  return Array.from(map.values()).sort((a, b) => {
+    const diff = parseTs(a.timestamp) - parseTs(b.timestamp);
+    if (diff !== 0) return diff;
+    return (a.id || '').localeCompare(b.id || '');
+  });
 }
 
 /**

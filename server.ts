@@ -33,6 +33,21 @@ async function startServer() {
     res.json({ status: 'ok', service: 'PlusZone Finance ERP Server' });
   });
 
+  // PWA Widget Data feed for Windows / Android / Edge Desktop boards
+  app.get('/api/pwa/widget-data', (req, res) => {
+    res.json({
+      title: 'Plus Game Zone',
+      subtitle: 'Finance & Lounge ERP',
+      totalBalance: '2,450,000',
+      todayIncome: '18,500',
+      digitalBalance: '2,100,000',
+      activeStations: 5,
+      totalStations: 8,
+      lastUpdated: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      status: 'ONLINE'
+    });
+  });
+
   // Fraud prevention unit test runner endpoint
   app.get('/api/fraud-tests', async (req, res) => {
     try {

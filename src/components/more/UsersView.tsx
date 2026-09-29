@@ -28,7 +28,7 @@ import {
   ExternalLink,
   CheckCircle2
 } from 'lucide-react';
-import { UserProfile, UserRole, UserPermissions, ERPState } from '../../types';
+import { UserProfile, UserRole, UserPermissions, ERPState, Transaction } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 import { DEFAULT_ROLE_PERMISSIONS, generateTemporaryPassword, getEffectivePermissions } from '../../lib/auth';
 
@@ -429,9 +429,23 @@ export const UsersView: React.FC<UsersViewProps> = ({
       lastActive: 'Just created'
     };
 
+    const regTx: Transaction = {
+      id: `tx-reg-${newUser.id}`,
+      date: new Date().toISOString(),
+      type: 'INCOME',
+      category: 'Genesis / Setup',
+      amount: 0,
+      walletId: 'w-cash',
+      description: `Member Account Registered: ${newUser.name} (@${newUser.username || newUser.email}) [${newUser.role}]`,
+      creatorName: currentUser.name,
+      creatorId: currentUser.id,
+      refId: newUser.id
+    };
+
     onUpdateState((prev) => ({
       ...prev,
       users: [...prev.users, newUser],
+      transactions: [regTx, ...prev.transactions],
       auditLogs: [
         {
           id: `aud-${Date.now()}`,

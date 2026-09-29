@@ -42,12 +42,31 @@ function notifyLocalListeners(event: ChatBroadcastEvent) {
 }
 
 // Setup incoming cross-tab listeners
+const recentProcessedEventKeys = new Set<string>();
+function markAndCheckDuplicate(event: ChatBroadcastEvent): boolean {
+  let key = '';
+  if (event.type === 'NEW_MESSAGE') key = `new:${event.message.id}`;
+  else if (event.type === 'UPDATE_REACTIONS') key = `react:${event.messageId}:${JSON.stringify(event.reactions)}`;
+  else if (event.type === 'DELETE_MESSAGE') key = `del:${event.messageId}`;
+  
+  if (!key) return false;
+  if (recentProcessedEventKeys.has(key)) {
+    return true; // Duplicate event
+  }
+  recentProcessedEventKeys.add(key);
+  // Expire from set after 8 seconds
+  setTimeout(() => recentProcessedEventKeys.delete(key), 8000);
+  return false;
+}
+
 if (typeof window !== 'undefined') {
   // 1. BroadcastChannel incoming handler (0ms latency)
   if (broadcastChannel) {
     broadcastChannel.onmessage = (ev: MessageEvent<ChatBroadcastEvent>) => {
       if (ev.data && ev.data.originTabId !== TAB_ID) {
-        notifyLocalListeners(ev.data);
+        if (!markAndCheckDuplicate(ev.data)) {
+          notifyLocalListeners(ev.data);
+        }
       }
     };
   }
@@ -58,7 +77,9 @@ if (typeof window !== 'undefined') {
       try {
         const payload: ChatBroadcastEvent = JSON.parse(ev.newValue);
         if (payload && payload.originTabId !== TAB_ID) {
-          notifyLocalListeners(payload);
+          if (!markAndCheckDuplicate(payload)) {
+            notifyLocalListeners(payload);
+          }
         }
       } catch (_) {}
     }
@@ -105,9 +126,7 @@ export async function sendChatMessageImmediately(msg: ChatMessage): Promise<void
     message: msg,
   });
 
-  // 2. Cloud Firestore immediate write
-  if (isFirestoreQuotaExceeded()) return;
-
+  // 2. Cloud Firestore immediate write - never silently skipped
   try {
     const msgRef = doc(db, 'team_chat_messages', msg.id);
     const cleanMsg = JSON.parse(JSON.stringify(msg));
@@ -140,9 +159,7 @@ export async function updateChatReactionImmediately(
     reactions,
   });
 
-  // 2. Cloud Firestore write
-  if (isFirestoreQuotaExceeded()) return;
-
+  // 2. Cloud Firestore write - never silently skipped
   try {
     const msgRef = doc(db, 'team_chat_messages', messageId);
     await updateDoc(msgRef, {
@@ -159,6 +176,23 @@ export async function updateChatReactionImmediately(
       return;
     }
     console.warn('Realtime chat reaction update fallback:', err?.message);
+  }
+}
+
+/**
+ * Deletes a chat message with immediate 0ms cross-tab and cloud deletion.
+ */
+export async function deleteChatMessageImmediately(messageId: string): Promise<void> {
+  broadcastChatEvent({
+    type: 'DELETE_MESSAGE',
+    messageId,
+  });
+
+  try {
+    const msgRef = doc(db, 'team_chat_messages', messageId);
+    await deleteDoc(msgRef);
+  } catch (err: any) {
+    console.warn('Realtime chat message delete fallback:', err?.message);
   }
 }
 

@@ -63,6 +63,7 @@ interface QuickEntryModalProps {
     refType?: 'LOAN' | 'RECEIVABLE' | 'EQUB' | 'TRANSFER' | 'SPLIT_SUB_ENTRY';
     refId?: string;
   }>) => void;
+  prefilledText?: string;
 }
 
 export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
@@ -77,7 +78,8 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
   equbs = [],
   loans = [],
   onSubmitTransaction,
-  onBatchSubmitTransactions
+  onBatchSubmitTransactions,
+  prefilledText
 }) => {
   const [entryMode, setEntryMode] = useState<'INCOME' | 'EXPENSE'>('INCOME');
   const [batchMode, setBatchMode] = useState<'single' | 'batch'>('single');
@@ -91,6 +93,28 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
   const [walletId, setWalletId] = useState(defaultWalletId || wallets[0]?.id || '');
   const [category, setCategory] = useState(categories.find(c => c.type === 'INCOME')?.name || 'Daily Income');
   const [description, setDescription] = useState('');
+
+  // Handle incoming PWA Share Target / SMS prefill
+  useEffect(() => {
+    if (prefilledText && isOpen) {
+      setDescription(prefilledText);
+      const match = prefilledText.match(/(?:ETB|credited with|received|amount:?)\s*([0-9,]+(?:\.[0-9]{1,2})?)/i) ||
+                    prefilledText.match(/([0-9,]+(?:\.[0-9]{1,2})?)\s*(?:ETB|birr)/i);
+      if (match && match[1]) {
+        const cleaned = match[1].replace(/,/g, '');
+        if (Number(cleaned) > 0) {
+          setAmountStr(cleaned);
+        }
+      }
+      if (prefilledText.toLowerCase().includes('telebirr')) {
+        const tb = wallets.find(w => w.type === 'TELEBIRR' || w.name.toLowerCase().includes('telebirr'));
+        if (tb) setWalletId(tb.id);
+      } else if (prefilledText.toLowerCase().includes('cbe') || prefilledText.toLowerCase().includes('commercial bank')) {
+        const cbe = wallets.find(w => w.type === 'CBE_BANK' || w.name.toLowerCase().includes('cbe'));
+        if (cbe) setWalletId(cbe.id);
+      }
+    }
+  }, [prefilledText, isOpen, wallets]);
 
   // Active Equbs list & detection
   const activeEqubs = (equbs || []).filter(e => e.status === 'ACTIVE');

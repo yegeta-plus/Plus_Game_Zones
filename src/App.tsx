@@ -1,5 +1,15 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { PwaInstallBanner } from './components/pwa/PwaInstallBanner';
+import { PwaCapabilitiesModal } from './components/pwa/PwaCapabilitiesModal';
+import { OfflineIndicator } from './components/pwa/OfflineIndicator';
+import {
+  initPwaServiceWorker,
+  initFileHandlingConsumer,
+  extractShareTargetPayload,
+  extractProtocolUrl,
+  isNoteTakingAction,
+  extractShortcut
+} from './lib/pwaSync';
 import { Header } from './components/layout/Header';
 import { BottomNav, TabType } from './components/layout/BottomNav';
 import { QuickEntryModal } from './components/modals/QuickEntryModal';
@@ -53,6 +63,7 @@ import {
 import {
   sendChatMessageImmediately,
   updateChatReactionImmediately,
+  deleteChatMessageImmediately,
   registerChatEventListener
 } from './lib/realtimeChat';
 import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest, ChatMessage, ChatMessageReaction, ChatChannel, AuditLogEntry } from './types';
@@ -149,6 +160,8 @@ export default function App() {
   const [showQuickEntry, setShowQuickEntry] = useState(false);
   const [quickEntryWalletId, setQuickEntryWalletId] = useState<string | undefined>(undefined);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showPwaModal, setShowPwaModal] = useState(false);
+  const [sharedSmsPrefill, setSharedSmsPrefill] = useState<string | null>(null);
   const [showAiAssistant, setShowAiAssistant] = useState(false);
   const [aiAssistantPrompt, setAiAssistantPrompt] = useState<string | undefined>(undefined);
   const [aiAssistantMode, setAiAssistantMode] = useState<'chat' | 'simulator'>('chat');
@@ -367,8 +380,7 @@ export default function App() {
           const mergedPending = mergeListById(prev.pendingReviewTransactions, remoteState.pendingReviewTransactions, combinedDeletedIds);
           const mergedChatMessages = mergeChatMessages(
             prev.chatMessages || [],
-            remoteState.chatMessages || [],
-            combinedDeletedIds
+            remoteState.chatMessages || []
           );
           const mergedChatChannels = mergeListById(
             prev.chatChannels || [],
@@ -450,8 +462,7 @@ export default function App() {
             }
           }
 
-          const combinedDeleted = Array.isArray(prev.deletedEntityIds) ? prev.deletedEntityIds : [];
-          const merged = mergeChatMessages(currentMsgs, liveMessages, combinedDeleted);
+          const merged = mergeChatMessages(currentMsgs, liveMessages);
 
           prevChatCountRef.current = merged.length;
           const updatedState = {
@@ -484,8 +495,7 @@ export default function App() {
             });
           }
 
-          const combinedDeleted = Array.isArray(prev.deletedEntityIds) ? prev.deletedEntityIds : [];
-          const merged = mergeChatMessages(currentMsgs, [incomingMsg], combinedDeleted);
+          const merged = mergeChatMessages(currentMsgs, [incomingMsg]);
           const updatedState = { ...prev, chatMessages: merged };
           saveStateToStorage(updatedState);
           return updatedState;
@@ -511,7 +521,19 @@ export default function App() {
       }
     });
 
-    // Seed existing chat messages to Firestore if empty
+    // Immediately fetch full cloud chat history from Firestore on app load
+    fetchRealtimeChatMessages().then((cloudMsgs) => {
+      if (Array.isArray(cloudMsgs) && cloudMsgs.length > 0) {
+        setState((prev) => {
+          const merged = mergeChatMessages(prev.chatMessages || [], cloudMsgs);
+          const updatedState = { ...prev, chatMessages: merged };
+          saveStateToStorage(updatedState);
+          return updatedState;
+        });
+      }
+    }).catch(() => {});
+
+    // Reconcile and seed existing local chat messages to Firestore if missing
     if (state.chatMessages && state.chatMessages.length > 0) {
       seedInitialChatMessagesIfEmpty(state.chatMessages);
     }
@@ -540,6 +562,73 @@ export default function App() {
       setToastMessage(null);
     }, 4500);
   };
+
+  // PWA Service Worker, Background Sync & Native APIs (File Handlers, Share Target, Protocol Handlers)
+  useEffect(() => {
+    const unbind = initPwaServiceWorker((tag) => {
+      triggerToast(`⚡ Background Sync executed: ${tag}`);
+    });
+
+    // File Handling API consumer:
+    initFileHandlingConsumer((file, content, ext) => {
+      if (ext === 'json') {
+        try {
+          const parsed = JSON.parse(content);
+          if (parsed.transactions && Array.isArray(parsed.transactions)) {
+            setState((prev) => ({
+              ...prev,
+              transactions: mergeListById(prev.transactions, parsed.transactions)
+            }));
+            triggerToast(`📁 File Handler imported ${parsed.transactions.length} transactions from ${file.name}`);
+          }
+        } catch {
+          triggerToast(`⚠️ Could not parse JSON file: ${file.name}`);
+        }
+      } else {
+        triggerToast(`📁 File Handler opened: ${file.name}`);
+      }
+    });
+
+    // Web Share Target: incoming SMS or receipt text
+    const sharePayload = extractShareTargetPayload();
+    if (sharePayload && sharePayload.text) {
+      setSharedSmsPrefill(sharePayload.text);
+      setShowQuickEntry(true);
+      triggerToast('📲 Incoming payment SMS received via Share Target!');
+    }
+
+    // App Shortcuts
+    const shortcut = extractShortcut();
+    if (shortcut === 'transaction') {
+      setShowQuickEntry(true);
+    } else if (shortcut === 'gaming') {
+      setActiveTab('dashboard');
+    } else if (shortcut === 'wallets') {
+      setActiveTab('wallets');
+    }
+
+    // Protocol Handlers (web+pluszone://..., web+equb://...)
+    const protocolUrl = extractProtocolUrl();
+    if (protocolUrl) {
+      if (protocolUrl.includes('equb')) {
+        setActiveTab('equb');
+      } else {
+        setActiveTab('transactions');
+      }
+      triggerToast(`🔗 Custom protocol link: ${protocolUrl}`);
+    }
+
+    // Quick Note Taking (?action=new-note)
+    if (isNoteTakingAction()) {
+      setActiveTab('more');
+      setMoreSubView('CATEGORIES');
+      triggerToast('📝 Quick note taking launched');
+    }
+
+    return () => {
+      unbind();
+    };
+  }, []);
 
   // Auto Refresh Execution
   const performRefresh = async (isManual = false) => {
@@ -582,8 +671,7 @@ export default function App() {
           prev.chatMessages || [],
           remoteChatMessages && remoteChatMessages.length > 0
             ? remoteChatMessages
-            : remoteState.chatMessages || [],
-          combinedDeletedIds
+            : remoteState.chatMessages || []
         );
 
         const activeUser = (prev.currentUser?.email
@@ -620,8 +708,7 @@ export default function App() {
       });
     } else if (remoteChatMessages && remoteChatMessages.length > 0) {
       setState(prev => {
-        const combinedDeletedIds = Array.isArray(prev.deletedEntityIds) ? prev.deletedEntityIds : [];
-        const mergedChat = mergeChatMessages(prev.chatMessages || [], remoteChatMessages, combinedDeletedIds);
+        const mergedChat = mergeChatMessages(prev.chatMessages || [], remoteChatMessages);
         const updated = { ...prev, chatMessages: mergedChat };
         saveStateToStorage(updated);
         return updated;
@@ -2280,7 +2367,7 @@ export default function App() {
     };
 
     // Realtime chat broadcast for approvals channel
-    sendChatMessageToFirebase(chatMsg);
+    sendChatMessageImmediately(chatMsg);
 
     setState(prev => {
       const updatedState = {
@@ -2922,7 +3009,8 @@ export default function App() {
 
     // 1. Immediate optimistic UI update (0ms local delay)
     setState(prev => {
-      const updatedMsgs = [...(prev.chatMessages || []), newMsg];
+      const currentMsgs = prev.chatMessages || [];
+      const updatedMsgs = [...currentMsgs, newMsg];
       const updatedState = {
         ...prev,
         chatMessages: updatedMsgs
@@ -2931,14 +3019,27 @@ export default function App() {
       return updatedState;
     });
 
-    // 2. Immediate 0ms cross-tab broadcast + direct Firestore write
+    // 2. Immediate 0ms cross-tab broadcast + direct concurrent Firestore write
     sendChatMessageImmediately(newMsg);
+  };
 
-    // 3. Keep full ERP state synced to cloud
+  const handleDeleteChatMessage = (messageId: string) => {
+    triggerHaptic('warning');
+
+    // 1. Immediate optimistic UI update (0ms local delay)
     setState(prev => {
-      syncStateToFirebaseNow(prev);
-      return prev;
+      const currentMsgs = prev.chatMessages || [];
+      const updatedMsgs = currentMsgs.filter(m => m.id !== messageId);
+      const updatedState = {
+        ...prev,
+        chatMessages: updatedMsgs
+      };
+      saveStateToStorage(updatedState);
+      return updatedState;
     });
+
+    // 2. Immediate 0ms cross-tab broadcast + direct Firestore deletion
+    deleteChatMessageImmediately(messageId);
   };
 
   const handleAddChatReaction = (messageId: string, emoji: string) => {
@@ -2991,7 +3092,6 @@ export default function App() {
 
       const updatedState = { ...prev, chatMessages: updatedMsgs };
       saveStateToStorage(updatedState);
-      syncStateToFirebaseNow(updatedState);
       return updatedState;
     });
   };
@@ -3015,6 +3115,63 @@ export default function App() {
     });
   };
 
+  const handleRegisterUser = (newUser: UserProfile) => {
+    setState((prev) => {
+      const userExists = prev.users.some(
+        (u) =>
+          u.id === newUser.id ||
+          (newUser.email && u.email?.toLowerCase() === newUser.email.toLowerCase()) ||
+          (newUser.username && u.username?.toLowerCase() === newUser.username.toLowerCase())
+      );
+      const updatedUsers = userExists
+        ? prev.users.map((u) =>
+            u.id === newUser.id ||
+            (newUser.email && u.email?.toLowerCase() === newUser.email.toLowerCase()) ||
+            (newUser.username && u.username?.toLowerCase() === newUser.username.toLowerCase())
+              ? { ...u, ...newUser, active: true, isApproved: true }
+              : u
+          )
+        : [...prev.users, newUser];
+      const regTx: Transaction = {
+        id: `tx-reg-${newUser.id}`,
+        date: new Date().toISOString(),
+        type: 'INCOME',
+        category: 'Genesis / Setup',
+        amount: 0,
+        walletId: 'w-cash',
+        description: `Member Account Registered: ${newUser.name} (@${newUser.username || newUser.email}) [${newUser.role}]`,
+        creatorName: newUser.name,
+        creatorId: newUser.id,
+        refId: newUser.id
+      };
+      const txAlreadyExists = prev.transactions.some((t) => t.id === regTx.id || t.refId === newUser.id);
+      const updatedTransactions = txAlreadyExists ? prev.transactions : [regTx, ...prev.transactions];
+
+      const updatedState = {
+        ...prev,
+        users: updatedUsers,
+        transactions: updatedTransactions,
+        auditLogs: [
+          {
+            id: `aud-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            actorId: newUser.id,
+            actorName: newUser.name,
+            action: 'CREATE_USER_REGISTERED',
+            entity: 'UserProfile',
+            entityId: newUser.id,
+            diffAfter: { name: newUser.name, email: newUser.email, role: newUser.role, isApproved: true },
+            branch: newUser.branch
+          },
+          ...prev.auditLogs
+        ]
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
+  };
+
   if (showSplashScreen) {
     return <AppSplashScreen onFinish={() => setShowSplashScreen(false)} />;
   }
@@ -3026,11 +3183,48 @@ export default function App() {
         currentUser={state.currentUser}
         onLogin={(selectedUser: UserProfile, rememberSession: boolean = true) => {
           saveAuthSession(selectedUser, rememberSession);
-          setState((prev) => ({
-            ...prev,
-            currentUser: selectedUser,
-            users: prev.users.map((u) => (u.id === selectedUser.id ? selectedUser : u))
-          }));
+          setState((prev) => {
+            const userExists = prev.users.some(
+              (u) =>
+                u.id === selectedUser.id ||
+                (selectedUser.email && u.email?.toLowerCase() === selectedUser.email.toLowerCase())
+            );
+            const updatedUsers = userExists
+              ? prev.users.map((u) =>
+                  u.id === selectedUser.id ||
+                  (selectedUser.email && u.email?.toLowerCase() === selectedUser.email.toLowerCase())
+                    ? selectedUser
+                    : u
+                )
+              : [...prev.users, selectedUser];
+            const txAlreadyExists = prev.transactions.some((t) => t.id === `tx-reg-${selectedUser.id}` || t.refId === selectedUser.id);
+            const updatedTransactions = (!userExists && !txAlreadyExists)
+              ? [
+                  {
+                    id: `tx-reg-${selectedUser.id}`,
+                    date: new Date().toISOString(),
+                    type: 'INCOME' as const,
+                    category: 'Genesis / Setup',
+                    amount: 0,
+                    walletId: 'w-cash',
+                    description: `Member Account Registered: ${selectedUser.name} (@${selectedUser.username || selectedUser.email}) [${selectedUser.role}]`,
+                    creatorName: selectedUser.name,
+                    creatorId: selectedUser.id,
+                    refId: selectedUser.id
+                  },
+                  ...prev.transactions
+                ]
+              : prev.transactions;
+            const updated = {
+              ...prev,
+              currentUser: selectedUser,
+              users: updatedUsers,
+              transactions: updatedTransactions
+            };
+            saveStateToStorage(updated);
+            syncStateToFirebaseNow(updated);
+            return updated;
+          });
           setIsLoggedIn(true);
 
           // Check if first-time onboarding tour should auto-trigger
@@ -3042,26 +3236,7 @@ export default function App() {
             }, 650);
           }
         }}
-        onRegisterUser={(newUser: UserProfile) => {
-          setState((prev) => ({
-            ...prev,
-            users: [...prev.users, newUser],
-            auditLogs: [
-              {
-                id: `aud-${Date.now()}`,
-                timestamp: new Date().toISOString(),
-                actorId: newUser.id,
-                actorName: newUser.name,
-                action: 'REQUEST_USER_REGISTRATION',
-                entity: 'UserProfile',
-                entityId: newUser.id,
-                diffAfter: { name: newUser.name, email: newUser.email, isApproved: false },
-                branch: newUser.branch
-              },
-              ...prev.auditLogs
-            ]
-          }));
-        }}
+        onRegisterUser={handleRegisterUser}
         theme={state.theme}
         onToggleTheme={() =>
           setState((prev) => ({
@@ -3119,6 +3294,7 @@ export default function App() {
         onToggleAutoRefresh={() => setAutoRefreshEnabled(prev => !prev)}
         onManualRefresh={() => performRefresh(true)}
         unreadChatCount={unreadChatCount}
+        onOpenPwaModal={() => setShowPwaModal(true)}
       />
 
       {/* Main Screen Container */}
@@ -3154,6 +3330,8 @@ export default function App() {
             transactions={state.transactions}
             transfers={state.transfers}
             receivables={state.receivables}
+            loans={state.loans}
+            equbs={state.equbs}
             wallets={state.wallets}
             categories={state.categories}
             currentUser={state.currentUser}
@@ -3237,6 +3415,7 @@ export default function App() {
             state={state}
             onSendMessage={handleSendMessage}
             onAddReaction={handleAddChatReaction}
+            onDeleteMessage={handleDeleteChatMessage}
             onNavigateTab={(tab) => handleNavigateTab(tab)}
             onApproveRequest={handleApproveRequest}
             onRejectRequest={handleRejectRequest}
@@ -3246,6 +3425,7 @@ export default function App() {
               setState(prev => ({ ...prev, currentUser: user }));
               updateAuthSessionUser(user);
             }}
+            onRegisterUser={handleRegisterUser}
           />
         )}
 
@@ -3260,6 +3440,7 @@ export default function App() {
             onCollectReceivable={handleCollectReceivable}
             onReplayTour={handleStartTour}
             onOpenHelp={handleOpenHelp}
+            onOpenPwaModal={() => setShowPwaModal(true)}
           />
         )}
       </main>
@@ -3278,7 +3459,10 @@ export default function App() {
       {/* Quick Entry Sheet Modal */}
       <QuickEntryModal
         isOpen={showQuickEntry}
-        onClose={() => setShowQuickEntry(false)}
+        onClose={() => {
+          setShowQuickEntry(false);
+          setSharedSmsPrefill(null);
+        }}
         wallets={state.wallets}
         categories={state.categories}
         currentUser={state.currentUser}
@@ -3289,6 +3473,7 @@ export default function App() {
         loans={state.loans}
         onSubmitTransaction={handlePostTransaction}
         onBatchSubmitTransactions={handleBatchPostTransactions}
+        prefilledText={sharedSmsPrefill || undefined}
       />
 
       {/* Inter-Wallet Transfer Modal */}
@@ -3393,6 +3578,28 @@ export default function App() {
         initialStepIndex={tourStepIndex}
         customSteps={activeTourSteps}
         tourTitle={activeTourTitle}
+      />
+
+      {/* Non-intrusive Offline Connectivity Indicator */}
+      <OfflineIndicator onOpenCapabilities={() => setShowPwaModal(true)} />
+
+      {/* PWA Capabilities & Service Worker Inspector Modal */}
+      <PwaCapabilitiesModal
+        isOpen={showPwaModal}
+        onClose={() => setShowPwaModal(false)}
+        onSimulateShareTarget={(smsText) => {
+          setSharedSmsPrefill(smsText);
+          setShowQuickEntry(true);
+          triggerToast('📲 Payment SMS loaded into Quick Entry');
+        }}
+        onSimulateFileImport={() => {
+          triggerToast('📁 Financial ledger file processed by File Handler');
+        }}
+        onSimulateNote={() => {
+          setActiveTab('more');
+          setMoreSubView('CATEGORIES');
+          triggerToast('📝 Quick note launcher activated');
+        }}
       />
 
     </div>

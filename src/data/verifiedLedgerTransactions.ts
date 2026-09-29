@@ -491,7 +491,7 @@ export const VERIFIED_TRANSACTIONS: Transaction[] = [
     category: 'Equb Contribution',
     amount: 5000,
     walletId: 'w-cash',
-    description: 'Ekub round contribution (Agerye)',
+    description: 'Ekub round contribution: Agerye (Round 25)',
     refType: 'EQUB',
     refId: 'eq-agerye',
     expenseScope: 'PERSONAL',

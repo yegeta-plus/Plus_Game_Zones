@@ -34,7 +34,7 @@ import {
   MessageSquare,
   HelpCircle
 } from 'lucide-react';
-import { Transaction, Transfer, Receivable, Wallet, Category, UserProfile, TransactionType, ERPState, NavTab } from '../../types';
+import { Transaction, Transfer, Receivable, Wallet, Category, UserProfile, TransactionType, ERPState, NavTab, Loan, Equb } from '../../types';
 import {
   formatETB,
   isTransactionEditable,
@@ -57,6 +57,8 @@ interface TransactionsViewProps {
   transactions: Transaction[];
   transfers?: Transfer[];
   receivables?: Receivable[];
+  loans?: Loan[];
+  equbs?: Equb[];
   wallets: Wallet[];
   categories: Category[];
   currentUser: UserProfile;
@@ -84,6 +86,8 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   transactions,
   transfers = [],
   receivables = [],
+  loans = [],
+  equbs = [],
   wallets,
   categories,
   currentUser,
@@ -101,7 +105,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedWalletId, setSelectedWalletId] = useState('ALL');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
-  const [selectedType, setSelectedType] = useState<'ALL' | 'INCOME' | 'EXPENSE' | 'CREDIT_SALE'>('ALL');
+  const [selectedType, setSelectedType] = useState<'ALL' | 'INCOME' | 'EXPENSE' | 'LOAN' | 'EQUB' | 'CREDIT_SALE'>('ALL');
   const [selectedScope, setSelectedScope] = useState<'ALL' | 'BUSINESS' | 'PERSONAL'>('ALL');
   const [activeTxDetail, setActiveTxDetail] = useState<Transaction | null>(null);
   const [activeCreditSaleDetail, setActiveCreditSaleDetail] = useState<Receivable | null>(null);
@@ -363,8 +367,26 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
         }
       }
       if (selectedCategory !== 'ALL' && tx.category !== selectedCategory) return false;
-      if (selectedType !== 'ALL' && selectedType !== 'CREDIT_SALE' && tx.type !== selectedType) return false;
       if (selectedType === 'CREDIT_SALE') return false;
+      if (selectedType === 'INCOME' && tx.type !== 'INCOME') return false;
+      if (selectedType === 'EXPENSE' && tx.type !== 'EXPENSE') return false;
+      if (selectedType === 'LOAN') {
+        const isLoan = tx.refType === 'LOAN' ||
+          tx.category === 'Loans Received' ||
+          tx.category === 'Loan Repayments' ||
+          /loan/i.test(tx.description || '') ||
+          /loan/i.test(tx.category || '');
+        if (!isLoan) return false;
+      }
+      if (selectedType === 'EQUB') {
+        const isEqub = tx.refType === 'EQUB' ||
+          tx.category === 'Equb Contribution' ||
+          tx.category === 'Equb Payout' ||
+          isEqubContributionTransaction(tx) ||
+          /e?kub/i.test(tx.description || '') ||
+          /e?kub/i.test(tx.category || '');
+        if (!isEqub) return false;
+      }
       return true;
     } else if (item.kind === 'TRANSFER') {
       if (selectedScope === 'PERSONAL') return false;
@@ -761,12 +783,17 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
               { id: 'ALL', label: 'ALL' },
               { id: 'INCOME', label: 'INCOME' },
               { id: 'EXPENSE', label: 'EXPENSE' },
+              { id: 'LOAN', label: 'LOANS' },
+              { id: 'EQUB', label: 'EKUB' },
               { id: 'CREDIT_SALE', label: 'CREDIT SALES' }
             ].map((btn) => (
               <button
                 key={btn.id}
-                onClick={() => setSelectedType(btn.id as any)}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
+                onClick={() => {
+                  triggerHaptic('light');
+                  setSelectedType(btn.id as any);
+                }}
+                className={`px-2.5 py-1 rounded-lg font-bold transition-all text-xs ${
                   selectedType === btn.id
                     ? 'bg-gradient-to-r from-[#00D4AA] to-[#00B894] text-[#0A0E1A]'
                     : 'text-slate-500 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
@@ -1217,6 +1244,21 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                                 <span className="text-[9px] bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0 font-bold">
                                   <CheckCircle2 className="w-2.5 h-2.5" />
                                   Daily Income / Collected
+                                </span>
+                              )}
+                              {(tx.refType === 'LOAN' || tx.category === 'Loans Received' || tx.category === 'Loan Repayments' || /loan/i.test(tx.description || '')) && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded border shrink-0 flex items-center gap-0.5 bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-500/30">
+                                  <span>🤝 Loan</span>
+                                </span>
+                              )}
+                              {(tx.refType === 'EQUB' || tx.category === 'Equb Contribution' || tx.category === 'Equb Payout' || isEqubContributionTransaction(tx) || /e?kub/i.test(tx.description || '')) && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded border shrink-0 flex items-center gap-0.5 bg-purple-100 dark:bg-purple-500/20 text-purple-800 dark:text-purple-300 border-purple-200 dark:border-purple-500/30">
+                                  <span>👥 Ekub</span>
+                                </span>
+                              )}
+                              {tx.category === 'Rent' && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded border shrink-0 flex items-center gap-0.5 bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-300 border-rose-200 dark:border-rose-500/30">
+                                  <span>🏠 Rent</span>
                                 </span>
                               )}
                               {!isTransactionEditable(tx.date) && !tx.reversed && currentUser.role !== 'SuperAdmin' && currentUser.role !== 'Admin' && (

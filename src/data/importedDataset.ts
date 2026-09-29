@@ -11,6 +11,11 @@ import {
   VERIFIED_TRANSFERS,
   VERIFIED_RECEIVABLES
 } from './verifiedLedgerTransactions';
+import {
+  CANONICAL_LOAN_TRANSACTIONS,
+  CANONICAL_EQUB_TRANSACTIONS,
+  SEPTEMBER_10_TO_12_TRANSACTIONS
+} from './canonicalLoansAndEqubsTransactions';
 
 export interface DatasetResult {
   openingBalances: {
@@ -42,8 +47,8 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
       contributionPerRound: 5000,
       mySlots: 1,
       interval: 'EVERY_10_DAYS',
-      currentRound: 25,
-      completedRounds: 24,
+      currentRound: 26,
+      completedRounds: 25,
       totalRounds: 27,
       startDate: '2026-06-01T00:00:00.000Z',
       computedEndingDate: '2026-10-30T00:00:00.000Z',
@@ -592,15 +597,19 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
     ...VERIFIED_RECEIVABLES
   ],
   transfers: VERIFIED_TRANSFERS,
-  transactions: [
-    ...CANONICAL_PDF_TRANSACTIONS.filter(t => t.date < '2026-08-18'),
-    ...NEW_AUGUST_SEPTEMBER_TRANSACTIONS.filter(t => t.date >= '2026-08-18' && t.date < '2026-09-07'),
-    ...VERIFIED_TRANSACTIONS
-  ].filter(t => {
-    // Sep 10 - 12 business was closed (Ethiopian New Year / Pagumē holidays); no transactions
-    const d = t.date ? t.date.slice(0, 10) : '';
-    return d !== '2026-09-10' && d !== '2026-09-11' && d !== '2026-09-12';
-  })
+  transactions: (() => {
+    const map = new Map<string, Transaction>();
+    const all = [
+      ...CANONICAL_PDF_TRANSACTIONS.filter(t => t.date < '2026-08-18'),
+      ...NEW_AUGUST_SEPTEMBER_TRANSACTIONS.filter(t => t.date >= '2026-08-18' && t.date < '2026-09-07'),
+      ...VERIFIED_TRANSACTIONS,
+      ...CANONICAL_LOAN_TRANSACTIONS,
+      ...CANONICAL_EQUB_TRANSACTIONS,
+      ...SEPTEMBER_10_TO_12_TRANSACTIONS
+    ];
+    all.forEach(t => map.set(t.id, t));
+    return Array.from(map.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  })()
 };
 
 export const COMBINED_TRANSACTIONS: Transaction[] = INITIAL_DATASET_JULY_AUG.transactions;

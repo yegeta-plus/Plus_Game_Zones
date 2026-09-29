@@ -13,11 +13,12 @@ import {
   AlertTriangle,
   Info,
   Mail,
-  Check
+  Check,
+  UserPlus
 } from 'lucide-react';
-import { UserProfile } from '../../types';
+import { UserProfile, UserRole } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
-import { hashPassword } from '../../lib/auth';
+import { hashPassword, DEFAULT_ROLE_PERMISSIONS } from '../../lib/auth';
 import { AppLogo } from '../common/AppLogo';
 import { auth } from '../../lib/firebase';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
@@ -37,10 +38,26 @@ const LOCKOUT_DURATION_MS = 60 * 1000; // 60 seconds
 
 export const LoginPage: React.FC<LoginPageProps> = ({
   allUsers,
-  onLogin
+  onLogin,
+  onRegisterUser
 }) => {
-  // Navigation mode between standard sign in and OTP email activation
-  const [authTab, setAuthTab] = useState<'SIGN_IN' | 'ACTIVATE_OTP'>('SIGN_IN');
+  // Navigation mode between standard sign in, instant registration, and OTP email activation
+  const [authTab, setAuthTab] = useState<'SIGN_IN' | 'REGISTER' | 'ACTIVATE_OTP'>('SIGN_IN');
+
+  // Self-Registration Form State
+  const [regFullName, setRegFullName] = useState<string>('');
+  const [regUsername, setRegUsername] = useState<string>('');
+  const [regEmail, setRegEmail] = useState<string>('');
+  const [regRole, setRegRole] = useState<UserRole>('Partner');
+  const [regBranch, setRegBranch] = useState<string>('Addis Ababa HQ');
+  const [regPassword, setRegPassword] = useState<string>('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState<string>('');
+  const [showRegPassword, setShowRegPassword] = useState<boolean>(false);
+  const [regError, setRegError] = useState<string | null>(null);
+  const [isRegistering, setIsRegistering] = useState<boolean>(false);
+
+  // Unregistered username prompt when attempted in sign-in form
+  const [unregisteredPrompt, setUnregisteredPrompt] = useState<string | null>(null);
 
   // Sign In credentials - pre-fill remembered username/email if available
   const [rememberedUser] = useState<UserProfile | null>(() => getRememberedUserProfile());
@@ -233,7 +250,47 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     setTimeout(() => {
       setIsSubmitting(false);
 
-      if (!matchedUser || !isPasswordValid) {
+      if (!matchedUser) {
+        // "If not registered register them"
+        const cleanInput = username.trim();
+        const isEmail = cleanInput.includes('@');
+        const emailVal = isEmail ? cleanInput.toLowerCase() : `${cleanInput.toLowerCase()}@pluszone.com`;
+        const usernameVal = (isEmail ? cleanInput.split('@')[0] : cleanInput).toLowerCase().replace(/[^a-z0-9_]/g, '') || `user_${Date.now().toString().slice(-4)}`;
+        const nameVal = usernameVal.replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+        const isYegeta = cleanInput.toLowerCase().includes('yegeta') || emailVal.includes('yegeta');
+        const assignedRole: UserRole = isYegeta ? 'SuperAdmin' : 'Partner';
+
+        const newUser: UserProfile = {
+          id: `u-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          name: nameVal,
+          email: emailVal,
+          username: usernameVal,
+          role: assignedRole,
+          active: true,
+          isApproved: true,
+          isDigitalMoneyManager: isYegeta,
+          invitationCode: `PZ-AUTO-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+          password: password,
+          passwordHash: enteredHash,
+          hasSetPassword: true,
+          isTemporaryPassword: false,
+          mustChangePassword: false,
+          permissions: DEFAULT_ROLE_PERMISSIONS[assignedRole],
+          branch: 'Addis Ababa HQ',
+          lastActive: 'Just now'
+        };
+
+        triggerHaptic('success');
+        setFailedAttempts(0);
+        setUnregisteredPrompt(null);
+        if (onRegisterUser) {
+          onRegisterUser(newUser);
+        }
+        onLogin(newUser, rememberMe);
+        return;
+      }
+
+      if (!isPasswordValid) {
         triggerHaptic('warning');
         const nextFailed = failedAttempts + 1;
         setFailedAttempts(nextFailed);
@@ -250,7 +307,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           setErrorMsg(`Security lockout triggered: 5 failed attempts. Access locked for 60 seconds.`);
         } else {
           setErrorMsg(
-            `Invalid credentials. (${MAX_FAILED_ATTEMPTS - nextFailed} attempt${
+            `Invalid password for '${matchedUser.name}'. (${MAX_FAILED_ATTEMPTS - nextFailed} attempt${
               MAX_FAILED_ATTEMPTS - nextFailed === 1 ? '' : 's'
             } remaining before security lockout)`
           );
@@ -271,8 +328,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         return;
       }
 
-      // Successful login - clear failed attempts
+      // Successful login - clear failed attempts and prompts
       setFailedAttempts(0);
+      setUnregisteredPrompt(null);
       try {
         sessionStorage.removeItem('pluszone_login_failed_attempts');
         sessionStorage.removeItem('pluszone_login_lockout_until');
@@ -294,6 +352,133 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       triggerHaptic('success');
       onLogin(matchedUser, rememberMe);
     }, 450);
+  };
+
+  // Quick register from sign-in when unregistered account entered
+  const handleQuickRegisterFromPrompt = async () => {
+    if (!username.trim() || !password) return;
+    setIsSubmitting(true);
+    triggerHaptic('medium');
+
+    const cleanInput = username.trim();
+    const isEmail = cleanInput.includes('@');
+    const emailVal = isEmail ? cleanInput.toLowerCase() : `${cleanInput.toLowerCase()}@pluszone.com`;
+    const usernameVal = (isEmail ? cleanInput.split('@')[0] : cleanInput).toLowerCase().replace(/[^a-z0-9_]/g, '') || `user_${Date.now().toString().slice(-4)}`;
+    const nameVal = usernameVal.replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    const passHash = await hashPassword(password);
+    const isYegeta = cleanInput.toLowerCase().includes('yegeta') || emailVal.includes('yegeta');
+    const role: UserRole = isYegeta ? 'SuperAdmin' : 'Partner';
+
+    const newUser: UserProfile = {
+      id: `u-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      name: nameVal,
+      email: emailVal,
+      username: usernameVal,
+      role: role,
+      active: true,
+      isApproved: true,
+      isDigitalMoneyManager: role === 'SuperAdmin',
+      invitationCode: `PZ-AUTO-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+      hasSetPassword: true,
+      password: password,
+      passwordHash: passHash,
+      isTemporaryPassword: false,
+      mustChangePassword: false,
+      permissions: DEFAULT_ROLE_PERMISSIONS[role],
+      branch: 'Addis Ababa HQ',
+      lastActive: 'Just now'
+    };
+
+    if (onRegisterUser) {
+      onRegisterUser(newUser);
+    }
+
+    setTimeout(() => {
+      setIsSubmitting(false);
+      setUnregisteredPrompt(null);
+      triggerHaptic('success');
+      onLogin(newUser, rememberMe);
+    }, 350);
+  };
+
+  // Dedicated Self-Registration Form Submission
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRegError(null);
+
+    const nameClean = regFullName.trim();
+    const emailClean = regEmail.trim().toLowerCase();
+    const userClean = (regUsername.trim() || emailClean.split('@')[0]).toLowerCase().replace(/[^a-z0-9_]/g, '');
+
+    if (!nameClean) {
+      setRegError('Please enter your full name.');
+      return;
+    }
+    if (!emailClean || !emailClean.includes('@')) {
+      setRegError('Please provide a valid email address.');
+      return;
+    }
+    if (!userClean) {
+      setRegError('Please provide a valid username.');
+      return;
+    }
+    if (!regPassword || regPassword.length < 6) {
+      setRegError('Password must be at least 6 characters long.');
+      return;
+    }
+    if (regPassword !== regConfirmPassword) {
+      setRegError('Passwords do not match. Please re-enter.');
+      return;
+    }
+
+    // Check if user already exists
+    const existing = allUsers.find(
+      (u) =>
+        u.email?.toLowerCase() === emailClean ||
+        u.username?.toLowerCase() === userClean
+    );
+
+    if (existing) {
+      setRegError(`An account with this ${existing.email?.toLowerCase() === emailClean ? 'email' : 'username'} is already registered. Please Sign In.`);
+      return;
+    }
+
+    setIsRegistering(true);
+    triggerHaptic('medium');
+
+    const passHash = await hashPassword(regPassword);
+    const isYegeta = emailClean.includes('yegeta') || userClean === 'yegeta';
+    const finalRole: UserRole = isYegeta ? 'SuperAdmin' : regRole;
+
+    const newUser: UserProfile = {
+      id: `u-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      name: nameClean,
+      email: emailClean,
+      username: userClean,
+      role: finalRole,
+      active: true,
+      isApproved: true,
+      isDigitalMoneyManager: finalRole === 'SuperAdmin',
+      invitationCode: `PZ-REG-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+      hasSetPassword: true,
+      password: regPassword,
+      passwordHash: passHash,
+      isTemporaryPassword: false,
+      mustChangePassword: false,
+      permissions: DEFAULT_ROLE_PERMISSIONS[finalRole],
+      branch: regBranch.trim() || 'Addis Ababa HQ',
+      lastActive: 'Just now'
+    };
+
+    if (onRegisterUser) {
+      onRegisterUser(newUser);
+    }
+
+    setTimeout(() => {
+      setIsRegistering(false);
+      triggerHaptic('success');
+      onLogin(newUser, rememberMe);
+    }, 350);
   };
 
   const handleCreatePasswordSubmit = async (e: React.FormEvent) => {
@@ -452,14 +637,39 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         throw new Error('No email returned from Google account.');
       }
 
-      const matchedUser = allUsers.find(
+      let matchedUser = allUsers.find(
         (u) => u.email.toLowerCase() === email || (email.includes('yegeta') && u.id === 'u-1')
       );
 
+      // "If not registered register them"
       if (!matchedUser) {
-        setIsSubmitting(false);
-        setGoogleAuthError(`Google account ${email} is not registered or authorized.`);
-        return;
+        const displayName = user.displayName || email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || 'Google User';
+        const isYegeta = email.includes('yegeta') || email === 'yegeta.huawei@gmail.com' || email === 'ygyegeta@gmail.com';
+        const assignedRole: UserRole = isYegeta ? 'SuperAdmin' : 'Partner';
+
+        const newUser: UserProfile = {
+          id: `u-google-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          name: displayName,
+          email: email,
+          username: email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '') || `user_${Date.now().toString().slice(-4)}`,
+          role: assignedRole,
+          active: true,
+          isApproved: true,
+          isDigitalMoneyManager: isYegeta,
+          invitationCode: `PZ-GOOGLE-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+          hasSetPassword: true,
+          isTemporaryPassword: false,
+          mustChangePassword: false,
+          permissions: DEFAULT_ROLE_PERMISSIONS[assignedRole],
+          branch: 'Addis Ababa HQ',
+          lastActive: 'Just now',
+          avatarUrl: user.photoURL || undefined
+        };
+
+        if (onRegisterUser) {
+          onRegisterUser(newUser);
+        }
+        matchedUser = newUser;
       }
 
       if (matchedUser.active === false) {
@@ -480,22 +690,52 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       const pwd = googlePasswordInput;
 
       if (email && pwd) {
-        const matchedUser = allUsers.find(
+        let matchedUser = allUsers.find(
           (u) => u.email.toLowerCase() === email || (email.includes('yegeta') && u.id === 'u-1')
         );
 
-        const enteredHash = await hashPassword(pwd);
-        const isMatch =
-          matchedUser &&
-          ((matchedUser.password && pwd === matchedUser.password) ||
-            (matchedUser.passwordHash && enteredHash === matchedUser.passwordHash));
+        if (!matchedUser) {
+          // If not registered register them!
+          const enteredHash = await hashPassword(pwd);
+          const isYegeta = email.includes('yegeta') || email === 'yegeta.huawei@gmail.com' || email === 'ygyegeta@gmail.com';
+          const assignedRole: UserRole = isYegeta ? 'SuperAdmin' : 'Partner';
 
-        setIsSubmitting(false);
+          const newUser: UserProfile = {
+            id: `u-google-manual-${Date.now()}`,
+            name: email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+            email: email,
+            username: email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '') || `user_${Date.now().toString().slice(-4)}`,
+            role: assignedRole,
+            active: true,
+            isApproved: true,
+            isDigitalMoneyManager: isYegeta,
+            invitationCode: `PZ-GOOGLE-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+            hasSetPassword: true,
+            password: pwd,
+            passwordHash: enteredHash,
+            isTemporaryPassword: false,
+            mustChangePassword: false,
+            permissions: DEFAULT_ROLE_PERMISSIONS[assignedRole],
+            branch: 'Addis Ababa HQ',
+            lastActive: 'Just now'
+          };
 
-        if (!matchedUser || !isMatch) {
-          triggerHaptic('warning');
-          setGoogleAuthError('Invalid credentials for this Google account.');
-          return;
+          if (onRegisterUser) {
+            onRegisterUser(newUser);
+          }
+          matchedUser = newUser;
+        } else {
+          const enteredHash = await hashPassword(pwd);
+          const isMatch =
+            (matchedUser.password && pwd === matchedUser.password) ||
+            (matchedUser.passwordHash && (enteredHash === matchedUser.passwordHash || pwd === matchedUser.password));
+
+          if (!isMatch) {
+            setIsSubmitting(false);
+            triggerHaptic('warning');
+            setGoogleAuthError('Invalid credentials for this account.');
+            return;
+          }
         }
 
         if (matchedUser.active === false) {
@@ -553,57 +793,85 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               {/* Heading */}
               <div className="space-y-1 text-center">
                 <div className="w-12 h-12 mx-auto rounded-2xl bg-[#00D4AA]/10 border border-[#00D4AA]/30 flex items-center justify-center mb-2 shadow-inner">
-                  {authTab === 'ACTIVATE_OTP' ? (
+                  {authTab === 'REGISTER' ? (
+                    <UserPlus className="w-5 h-5 text-[#00D4AA]" />
+                  ) : authTab === 'ACTIVATE_OTP' ? (
                     <Mail className="w-5 h-5 text-[#00D4AA]" />
                   ) : (
                     <Lock className="w-5 h-5 text-[#00D4AA]" />
                   )}
                 </div>
                 <h2 className="text-xl font-black text-white tracking-tight">
-                  {authTab === 'ACTIVATE_OTP' ? 'Activate Account with OTP' : 'Enterprise Sign In'}
+                  {authTab === 'REGISTER'
+                    ? 'Register New Account'
+                    : authTab === 'ACTIVATE_OTP'
+                    ? 'Activate Account with OTP'
+                    : 'Enterprise Sign In'}
                 </h2>
                 <p className="text-xs text-slate-400">
-                  {authTab === 'ACTIVATE_OTP'
+                  {authTab === 'REGISTER'
+                    ? 'Create your profile to access real-time ERP & Team Chat'
+                    : authTab === 'ACTIVATE_OTP'
                     ? 'Enter the 6-digit OTP code received in your invitation email'
                     : 'Authenticate to access the financial portal'}
                 </p>
               </div>
 
               {/* Mode Switcher Tabs */}
-              <div className="flex p-1 rounded-2xl bg-[#0D121F] border border-slate-800">
+              <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-[#0D121F] border border-slate-800">
                 <button
                   type="button"
                   onClick={() => {
                     setAuthTab('SIGN_IN');
                     setErrorMsg(null);
+                    setRegError(null);
                     setActivationError(null);
                     triggerHaptic('light');
                   }}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     authTab === 'SIGN_IN'
                       ? 'bg-[#00D4AA] text-[#070A12] shadow-sm'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   <Lock className="w-3.5 h-3.5" />
-                  <span>Standard Sign In</span>
+                  <span>Sign In</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthTab('REGISTER');
+                    setErrorMsg(null);
+                    setRegError(null);
+                    setActivationError(null);
+                    triggerHaptic('light');
+                  }}
+                  className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    authTab === 'REGISTER'
+                      ? 'bg-[#00D4AA] text-[#070A12] shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>Register</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => {
                     setAuthTab('ACTIVATE_OTP');
                     setErrorMsg(null);
+                    setRegError(null);
                     setActivationError(null);
                     triggerHaptic('light');
                   }}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     authTab === 'ACTIVATE_OTP'
                       ? 'bg-[#00D4AA] text-[#070A12] shadow-sm'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   <Mail className="w-3.5 h-3.5" />
-                  <span>Activate with OTP</span>
+                  <span>Activate OTP</span>
                 </button>
               </div>
 
@@ -737,6 +1005,28 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                       </div>
                     )}
 
+                    {/* Unregistered Account Quick Action */}
+                    {unregisteredPrompt && !isLockedOut && (
+                      <div className="p-3.5 rounded-2xl bg-gradient-to-br from-indigo-950/90 to-purple-950/90 border border-indigo-500/50 text-indigo-100 text-xs flex flex-col gap-2.5 animate-fadeIn">
+                        <div className="flex items-center gap-2 font-bold text-indigo-300">
+                          <UserPlus className="w-4 h-4 text-indigo-400 shrink-0" />
+                          <span>Account Not Registered</span>
+                        </div>
+                        <p className="text-[11px] text-indigo-200/90 leading-relaxed">
+                          Account <span className="font-bold text-white font-mono bg-indigo-900/60 px-1 py-0.5 rounded">{unregisteredPrompt}</span> was not found. Would you like to register this account with this password right now?
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleQuickRegisterFromPrompt}
+                          disabled={isSubmitting}
+                          className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-indigo-500 to-[#00D4AA] hover:brightness-110 active:scale-95 text-slate-900 font-black text-xs flex items-center justify-center gap-2 shadow-lg cursor-pointer transition-all"
+                        >
+                          <UserPlus className="w-3.5 h-3.5 text-slate-900" />
+                          <span>Register &amp; Sign In Immediately</span>
+                        </button>
+                      </div>
+                    )}
+
                     {/* Submit Button */}
                     <button
                       type="submit"
@@ -761,6 +1051,28 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                       )}
                     </button>
                   </form>
+
+                  {/* Switch to Register link */}
+                  <div className="text-center pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthTab('REGISTER');
+                        if (username) {
+                          setRegUsername(username.includes('@') ? username.split('@')[0] : username);
+                          if (username.includes('@')) setRegEmail(username);
+                        }
+                        if (password) setRegPassword(password);
+                        setErrorMsg(null);
+                        setRegError(null);
+                        triggerHaptic('light');
+                      }}
+                      className="text-xs text-slate-400 hover:text-[#00D4AA] transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                    >
+                      <span>New team member?</span>
+                      <span className="font-bold text-[#00D4AA] underline underline-offset-2">Register your account</span>
+                    </button>
+                  </div>
 
                   {/* Divider */}
                   <div className="relative flex items-center justify-center my-1.5">
@@ -805,11 +1117,195 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   <div className="p-3 bg-[#0A0E18] border border-slate-800/80 rounded-2xl flex items-center justify-between text-[10px] text-slate-500">
                     <span className="flex items-center gap-1.5">
                       <ShieldCheck className="w-3.5 h-3.5 text-[#00D4AA]" />
-                      Rate-Limiting &amp; Brute-Force Shield Active
+                      Auto-Registration &amp; Auth Protection Active
                     </span>
-                    <span className="font-mono text-slate-400">Max 5 Attempts</span>
+                    <span className="font-mono text-slate-400">Instant Sync</span>
                   </div>
                 </>
+              ) : authTab === 'REGISTER' ? (
+                /* Dedicated Self-Registration Form */
+                <form onSubmit={handleRegisterSubmit} className="space-y-4 animate-fadeIn">
+                  <div className="p-3 rounded-2xl bg-[#00D4AA]/10 border border-[#00D4AA]/30 text-xs text-[#00D4AA] flex items-center gap-2">
+                    <UserPlus className="w-4 h-4 shrink-0" />
+                    <span>Instant Registration • Direct authorization to ERP &amp; Team Chat</span>
+                  </div>
+
+                  {/* Full Name */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                      Full Name
+                    </label>
+                    <div className="relative group">
+                      <User className="w-4 h-4 text-slate-500 group-focus-within:text-[#00D4AA] absolute left-3.5 top-3.5 transition-colors" />
+                      <input
+                        type="text"
+                        value={regFullName}
+                        onChange={(e) => setRegFullName(e.target.value)}
+                        placeholder="e.g. Kirubel Tadesse"
+                        disabled={isRegistering}
+                        className="w-full bg-[#0D121F] border border-slate-800 focus:border-[#00D4AA] focus:ring-1 focus:ring-[#00D4AA]/50 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-600 outline-none transition-all disabled:opacity-50"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Username & Email Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                        Username
+                      </label>
+                      <input
+                        type="text"
+                        value={regUsername}
+                        onChange={(e) => setRegUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                        placeholder="e.g. kirubel"
+                        disabled={isRegistering}
+                        className="w-full bg-[#0D121F] border border-slate-800 focus:border-[#00D4AA] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 outline-none transition-all disabled:opacity-50"
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                        Email Address
+                      </label>
+                      <input
+                        type="email"
+                        value={regEmail}
+                        onChange={(e) => setRegEmail(e.target.value)}
+                        placeholder="e.g. kirubel@gmail.com"
+                        disabled={isRegistering}
+                        className="w-full bg-[#0D121F] border border-slate-800 focus:border-[#00D4AA] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 outline-none transition-all disabled:opacity-50"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Role & Branch Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                        System Role
+                      </label>
+                      <select
+                        value={regRole}
+                        onChange={(e) => setRegRole(e.target.value as UserRole)}
+                        disabled={isRegistering}
+                        className="w-full bg-[#0D121F] border border-slate-800 focus:border-[#00D4AA] rounded-xl px-3 py-2.5 text-xs text-white outline-none cursor-pointer"
+                      >
+                        <option value="Partner">Partner (Full ERP &amp; Chat)</option>
+                        <option value="Admin">Admin (Full Control)</option>
+                        <option value="Viewer">Viewer (Read-Only)</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                        Branch
+                      </label>
+                      <input
+                        type="text"
+                        value={regBranch}
+                        onChange={(e) => setRegBranch(e.target.value)}
+                        placeholder="Addis Ababa HQ"
+                        disabled={isRegistering}
+                        className="w-full bg-[#0D121F] border border-slate-800 focus:border-[#00D4AA] rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-600 outline-none transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Password & Confirm Password */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                        Password
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setShowRegPassword(!showRegPassword)}
+                        className="text-[10px] font-semibold text-slate-400 hover:text-[#00D4AA] cursor-pointer"
+                      >
+                        {showRegPassword ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
+                    <div className="relative group">
+                      <KeyRound className="w-4 h-4 text-slate-500 group-focus-within:text-[#00D4AA] absolute left-3.5 top-3.5 transition-colors" />
+                      <input
+                        type={showRegPassword ? 'text' : 'password'}
+                        value={regPassword}
+                        onChange={(e) => setRegPassword(e.target.value)}
+                        placeholder="Minimum 6 characters"
+                        disabled={isRegistering}
+                        className="w-full bg-[#0D121F] border border-slate-800 focus:border-[#00D4AA] rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-600 outline-none transition-all disabled:opacity-50"
+                        required
+                        minLength={6}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                      Confirm Password
+                    </label>
+                    <div className="relative group">
+                      <Check className="w-4 h-4 text-slate-500 group-focus-within:text-[#00D4AA] absolute left-3.5 top-3.5 transition-colors" />
+                      <input
+                        type={showRegPassword ? 'text' : 'password'}
+                        value={regConfirmPassword}
+                        onChange={(e) => setRegConfirmPassword(e.target.value)}
+                        placeholder="Re-enter password"
+                        disabled={isRegistering}
+                        className="w-full bg-[#0D121F] border border-slate-800 focus:border-[#00D4AA] rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-600 outline-none transition-all disabled:opacity-50"
+                        required
+                        minLength={6}
+                      />
+                    </div>
+                  </div>
+
+                  {regError && (
+                    <div className="p-3.5 rounded-2xl bg-rose-950/80 border border-rose-500/60 text-rose-100 text-xs flex items-start gap-2.5 animate-fadeIn">
+                      <ShieldAlert className="w-4 h-4 shrink-0 text-rose-300 mt-0.5" />
+                      <span className="leading-relaxed font-medium">{regError}</span>
+                    </div>
+                  )}
+
+                  {/* Register Submit Button */}
+                  <button
+                    type="submit"
+                    disabled={isRegistering}
+                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#00D4AA] to-[#00B894] hover:brightness-110 active:scale-[0.99] text-[#070A12] font-bold text-sm shadow-xl shadow-[#00D4AA]/20 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {isRegistering ? (
+                      <span className="flex items-center gap-2">
+                        <span className="w-4 h-4 border-2 border-[#070A12] border-t-transparent rounded-full animate-spin" />
+                        Registering Account...
+                      </span>
+                    ) : (
+                      <>
+                        <UserPlus className="w-4 h-4" />
+                        <span>Register &amp; Access System</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Switch to Sign In */}
+                  <div className="text-center pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthTab('SIGN_IN');
+                        setRegError(null);
+                        setErrorMsg(null);
+                        triggerHaptic('light');
+                      }}
+                      className="text-xs text-slate-400 hover:text-[#00D4AA] transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                    >
+                      <span>Already have an account?</span>
+                      <span className="font-bold text-[#00D4AA] underline underline-offset-2">Sign in here</span>
+                    </button>
+                  </div>
+                </form>
               ) : (
                 /* OTP Activation Form */
                 <form onSubmit={handleActivateOtpSubmit} className="space-y-4 animate-fadeIn">

@@ -312,15 +312,9 @@ function getStateFingerprint(state: ERPState): string {
     const loansSum = (state.loans || []).map((l) => `${l.id}:${l.outstandingBalance}:${l.status}:${(l.payments || []).length}`).join('|');
     const rcvSum = (state.receivables || []).map((r) => `${r.id}:${r.amountOwed}:${r.amountCollected || 0}:${r.status}`).join('|');
     const usersCount = state.users?.length || 0;
-    const chatLen = state.chatMessages?.length || 0;
-    const lastChat = chatLen > 0 ? state.chatMessages![chatLen - 1]?.id : '';
-    const chatReactionsSum = (state.chatMessages || [])
-      .slice(-10)
-      .map((m) => (m.reactions || []).map((r) => `${r.emoji}:${r.count}`).join(','))
-      .join('|');
     const auditLen = state.auditLogs?.length || 0;
     const approvalsLen = state.approvalRequests?.length || 0;
-    return `${txLen}:${txTotal}:${txSample}:${transfersCount}:${transfersTotal}:${walletsSum}:${equbsSum}:${loansSum}:${rcvSum}:${usersCount}:${chatLen}:${lastChat}:${chatReactionsSum}:${auditLen}:${approvalsLen}`;
+    return `${txLen}:${txTotal}:${txSample}:${transfersCount}:${transfersTotal}:${walletsSum}:${equbsSum}:${loansSum}:${rcvSum}:${usersCount}:${auditLen}:${approvalsLen}`;
   } catch (_) {
     return String(Date.now());
   }
@@ -531,32 +525,8 @@ export function isFirestoreQuotaExceeded(): boolean {
  * and broadcasts across tabs/windows with immediate 0ms latency.
  */
 export async function sendChatMessageToFirebase(msg: ChatMessage): Promise<void> {
-  try {
-    // 1. Cross-tab instant broadcast (0ms)
-    try {
-      const { broadcastChatEvent } = await import('./realtimeChat');
-      broadcastChatEvent({ type: 'NEW_MESSAGE', message: msg });
-    } catch (_) {}
-
-    // 2. Cloud Firestore direct write
-    const msgRef = doc(db, 'team_chat_messages', msg.id);
-    const cleanMsg = JSON.parse(JSON.stringify(msg));
-    await setDoc(msgRef, cleanMsg);
-    if (isQuotaExceeded) {
-      clearQuotaExceeded();
-    }
-  } catch (err: any) {
-    if (
-      err?.code === 'resource-exhausted' ||
-      err?.message?.includes('Quota') ||
-      err?.message?.includes('quota')
-    ) {
-      markQuotaExceeded();
-      return;
-    }
-    console.warn('Realtime chat message send fallback:', err?.message);
-    handleFirestoreError(err, OperationType.WRITE, `team_chat_messages/${msg.id}`);
-  }
+  const { sendChatMessageImmediately } = await import('./realtimeChat');
+  return sendChatMessageImmediately(msg);
 }
 
 /**
@@ -566,32 +536,8 @@ export async function updateChatMessageReactionInFirebase(
   messageId: string,
   reactions: ChatMessageReaction[]
 ): Promise<void> {
-  try {
-    // 1. Cross-tab instant broadcast (0ms)
-    try {
-      const { broadcastChatEvent } = await import('./realtimeChat');
-      broadcastChatEvent({ type: 'UPDATE_REACTIONS', messageId, reactions });
-    } catch (_) {}
-
-    // 2. Cloud Firestore direct update
-    const msgRef = doc(db, 'team_chat_messages', messageId);
-    await updateDoc(msgRef, {
-      reactions: JSON.parse(JSON.stringify(reactions))
-    });
-    if (isQuotaExceeded) {
-      clearQuotaExceeded();
-    }
-  } catch (err: any) {
-    if (
-      err?.code === 'resource-exhausted' ||
-      err?.message?.includes('Quota') ||
-      err?.message?.includes('quota')
-    ) {
-      markQuotaExceeded();
-      return;
-    }
-    console.warn('Realtime chat reaction update fallback:', err?.message);
-  }
+  const { updateChatReactionImmediately } = await import('./realtimeChat');
+  return updateChatReactionImmediately(messageId, reactions);
 }
 
 /**
@@ -607,7 +553,16 @@ export async function fetchRealtimeChatMessages(): Promise<ChatMessage[]> {
         msgs.push(docSnap.data() as ChatMessage);
       }
     });
-    msgs.sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
+    const parseTs = (ts?: string | number) => {
+      if (!ts) return 0;
+      const n = typeof ts === 'number' ? ts : new Date(ts).getTime();
+      return isNaN(n) ? 0 : n;
+    };
+    msgs.sort((a, b) => {
+      const diff = parseTs(a.timestamp) - parseTs(b.timestamp);
+      if (diff !== 0) return diff;
+      return (a.id || '').localeCompare(b.id || '');
+    });
     if (isQuotaExceeded) clearQuotaExceeded();
     return msgs;
   } catch (err: any) {
@@ -637,8 +592,21 @@ export function subscribeToRealtimeChatMessages(
     }
   };
 
+  const parseTs = (ts?: string | number) => {
+    if (!ts) return 0;
+    const n = typeof ts === 'number' ? ts : new Date(ts).getTime();
+    return isNaN(n) ? 0 : n;
+  };
+
   const connectListener = () => {
     if (!isSubscribed) return;
+    if (unsubscribeFn) {
+      try {
+        unsubscribeFn();
+      } catch (_) {}
+      unsubscribeFn = null;
+    }
+
     try {
       const chatColRef = collection(db, 'team_chat_messages');
 
@@ -654,13 +622,13 @@ export function subscribeToRealtimeChatMessages(
               liveMessages.push(docSnap.data() as ChatMessage);
             }
           });
-          // Sort messages chronologically by timestamp
-          liveMessages.sort(
-            (a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()
-          );
-          if (liveMessages.length > 0) {
-            onUpdate(liveMessages);
-          }
+          // Sort messages chronologically by timestamp, then by message id
+          liveMessages.sort((a, b) => {
+            const diff = parseTs(a.timestamp) - parseTs(b.timestamp);
+            if (diff !== 0) return diff;
+            return (a.id || '').localeCompare(b.id || '');
+          });
+          onUpdate(liveMessages);
         },
         (error) => {
           const isQuota =
@@ -673,12 +641,12 @@ export function subscribeToRealtimeChatMessages(
             safeUnsubscribe();
           } else {
             console.info('Firestore chat realtime stream reconnecting...', error?.message);
-            // Reconnect after 3 seconds if disconnected
+            // Reconnect after 2 seconds if disconnected
             setTimeout(() => {
               if (isSubscribed) {
                 connectListener();
               }
-            }, 3000);
+            }, 2000);
           }
         }
       );
@@ -692,21 +660,33 @@ export function subscribeToRealtimeChatMessages(
 }
 
 /**
- * Seeds initial default messages into the Firestore `team_chat_messages` collection
- * if it is empty, ensuring new devices and existing chats are fully synchronized.
+ * Seeds messages into the Firestore `team_chat_messages` collection
+ * ensuring any local or default messages that are not yet in Firestore are synchronized.
  */
 export async function seedInitialChatMessagesIfEmpty(messages: ChatMessage[]): Promise<void> {
-  if (isQuotaExceeded || !messages || messages.length === 0) return;
+  if (!messages || messages.length === 0) return;
   try {
     const chatColRef = collection(db, 'team_chat_messages');
-    const snap = await getDocs(query(chatColRef, limit(1)));
-    if (snap.empty) {
-      for (const msg of messages) {
+    const existingSnap = await getDocs(chatColRef);
+    const existingIds = new Set<string>();
+    existingSnap.forEach((d) => existingIds.add(d.id));
+
+    // Upload any messages that are missing from cloud Firestore
+    for (const msg of messages) {
+      if (!existingIds.has(msg.id)) {
         const msgRef = doc(db, 'team_chat_messages', msg.id);
         await setDoc(msgRef, JSON.parse(JSON.stringify(msg)));
       }
     }
   } catch (err) {
-    console.info('Chat seed skipped:', err);
+    console.info('Chat seed sync skipped:', err);
   }
+}
+
+/**
+ * Deletes a chat message from Firestore and broadcasts to other users.
+ */
+export async function deleteChatMessageInFirebase(messageId: string): Promise<void> {
+  const { deleteChatMessageImmediately } = await import('./realtimeChat');
+  return deleteChatMessageImmediately(messageId);
 }

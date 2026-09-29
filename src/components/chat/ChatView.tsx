@@ -24,10 +24,13 @@ import {
   Flame,
   UserCheck,
   Check,
-  HelpCircle
+  HelpCircle,
+  Trash2,
+  UserPlus
 } from 'lucide-react';
-import { ERPState, ChatMessage, ChatChannel, UserProfile, Transaction, Wallet as WalletType, Equb } from '../../types';
+import { ERPState, ChatMessage, ChatChannel, UserProfile, UserRole, Transaction, Wallet as WalletType, Equb } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
+import { DEFAULT_ROLE_PERMISSIONS } from '../../lib/auth';
 import { EmojiPickerPopup } from './EmojiPickerPopup';
 import { QUICK_REACTION_EMOJIS } from './emojiData';
 import { compressImageForChat } from '../../lib/realtimeChat';
@@ -43,6 +46,8 @@ interface ChatViewProps {
   onMarkRead?: () => void;
   onOpenHelp?: () => void;
   onSwitchUser?: (user: UserProfile) => void;
+  onDeleteMessage?: (messageId: string) => void;
+  onRegisterUser?: (newUser: UserProfile) => void;
 }
 
 const COMMON_EMOJIS = ['👍', '❤️', '🚀', '💡', '💰', '✅', '🔥', '🙏', '👏', '🎯'];
@@ -110,7 +115,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
   onRejectRequest,
   onMarkRead,
   onOpenHelp,
-  onSwitchUser
+  onSwitchUser,
+  onDeleteMessage,
+  onRegisterUser
 }) => {
   const currentUser = state.currentUser;
   const chatMessages = state.chatMessages || [];
@@ -121,6 +128,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isAnnouncement, setIsAnnouncement] = useState(false);
   const [showUserSwitcher, setShowUserSwitcher] = useState(false);
+  const [showQuickRegisterUser, setShowQuickRegisterUser] = useState(false);
+  const [newUserNameInput, setNewUserNameInput] = useState('');
+  const [newUserRoleInput, setNewUserRoleInput] = useState<UserRole>('Partner');
 
   // Reply state
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
@@ -146,8 +156,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
   // Filter messages for main chat
   const filteredMessages = chatMessages.filter(m => {
     if (messageSearchQuery.trim()) {
-      return m.text.toLowerCase().includes(messageSearchQuery.toLowerCase()) ||
-        m.senderName.toLowerCase().includes(messageSearchQuery.toLowerCase());
+      return (m.text || '').toLowerCase().includes(messageSearchQuery.toLowerCase()) ||
+        (m.senderName || '').toLowerCase().includes(messageSearchQuery.toLowerCase());
     }
     return true;
   });
@@ -206,10 +216,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
       fileName: attachedFile?.name,
       fileType: attachedFile?.type,
       replyToId: replyingTo?.id,
-      replyToText: replyingTo?.text.substring(0, 60),
+      replyToText: replyingTo?.text ? replyingTo.text.substring(0, 60) : '',
       replyToSenderName: replyingTo?.senderName,
       reference: selectedRef,
-      isAnnouncement: isAnnouncement && (currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin')
+      isAnnouncement: Boolean(isAnnouncement)
     });
 
     setInputText('');
@@ -324,6 +334,79 @@ export const ChatView: React.FC<ChatViewProps> = ({
                         );
                       })}
                     </div>
+
+                    {/* Quick Register User in Chat */}
+                    {onRegisterUser && (
+                      <div className="pt-2 mt-1 border-t border-slate-100 dark:border-[#252F44]">
+                        {!showQuickRegisterUser ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              setShowQuickRegisterUser(true);
+                            }}
+                            className="w-full py-1.5 px-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-[#00D4AA] font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            <UserPlus className="w-3.5 h-3.5" />
+                            <span>+ Register New Chat User</span>
+                          </button>
+                        ) : (
+                          <div className="space-y-2 p-1.5 bg-slate-50 dark:bg-[#121824] rounded-xl border border-slate-200 dark:border-slate-800">
+                            <p className="text-[10px] font-bold text-slate-700 dark:text-slate-300">Quick Register &amp; Switch</p>
+                            <input
+                              type="text"
+                              value={newUserNameInput}
+                              onChange={(e) => setNewUserNameInput(e.target.value)}
+                              placeholder="Full Name (e.g. Dawit)"
+                              className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#1C2333] border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white outline-none"
+                            />
+                            <div className="flex gap-1.5">
+                              <select
+                                value={newUserRoleInput}
+                                onChange={(e) => setNewUserRoleInput(e.target.value as UserRole)}
+                                className="flex-1 text-[11px] px-2 py-1.5 rounded-lg bg-white dark:bg-[#1C2333] border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white outline-none cursor-pointer"
+                              >
+                                <option value="Partner">Partner</option>
+                                <option value="Admin">Admin</option>
+                                <option value="Viewer">Viewer</option>
+                                <option value="SuperAdmin">SuperAdmin</option>
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!newUserNameInput.trim()) return;
+                                  triggerHaptic('medium');
+                                  const clean = newUserNameInput.trim();
+                                  const usernameVal = clean.toLowerCase().replace(/[^a-z0-9_]/g, '') || `user_${Date.now().toString().slice(-4)}`;
+                                  const newUser: UserProfile = {
+                                    id: `u-${Date.now()}`,
+                                    name: clean,
+                                    email: `${usernameVal}@pluszone.com`,
+                                    username: usernameVal,
+                                    role: newUserRoleInput,
+                                    active: true,
+                                    isApproved: true,
+                                    hasSetPassword: true,
+                                    permissions: DEFAULT_ROLE_PERMISSIONS[newUserRoleInput],
+                                    branch: 'Addis Ababa HQ',
+                                    lastActive: 'Just now'
+                                  };
+                                  onRegisterUser(newUser);
+                                  onSwitchUser?.(newUser);
+                                  setNewUserNameInput('');
+                                  setShowQuickRegisterUser(false);
+                                  setShowUserSwitcher(false);
+                                }}
+                                disabled={!newUserNameInput.trim()}
+                                className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs cursor-pointer disabled:opacity-50"
+                              >
+                                Add
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -412,6 +495,19 @@ export const ChatView: React.FC<ChatViewProps> = ({
                       {/* Meta header */}
                       <div className={`flex items-center gap-1.5 text-[10px] text-slate-400 ${isMe ? 'justify-end' : ''}`}>
                         <span className="font-bold text-slate-700 dark:text-slate-300">{msg.senderName}</span>
+                        {msg.senderRole && (
+                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold ${
+                            msg.senderRole === 'SuperAdmin'
+                              ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30'
+                              : msg.senderRole === 'Admin'
+                              ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30'
+                              : msg.senderRole === 'Partner'
+                              ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                              : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                          }`}>
+                            {msg.senderRole}
+                          </span>
+                        )}
                         <span>•</span>
                         <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
@@ -490,8 +586,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
                               </div>
                             )}
 
-                            {/* Quick Approve / Reject action inside Chat if request is pending */}
-                            {msg.reference.type === 'APPROVAL' && msg.reference.status === 'PENDING' && (currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && onApproveRequest && onRejectRequest && (
+                            {/* Quick Approve / Reject action inside Chat if request is pending - Equal privilege for ALL team roles */}
+                            {msg.reference.type === 'APPROVAL' && msg.reference.status === 'PENDING' && onApproveRequest && onRejectRequest && (
                               <div className="flex items-center gap-2 pt-1 border-t border-amber-500/20">
                                 <button
                                   type="button"
@@ -588,6 +684,20 @@ export const ChatView: React.FC<ChatViewProps> = ({
                               {e}
                             </button>
                           ))}
+
+                          {onDeleteMessage && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                triggerHaptic('warning');
+                                onDeleteMessage(msg.id);
+                              }}
+                              className="p-1 rounded-md text-slate-400 hover:text-rose-500 transition-colors cursor-pointer"
+                              title="Delete message"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -641,14 +751,17 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
           {/* Identity & 0ms Cloud Sync Strip */}
           <div className="px-4 py-1.5 bg-slate-50/80 dark:bg-[#0E1524] border-t border-slate-200/60 dark:border-[#1E2D40] flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 flex-wrap">
               <span>Posting as:</span>
               <strong className="text-slate-800 dark:text-white font-bold">{currentUser.name}</strong>
               <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
                 {currentUser.role}
               </span>
+              <span className="text-[10px] text-emerald-600 dark:text-[#00D4AA] font-bold">
+                • Equal Privilege Chat
+              </span>
             </span>
-            <span className="flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-600 dark:text-[#00D4AA]">
+            <span className="flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-600 dark:text-[#00D4AA] shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
               0ms Cloud Sync
             </span>
@@ -708,22 +821,20 @@ export const ChatView: React.FC<ChatViewProps> = ({
               className="flex-1 py-2.5 px-3.5 text-xs rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
 
-            {/* Admin Announcement Toggle */}
-            {(currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setIsAnnouncement(!isAnnouncement);
-                }}
-                className={`p-2 rounded-xl transition-all cursor-pointer ${
-                  isAnnouncement ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
-                }`}
-                title="Send as Official Announcement"
-              >
-                <Pin className="w-4 h-4" />
-              </button>
-            )}
+            {/* Announcement / Pin Toggle - Equal privilege for all team members */}
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setIsAnnouncement(!isAnnouncement);
+              }}
+              className={`p-2 rounded-xl transition-all cursor-pointer ${
+                isAnnouncement ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+              }`}
+              title="Pin / Send as Official Announcement (Equal privilege for all users)"
+            >
+              <Pin className="w-4 h-4" />
+            </button>
 
             {/* Send Button */}
             <button

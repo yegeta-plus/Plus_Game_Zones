@@ -162,6 +162,11 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
                     <div className={`max-w-[85%] space-y-0.5 ${isMe ? 'items-end text-right' : 'items-start'}`}>
                       <div className={`text-[9px] text-slate-400 flex items-center gap-1 ${isMe ? 'justify-end' : ''}`}>
                         <span className="font-bold text-slate-700 dark:text-slate-300">{msg.senderName}</span>
+                        {msg.senderRole && (
+                          <span className="px-1 py-0.2 rounded text-[8px] font-mono font-bold bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                            {msg.senderRole}
+                          </span>
+                        )}
                         <span>•</span>
                         <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
