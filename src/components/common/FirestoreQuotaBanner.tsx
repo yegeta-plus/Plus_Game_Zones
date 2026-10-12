@@ -77,24 +77,9 @@ export const FirestoreQuotaBanner: React.FC<FirestoreQuotaBannerProps> = ({ stat
     }
   };
 
-  // Minimized floating pill when dismissed
+  // Completely hidden when dismissed (no floating banner or pill)
   if (isDismissed) {
-    return (
-      <div className="fixed bottom-20 left-4 z-40">
-        <button
-          onClick={() => {
-            triggerHaptic('light');
-            setIsDismissed(false);
-            setIsExpanded(true);
-          }}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/90 hover:bg-amber-500 text-slate-950 font-bold text-xs shadow-lg backdrop-blur border border-amber-400 transition-transform active:scale-95"
-          title="Cloud sync paused (daily quota exceeded) - Click to review"
-        >
-          <CloudOff className="w-3.5 h-3.5 animate-pulse" />
-          <span>Offline Storage Active (Daily Quota Reached)</span>
-        </button>
-      </div>
-    );
+    return null;
   }
 
   return (

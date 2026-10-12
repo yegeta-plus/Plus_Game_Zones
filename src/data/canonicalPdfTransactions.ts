@@ -49,14 +49,14 @@ const RAW_CANONICAL_PDF_TRANSACTIONS: Transaction[] = [
   { id: 'tx-20260707-04', date: '2026-07-07T12:00:00.000Z', type: 'EXPENSE', category: 'Expense — Equipment', amount: 300, walletId: 'w-cash', description: 'Power cable purchase', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260707-05', date: '2026-07-07T13:00:00.000Z', type: 'EXPENSE', category: 'Expense — Phone/Internet', amount: 70, walletId: 'w-telebirr', description: '2.5 GB daily GB for PS4', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260707-06', date: '2026-07-07T14:00:00.000Z', type: 'EXPENSE', category: 'Expense — Transport', amount: 200, walletId: 'w-telebirr', description: 'Transport', creatorName: 'Yegeta Huawei' },
-  { id: 'tx-20260707-07', date: '2026-07-07T15:00:00.000Z', type: 'INCOME', category: 'Receivable Collected', amount: 580, walletId: 'w-telebirr', description: 'Split repayment on receivable', creatorName: 'Yegeta Huawei' },
+  { id: 'tx-20260707-07', date: '2026-07-07T15:00:00.000Z', type: 'INCOME', category: 'Receivable Collected', amount: 580, walletId: 'w-telebirr', splits: [{ walletId: 'w-telebirr', amount: 580 }], description: 'Split repayment on receivable', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260707-08', date: '2026-07-07T16:00:00.000Z', type: 'EXPENSE', category: 'Purchase', amount: 49500, walletId: 'w-cash', description: 'PS4 Pro purchase', creatorName: 'Yegeta Huawei' },
 
   // Jul 8
   { id: 'tx-20260708-01', date: '2026-07-08T09:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 1445, walletId: 'w-cash', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260708-02', date: '2026-07-08T10:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 230, walletId: 'w-cbe', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260708-03', date: '2026-07-08T11:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 160, walletId: 'w-telebirr', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
-  { id: 'tx-20260708-04', date: '2026-07-08T12:00:00.000Z', type: 'INCOME', category: 'Receivable Collected', amount: 520, walletId: 'w-telebirr', description: 'Split repayment on receivable', creatorName: 'Yegeta Huawei' },
+  { id: 'tx-20260708-04', date: '2026-07-08T12:00:00.000Z', type: 'INCOME', category: 'Receivable Collected', amount: 520, walletId: 'w-telebirr', splits: [{ walletId: 'w-telebirr', amount: 520 }], description: 'Split repayment on receivable', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260708-05', date: '2026-07-08T13:00:00.000Z', type: 'EXPENSE', category: 'Ekub', amount: 3000, walletId: 'w-cash', description: 'Leli Ekub contribution', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260708-06', date: '2026-07-08T14:00:00.000Z', type: 'EXPENSE', category: 'Owner Withdrawal', amount: 320, walletId: 'w-cash', description: 'Asbeza / home expense', creatorName: 'Yegeta Huawei' },
 
@@ -85,7 +85,7 @@ const RAW_CANONICAL_PDF_TRANSACTIONS: Transaction[] = [
   { id: 'tx-20260712-01', date: '2026-07-12T09:00:00.000Z', type: 'EXPENSE', category: 'Owner Withdrawal', amount: 1000, walletId: 'w-cash', description: 'Gg transport', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260712-02', date: '2026-07-12T09:30:00.000Z', type: 'INCOME', category: 'Loan Received', amount: 1200, walletId: 'w-cash', description: 'Loan disbursed/logged', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260712-03', date: '2026-07-12T10:00:00.000Z', type: 'EXPENSE', category: 'Loan Repayment', amount: 15000, walletId: 'w-cash', splits: [{ walletId: 'w-cash', amount: 12000 }, { walletId: 'w-telebirr', amount: 3000 }], description: 'Loan repayment', creatorName: 'Yegeta Huawei' },
-  { id: 'tx-20260712-04', date: '2026-07-12T10:30:00.000Z', type: 'INCOME', category: 'Receivable Collected', amount: 400, walletId: 'w-telebirr', description: 'Split repayment on receivable', creatorName: 'Yegeta Huawei' },
+  { id: 'tx-20260712-04', date: '2026-07-12T10:30:00.000Z', type: 'INCOME', category: 'Receivable Collected', amount: 400, walletId: 'w-telebirr', splits: [{ walletId: 'w-telebirr', amount: 400 }], description: 'Split repayment on receivable', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260712-05', date: '2026-07-12T11:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 1055, walletId: 'w-cash', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260712-06', date: '2026-07-12T11:30:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 60, walletId: 'w-cbe', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260712-07', date: '2026-07-12T12:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 420, walletId: 'w-telebirr', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
@@ -99,7 +99,7 @@ const RAW_CANONICAL_PDF_TRANSACTIONS: Transaction[] = [
   { id: 'tx-20260713-06', date: '2026-07-13T12:00:00.000Z', type: 'EXPENSE', category: 'Owner Withdrawal', amount: 160, walletId: 'w-cash', description: 'Dinner', creatorName: 'Yegeta Huawei' },
 
   // Jul 14
-  { id: 'tx-20260714-01', date: '2026-07-14T09:00:00.000Z', type: 'INCOME', category: 'Receivable Collected', amount: 615, walletId: 'w-cash', description: 'Split repayment on receivable', creatorName: 'Yegeta Huawei' },
+  { id: 'tx-20260714-01', date: '2026-07-14T09:00:00.000Z', type: 'INCOME', category: 'Receivable Collected', amount: 615, walletId: 'w-cash', splits: [{ walletId: 'w-cash', amount: 615 }], description: 'Split repayment on receivable', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260714-02', date: '2026-07-14T09:30:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 280, walletId: 'w-cbe', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260714-03', date: '2026-07-14T10:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 1420, walletId: 'w-cash', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260714-04', date: '2026-07-14T11:00:00.000Z', type: 'EXPENSE', category: 'Owner Withdrawal', amount: 510, walletId: 'w-cash', description: 'Lunch Zeru & Gg', creatorName: 'Yegeta Huawei' },
@@ -117,7 +117,7 @@ const RAW_CANONICAL_PDF_TRANSACTIONS: Transaction[] = [
   { id: 'tx-20260716-01', date: '2026-07-16T09:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 530, walletId: 'w-cbe', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260716-02', date: '2026-07-16T10:00:00.000Z', type: 'EXPENSE', category: 'Owner Withdrawal', amount: 510, walletId: 'w-cash', description: 'Gg & Hermi lunch', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260716-03', date: '2026-07-16T10:30:00.000Z', type: 'EXPENSE', category: 'Owner Withdrawal', amount: 400, walletId: 'w-cash', description: 'Rice, jar and other items', creatorName: 'Yegeta Huawei' },
-  { id: 'tx-20260716-04', date: '2026-07-16T11:00:00.000Z', type: 'INCOME', category: 'Receivable Collected', amount: 200, walletId: 'w-telebirr', description: 'Split repayment on receivable', creatorName: 'Yegeta Huawei' },
+  { id: 'tx-20260716-04', date: '2026-07-16T11:00:00.000Z', type: 'INCOME', category: 'Receivable Collected', amount: 200, walletId: 'w-telebirr', splits: [{ walletId: 'w-telebirr', amount: 200 }], description: 'Split repayment on receivable', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260716-05', date: '2026-07-16T12:00:00.000Z', type: 'EXPENSE', category: 'Ekub', amount: 5000, walletId: 'w-cash', splits: [{ walletId: 'w-cbe', amount: 1810 }, { walletId: 'w-cash', amount: 3190 }], description: 'Agerye — Round 18', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260716-06', date: '2026-07-16T13:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 1515, walletId: 'w-cash', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
 
@@ -143,12 +143,12 @@ const RAW_CANONICAL_PDF_TRANSACTIONS: Transaction[] = [
   { id: 'tx-20260719-01', date: '2026-07-19T10:00:00.000Z', type: 'EXPENSE', category: 'Owner Withdrawal', amount: 800, walletId: 'w-cash', splits: [{ walletId: 'w-cash', amount: 400 }, { walletId: 'w-telebirr', amount: 400 }], description: 'World Cup / personal', creatorName: 'Yegeta Huawei' },
 
   // Jul 20
-  { id: 'tx-20260720-01', date: '2026-07-20T09:00:00.000Z', type: 'EXPENSE', category: 'Loan Repayment', amount: 3000, walletId: 'w-cash', description: 'Split repayment on loan', creatorName: 'Yegeta Huawei' },
+  { id: 'tx-20260720-01', date: '2026-07-20T09:00:00.000Z', type: 'EXPENSE', category: 'Loan Repayment', amount: 3000, walletId: 'w-cash', splits: [{ walletId: 'w-cash', amount: 3000 }], description: 'Split repayment on loan', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260720-02', date: '2026-07-20T09:30:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 245, walletId: 'w-telebirr', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260720-03', date: '2026-07-20T10:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 2220, walletId: 'w-cash', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260720-04', date: '2026-07-20T10:30:00.000Z', type: 'EXPENSE', category: 'Owner Withdrawal', amount: 150, walletId: 'w-cash', description: 'Home expense', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260720-05', date: '2026-07-20T11:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 200, walletId: 'w-cbe', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
-  { id: 'tx-20260720-06', date: '2026-07-20T11:30:00.000Z', type: 'INCOME', category: 'Receivable Collected', amount: 715, walletId: 'w-telebirr', description: 'Split repayment on receivable', creatorName: 'Yegeta Huawei' },
+  { id: 'tx-20260720-06', date: '2026-07-20T11:30:00.000Z', type: 'INCOME', category: 'Receivable Collected', amount: 715, walletId: 'w-telebirr', splits: [{ walletId: 'w-telebirr', amount: 715 }], description: 'Split repayment on receivable', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260720-07', date: '2026-07-20T12:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 300, walletId: 'w-cbe', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
 
   // Jul 21
@@ -350,7 +350,7 @@ const RAW_CANONICAL_PDF_TRANSACTIONS: Transaction[] = [
 
   // Aug 17
   { id: 'tx-20260817-01', date: '2026-08-17T09:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 2010, walletId: 'w-cash', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
-  { id: 'tx-20260817-02', date: '2026-08-17T10:00:00.000Z', type: 'EXPENSE', category: 'Ekub', amount: 5000, walletId: 'w-cash', splits: [{ walletId: 'w-cash', amount: 3500 }, { walletId: 'w-telebirr', amount: 1000 }, { walletId: 'w-cbe', amount: 500 }], description: 'Agerye — Round 21', creatorName: 'Yegeta Huawei' },
+  { id: 'tx-20260817-02', date: '2026-08-17T10:00:00.000Z', type: 'EXPENSE', category: 'Ekub', amount: 5000, walletId: 'w-cash', splits: [{ walletId: 'w-telebirr', amount: 2615 }, { walletId: 'w-cbe', amount: 1335 }, { walletId: 'w-cash', amount: 1050 }], description: 'Agerye — Round 21 (Split: Telebirr ETB 2,615, CBE ETB 1,335, Cash ETB 1,050)', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260817-03', date: '2026-08-17T11:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 780, walletId: 'w-telebirr', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
   { id: 'tx-20260817-04', date: '2026-08-17T12:00:00.000Z', type: 'INCOME', category: 'Daily Income', amount: 105, walletId: 'w-cbe', description: 'Daily Income', creatorName: 'Yegeta Huawei' },
 

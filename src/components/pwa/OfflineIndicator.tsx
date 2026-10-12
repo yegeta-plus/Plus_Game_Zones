@@ -7,7 +7,7 @@ interface OfflineIndicatorProps {
   onOpenCapabilities?: () => void;
 }
 
-export const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({ onOpenCapabilities }) => {
+export const OfflineIndicator: React.FC<OfflineIndicatorProps> = () => {
   const isOnline = useOnlineStatus();
   const queuedItems = getQueuedOfflineItems();
 
@@ -28,14 +28,6 @@ export const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({ onOpenCapabi
           </span>
         )}
       </div>
-      {onOpenCapabilities && (
-        <button
-          onClick={onOpenCapabilities}
-          className="ml-1 text-[11px] underline font-bold hover:text-amber-200 transition cursor-pointer"
-        >
-          Details
-        </button>
-      )}
     </div>
   );
 };

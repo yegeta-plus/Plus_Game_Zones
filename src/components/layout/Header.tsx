@@ -1,10 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut, Gamepad2, Send, Sparkles, X, CheckCheck, Radio } from 'lucide-react';
+import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut, Gamepad2, Send, Sparkles, X, CheckCheck } from 'lucide-react';
 import { UserProfile, NavTab } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 import { requestNotificationPermission, sendExternalNotification } from '../../lib/notifications';
 import { AppLogo } from '../common/AppLogo';
-import { PWAInstallButton } from '../pwa/PWAInstallButton';
 
 export interface HeaderNotificationItem {
   id: string;
@@ -38,7 +37,6 @@ interface HeaderProps {
   onToggleAutoRefresh?: () => void;
   onManualRefresh?: () => void;
   unreadChatCount?: number;
-  onOpenPwaModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -62,8 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleCalendarType,
   onToggleAutoRefresh,
   onManualRefresh,
-  unreadChatCount = 0,
-  onOpenPwaModal
+  unreadChatCount = 0
 }) => {
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const [pushSentMessage, setPushSentMessage] = useState<string | null>(null);
@@ -94,7 +91,7 @@ export const Header: React.FC<HeaderProps> = ({
       if (ok) {
         setPushSentMessage('✓ System push notification sent outside the app!');
       } else {
-        setPushSentMessage('System notification dispatched to Service Worker');
+        setPushSentMessage('✓ System push notification dispatched to your device');
       }
     } else {
       setPushSentMessage('⚠️ Notification permission denied in browser.');
@@ -337,23 +334,6 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
         </div>
-
-        {/* PWA In-App Install Prompt */}
-        <PWAInstallButton variant="compact" />
-
-        {/* PWA & Service Worker Capabilities Inspector */}
-        {onOpenPwaModal && (
-          <button
-            onClick={() => {
-              triggerHaptic('light');
-              onOpenPwaModal();
-            }}
-            title="Service Worker & PWA Capabilities"
-            className="p-2 rounded-xl bg-slate-100 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] text-[#00D4AA] hover:bg-[#00D4AA]/10 transition-colors cursor-pointer"
-          >
-            <Radio className="w-4 h-4 animate-pulse" />
-          </button>
-        )}
 
         {/* Theme Toggle */}
         <button

@@ -20,10 +20,21 @@ import {
   Image,
   X,
   Lock,
-  HelpCircle
+  HelpCircle,
+  SlidersHorizontal,
+  RefreshCw
 } from 'lucide-react';
 import { Wallet, Transaction, Transfer, UserProfile, TransactionType, Receivable } from '../../types';
-import { calculateWalletBalance, formatETB, isOverdraftAllowed, isWalletActive, isCreditSaleCollected, getTransactionDisplayTitle } from '../../lib/store';
+import {
+  calculateWalletBalance,
+  calculateWalletNetActivity,
+  getAdjustedOpeningBalanceForTargetBalance,
+  formatETB,
+  isOverdraftAllowed,
+  isWalletActive,
+  isCreditSaleCollected,
+  getTransactionDisplayTitle
+} from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 import { TelebirrIntegrationModal } from './TelebirrIntegrationModal';
 import { ShegerPayVerificationModal } from './ShegerPayVerificationModal';
@@ -130,6 +141,10 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
   const [newWalletAllowOverdraft, setNewWalletAllowOverdraft] = useState(false);
   const [newWalletIsCredit, setNewWalletIsCredit] = useState(false);
 
+  // Reconcile Balances Modal state
+  const [showReconcileModal, setShowReconcileModal] = useState(false);
+  const [reconcileBalances, setReconcileBalances] = useState<Record<string, string>>({});
+
   // Edit Wallet Modal state
   const [editingWallet, setEditingWallet] = useState<Wallet | null>(null);
   const [editName, setEditName] = useState('');
@@ -140,6 +155,8 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
   const [editStatus, setEditStatus] = useState<'ACTIVE' | 'ARCHIVED' | 'DISABLED'>('ACTIVE');
   const [editAllowOverdraft, setEditAllowOverdraft] = useState(false);
   const [editIsCredit, setEditIsCredit] = useState(false);
+  const [editOpeningBal, setEditOpeningBal] = useState('');
+  const [editTargetBal, setEditTargetBal] = useState('');
 
   // Delete Wallet Confirmation Modal state
   const [deletingWallet, setDeletingWallet] = useState<Wallet | null>(null);
@@ -161,6 +178,8 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
     setEditStatus(w.status || (w.isArchived ? 'ARCHIVED' : 'ACTIVE'));
     setEditAllowOverdraft(!!(w.allowOverdraft || w.isCreditAccount || w.type === 'CREDIT_LINE' || w.type === 'LOAN'));
     setEditIsCredit(!!(w.isCreditAccount || w.type === 'CREDIT_LINE' || w.type === 'LOAN'));
+    setEditOpeningBal(w.openingBalance !== undefined ? String(w.openingBalance) : '0');
+    setEditTargetBal(String(calculateWalletBalance(w, transactions, transfers)));
   };
 
   const openDeleteModal = (w: Wallet) => {
@@ -301,10 +320,22 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
     else if (editType === 'SAVINGS') defaultIcon = 'Vault';
     else if (editType === 'CBE_BANK') defaultIcon = 'Building2';
 
+    let finalOpeningBalance = editingWallet.openingBalance;
+    const target = parseFloat(editTargetBal);
+    if (!isNaN(target)) {
+      finalOpeningBalance = getAdjustedOpeningBalanceForTargetBalance(editingWallet.id, target, transactions, transfers);
+    } else {
+      const op = parseFloat(editOpeningBal);
+      if (!isNaN(op)) {
+        finalOpeningBalance = op;
+      }
+    }
+
     onUpdateWallet(editingWallet.id, {
       name: editName.trim() || editingWallet.name,
       type: editType,
       color: editColor,
+      openingBalance: finalOpeningBalance,
       accountNumber: editAccNum.trim() || undefined,
       iconName: defaultIcon,
       customLogoUrl: editCustomLogoUrl.trim() || undefined,
@@ -372,6 +403,25 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                 )}
               </button>
             </>
+          )}
+
+          {(currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin') && (
+            <button
+              onClick={() => {
+                triggerHaptic('medium');
+                const initialMap: Record<string, string> = {};
+                wallets.forEach(w => {
+                  initialMap[w.id] = String(calculateWalletBalance(w, transactions, transfers));
+                });
+                setReconcileBalances(initialMap);
+                setShowReconcileModal(true);
+              }}
+              className="px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:brightness-110 transition-all border border-amber-400/30"
+              title="Reconcile and set true current wallet balances to eliminate previous app discrepancies"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">Set Real Balances</span>
+            </button>
           )}
 
           <button
@@ -1286,6 +1336,39 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
                 />
               </div>
 
+              {/* Live Balance & Baseline Recalibration */}
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#1A2234] border border-slate-200 dark:border-[#223049] space-y-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-700 dark:text-[#A0B0CB]">Current Live Balance:</span>
+                  <span className="font-bold text-emerald-600 dark:text-[#00D4AA] font-mono">
+                    {formatETB(calculateWalletBalance(editingWallet, transactions, transfers))}
+                  </span>
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-[#CBD5E1] block mb-1">
+                    Set Real Current Balance (ETB)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editTargetBal}
+                    onChange={e => {
+                      setEditTargetBal(e.target.value);
+                      const target = parseFloat(e.target.value);
+                      if (!isNaN(target)) {
+                        const newOp = getAdjustedOpeningBalanceForTargetBalance(editingWallet.id, target, transactions, transfers);
+                        setEditOpeningBal(String(newOp));
+                      }
+                    }}
+                    placeholder="Enter actual real balance"
+                    className="w-full bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-lg p-2 text-xs font-mono font-bold text-slate-900 dark:text-white outline-none focus:border-emerald-500"
+                  />
+                  <p className="text-[10px] text-slate-500 dark:text-[#8899BB] mt-1 leading-relaxed">
+                    Adjusts this wallet to your real balance so tracking continues accurately from now on. (Calculated baseline: {formatETB(parseFloat(editOpeningBal) || 0)})
+                  </p>
+                </div>
+              </div>
+
               {/* Color Swatches */}
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-900 dark:text-white block">Theme Color Palette</label>
@@ -1684,6 +1767,161 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
         onUpdateState={onUpdateState || (() => {})}
         onAddTransaction={onAddTransaction}
       />
+
+      {/* Modal: Full Multi-Wallet Reconciliation */}
+      {showReconcileModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] w-full max-w-lg p-5 sm:p-6 rounded-2xl space-y-4 shadow-2xl text-slate-900 dark:text-white max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-[#1E2D40] pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
+                  <SlidersHorizontal className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Reconcile Wallet Balances</h3>
+                  <p className="text-xs text-slate-500 dark:text-[#8899BB]">
+                    Sync your live balances to match your actual mobile money & cash
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowReconcileModal(false)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#1E2D40] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+              <p className="font-semibold flex items-center gap-1.5">
+                <span>💡 Fix mismatches from previous apps or old imports</span>
+              </p>
+              <p className="text-[11px] leading-relaxed opacity-90">
+                Enter your real current balances below. The system will recalibrate each wallet's initial baseline so your active balances match your real accounts going forward.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              {cashAvailableWallets.filter(w => isWalletActive(w)).map((w) => {
+                const currentBal = calculateWalletBalance(w, transactions, transfers);
+                const enteredVal = reconcileBalances[w.id] ?? String(currentBal);
+                const targetBal = parseFloat(enteredVal) || 0;
+                const diff = targetBal - currentBal;
+
+                return (
+                  <div
+                    key={w.id}
+                    className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#172033] border border-slate-200 dark:border-[#223049] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="shrink-0">
+                        {getWalletIcon(w.type, w.color, w.customLogoUrl, 'sm')}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                          {w.name}
+                        </div>
+                        <div className="text-[10px] text-slate-500 dark:text-[#8899BB] truncate">
+                          Current in app: <span className="font-semibold text-slate-700 dark:text-[#CBD5E1]">{formatETB(currentBal)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">
+                          ETB
+                        </span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={reconcileBalances[w.id] ?? ''}
+                          onChange={(e) => {
+                            setReconcileBalances(prev => ({
+                              ...prev,
+                              [w.id]: e.target.value
+                            }));
+                          }}
+                          placeholder={String(currentBal)}
+                          className="w-32 bg-white dark:bg-[#101623] border border-slate-300 dark:border-[#2A3B53] focus:border-amber-500 rounded-lg py-1.5 pl-9 pr-2.5 text-xs font-mono font-bold text-slate-900 dark:text-white outline-none text-right"
+                        />
+                      </div>
+
+                      {diff !== 0 && (
+                        <span
+                          className={`text-[10px] font-bold px-2 py-1 rounded-md shrink-0 ${
+                            diff > 0
+                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-[#00D4AA]'
+                              : 'bg-rose-500/10 text-rose-500'
+                          }`}
+                        >
+                          {diff > 0 ? `+${diff.toFixed(0)}` : diff.toFixed(0)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="pt-2 border-t border-slate-200 dark:border-[#1E2D40] flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  const resetMap: Record<string, string> = {};
+                  wallets.forEach(w => {
+                    resetMap[w.id] = String(calculateWalletBalance(w, transactions, transfers));
+                  });
+                  setReconcileBalances(resetMap);
+                }}
+                className="px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-[#8899BB] hover:bg-slate-100 dark:hover:bg-[#1E2D40] transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Reset to Recorded</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowReconcileModal(false)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-[#8899BB] hover:bg-slate-100 dark:hover:bg-[#1E2D40] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('success');
+                    if (onUpdateWallet) {
+                      wallets.forEach(w => {
+                        const valStr = reconcileBalances[w.id];
+                        if (valStr !== undefined && valStr.trim() !== '') {
+                          const target = parseFloat(valStr);
+                          if (!isNaN(target)) {
+                            const newOp = getAdjustedOpeningBalanceForTargetBalance(
+                              w.id,
+                              target,
+                              transactions,
+                              transfers
+                            );
+                            onUpdateWallet(w.id, { openingBalance: newOp });
+                          }
+                        }
+                      });
+                    }
+                    setShowReconcileModal(false);
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-md transition-all cursor-pointer"
+                >
+                  Save & Apply Real Balances
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

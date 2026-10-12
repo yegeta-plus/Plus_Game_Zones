@@ -426,6 +426,279 @@ export const generatePDFReport = ({
   doc.save(`Financial_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
 };
 
+/**
+ * 1B. Generate Dedicated Transaction, Loan, Equb & Receivable Audit PDF Report
+ * Exactly mirrors the 13-column executive audit layout with:
+ * - All Transactions (with Running Balance)
+ * - Loans Equb Receivables filtered ledger
+ * - Register Status reconciliation summary
+ */
+export const generateAuditPDFReport = ({
+  state,
+  transactions = state.transactions
+}: ExportOptions) => {
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  const isLoanEqubRcv = (t: Transaction): boolean => {
+    if (t.refType === 'EQUB' || t.refType === 'LOAN' || t.refType === 'RECEIVABLE') return true;
+    const cat = (t.category || '').toLowerCase();
+    if (
+      cat.includes('equb') ||
+      cat.includes('ekub') ||
+      cat.includes('loan') ||
+      cat.includes('debt') ||
+      cat.includes('receivable')
+    ) return true;
+    const desc = (t.description || '').toLowerCase();
+    if (
+      desc.includes('ekub') ||
+      desc.includes('equb') ||
+      desc.includes('agerye') ||
+      desc.includes('leli') ||
+      desc.includes('loan') ||
+      desc.includes('repayment') ||
+      desc.includes('receivable') ||
+      desc.includes("bale'da") ||
+      desc.includes("bale' da") ||
+      desc.includes('weframu') ||
+      (desc.includes('zeru') && desc.includes('loan'))
+    ) return true;
+    return false;
+  };
+
+  // Header Title
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(19, 25, 38);
+  doc.text('Transaction, Loan, Equb & Receivable Audit', 14, 15);
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Generated from Financial_Report_${new Date().toISOString().slice(0, 10)}.xlsx. The report preserves recorded transaction details and flags limitations in dedicated registers.`, 14, 21);
+
+  // How to read this report
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(19, 25, 38);
+  doc.text('How to read this report', 14, 28);
+
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+  doc.text('• Creation date: where a separate creation date is not stored, the transaction date is shown as the recorded date; it should not automatically be treated as the original loan or Equb creation date.', 14, 33);
+  doc.text('• Repayment dates: repayments are shown only where they appear as recorded transactions. Matching a repayment to a specific loan may require checking IDs, descriptions, references and amounts.', 14, 37);
+  doc.text('• Wallets: wallet/account values are reproduced from the transaction ledger.', 14, 41);
+  doc.text('• Register limitations: the source workbook\'s dedicated loan/liability, receivable and Equb registers independently verify creation dates, full repayment schedules and balances.', 14, 45);
+
+  // Section 1: All Transactions
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(19, 25, 38);
+  doc.text('All Transactions', 14, 52);
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text(`${transactions.length} rows · 13 columns`, 55, 52);
+
+  let runningBal = 0;
+  const allRows = transactions.map((t, idx) => {
+    if (!t.reversed) {
+      runningBal += t.type === 'INCOME' ? t.amount : -t.amount;
+    }
+    return [
+      (idx + 1).toString(),
+      t.id,
+      formatDateByCalendar(t.date, state.calendarType || 'GREGORIAN', false),
+      t.type,
+      t.category,
+      t.description,
+      getWalletName(t.walletId, state),
+      t.amount.toString(),
+      runningBal.toString(),
+      t.creatorName || 'Yegeta Huawei',
+      t.branch || 'Main',
+      t.notes || t.refType || '-',
+      t.reversed ? 'Reversed' : 'Active'
+    ];
+  });
+
+  const column13Styles: any = {
+    0: { cellWidth: 8, halign: 'center' },
+    1: { cellWidth: 32 },
+    2: { cellWidth: 20 },
+    3: { cellWidth: 14, fontStyle: 'bold' },
+    4: { cellWidth: 22 },
+    5: { cellWidth: 50 },
+    6: { cellWidth: 18 },
+    7: { cellWidth: 16, halign: 'right', fontStyle: 'bold' },
+    8: { cellWidth: 18, halign: 'right' },
+    9: { cellWidth: 20 },
+    10: { cellWidth: 12 },
+    11: { cellWidth: 22 },
+    12: { cellWidth: 14, halign: 'center' }
+  };
+
+  autoTable(doc, {
+    startY: 56,
+    head: [['#', 'Transaction ID', 'Date & Time', 'Type', 'Category', 'Description', 'Wallet Account', 'Amount (ETB)', 'Running Balance (ETB)', 'Created By', 'Branch', 'Notes / Reference', 'Status']],
+    body: allRows,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [19, 25, 38],
+      textColor: [255, 255, 255],
+      fontSize: 7,
+      fontStyle: 'bold'
+    },
+    bodyStyles: {
+      fontSize: 6.5,
+      textColor: [30, 40, 55]
+    },
+    columnStyles: column13Styles,
+    margin: { left: 14, right: 14, bottom: 16 }
+  });
+
+  // Section 2: Loans Equb Receivables (Filtered Table)
+  doc.addPage('a4', 'landscape');
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(19, 25, 38);
+  doc.text('Loans Equb Receivables', 14, 15);
+
+  const loanEqubTxs = transactions.filter(isLoanEqubRcv);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text(`${loanEqubTxs.length} rows · 13 columns`, 65, 15);
+
+  let loanRunningBal = 0;
+  const loanEqubRows = loanEqubTxs.map((t, idx) => {
+    if (!t.reversed) {
+      loanRunningBal += t.type === 'INCOME' ? t.amount : -t.amount;
+    }
+    return [
+      (idx + 1).toString(),
+      t.id,
+      formatDateByCalendar(t.date, state.calendarType || 'GREGORIAN', false),
+      t.type,
+      t.category,
+      t.description,
+      getWalletName(t.walletId, state),
+      t.amount.toString(),
+      loanRunningBal.toString(),
+      t.creatorName || 'Yegeta Huawei',
+      t.branch || 'Main',
+      t.notes || t.refType || (t.category?.includes('Equb') ? 'EQUB' : t.category?.includes('Loan') ? 'LOAN' : 'RECEIVABLE'),
+      t.reversed ? 'Reversed' : 'Active'
+    ];
+  });
+
+  autoTable(doc, {
+    startY: 20,
+    head: [['#', 'Transaction ID', 'Date & Time', 'Type', 'Category', 'Description', 'Wallet Account', 'Amount (ETB)', 'Running Balance (ETB)', 'Created By', 'Branch', 'Notes / Reference', 'Status']],
+    body: loanEqubRows,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [55, 48, 163],
+      textColor: [255, 255, 255],
+      fontSize: 7,
+      fontStyle: 'bold'
+    },
+    bodyStyles: {
+      fontSize: 6.5,
+      textColor: [30, 40, 55]
+    },
+    columnStyles: column13Styles,
+    margin: { left: 14, right: 14, bottom: 16 }
+  });
+
+  // Section 3: Register Status
+  const lastY = (doc as any).lastAutoTable?.finalY || 40;
+  const registerStartY = lastY + 12 < pageHeight - 50 ? lastY + 12 : 20;
+  if (registerStartY === 20) {
+    doc.addPage('a4', 'landscape');
+  }
+
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(19, 25, 38);
+  doc.text('Register Status', 14, registerStartY);
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text('3 rows · 4 columns', 50, registerStartY);
+
+  const totalUncollected = state.receivables.reduce((s, r) => s + (r.status === 'OUTSTANDING' ? r.amountOwed - r.amountCollected : 0), 0);
+  const totalLoans = state.loans.reduce((s, l) => s + l.outstandingBalance, 0);
+
+  autoTable(doc, {
+    startY: registerStartY + 5,
+    head: [['Register', 'Status', 'Reported outstanding (ETB)', 'Note']],
+    body: [
+      [
+        'Receivables',
+        state.receivables.length > 0 ? `Active records entered in dedicated register (${state.receivables.length} accounts)` : 'No records entered in dedicated register',
+        totalUncollected.toString(),
+        'Customer credit accounts with issue dates, due dates, amounts owed, collected, and outstanding balances.'
+      ],
+      [
+        'Loans & Liabilities',
+        state.loans.length > 0 ? `Active records entered in dedicated register (${state.loans.length} loans)` : 'No records entered in dedicated register',
+        totalLoans.toString(),
+        'Loan liabilities mapped with counterparties, initial amounts, payment installments, and remaining principal balances.'
+      ],
+      [
+        'Equb Ledger',
+        state.equbs.length > 0 ? `Active records entered in dedicated register (${state.equbs.length} groups)` : 'No records entered in dedicated register',
+        '0',
+        'Rotational community savings groups mapped with round contributions, active members, rounds completed, and payouts claimed.'
+      ]
+    ],
+    theme: 'grid',
+    headStyles: {
+      fillColor: [19, 25, 38],
+      textColor: [255, 255, 255],
+      fontSize: 7.5,
+      fontStyle: 'bold'
+    },
+    bodyStyles: {
+      fontSize: 7,
+      textColor: [30, 40, 55]
+    },
+    columnStyles: {
+      0: { cellWidth: 40, fontStyle: 'bold' },
+      1: { cellWidth: 70 },
+      2: { cellWidth: 40, halign: 'right', fontStyle: 'bold' },
+      3: { cellWidth: 110 }
+    },
+    margin: { left: 14, right: 14, bottom: 16 }
+  });
+
+  // Footer on all pages
+  const totalPages = (doc as any).internal.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(148, 163, 184);
+    doc.setDrawColor(226, 232, 240);
+    doc.line(14, pageHeight - 10, pageWidth - 14, pageHeight - 10);
+    doc.text('Transaction, Loan, Equb & Receivable Audit', 14, pageHeight - 5);
+    doc.text(`Page ${p} of ${totalPages}`, pageWidth - 14, pageHeight - 5, { align: 'right' });
+  }
+
+  doc.save(`Transaction_Loan_Equb_Receivable_Audit_${new Date().toISOString().slice(0, 10)}.pdf`);
+};
+
 // Style Definitions for XLSX Export
 const STYLES = {
   bannerTitle: {
@@ -684,7 +957,116 @@ export const generateExcelReport = ({
 
   XLSX.utils.book_append_sheet(wb, wsAllLedger, 'Transactions');
 
-  // ---------------- TAB 3: INCOME STATEMENT ----------------
+  // ---------------- TAB 3: LOANS, EQUB & RECEIVABLES AUDIT LEDGER ----------------
+  const isLoanEqubRcv = (t: Transaction): boolean => {
+    if (t.refType === 'EQUB' || t.refType === 'LOAN' || t.refType === 'RECEIVABLE') return true;
+    const cat = (t.category || '').toLowerCase();
+    if (
+      cat.includes('equb') ||
+      cat.includes('ekub') ||
+      cat.includes('loan') ||
+      cat.includes('debt') ||
+      cat.includes('receivable')
+    ) return true;
+    const desc = (t.description || '').toLowerCase();
+    if (
+      desc.includes('ekub') ||
+      desc.includes('equb') ||
+      desc.includes('agerye') ||
+      desc.includes('leli') ||
+      desc.includes('loan') ||
+      desc.includes('repayment') ||
+      desc.includes('receivable') ||
+      desc.includes("bale'da") ||
+      desc.includes("bale' da") ||
+      desc.includes('weframu') ||
+      (desc.includes('zeru') && desc.includes('loan'))
+    ) return true;
+    return false;
+  };
+
+  const loanEqubRcvTransactions = transactions.filter(isLoanEqubRcv);
+  let loanEqubRunningBal = 0;
+  const loanEqubAOA: any[][] = [
+    ['PLUS GAMEZONE PLC — LOANS, EQUB & RECEIVABLES TRANSACTION AUDIT'],
+    [`Dedicated Audit Records: ${loanEqubRcvTransactions.length}`, `Scope: ${dateRangeLabel}`, `Generated: ${formatDateByCalendar(new Date(), state.calendarType || 'GREGORIAN', true)}`],
+    [],
+    ['#', 'Transaction ID', 'Date & Time', 'Type', 'Category', 'Description', 'Wallet Account', 'Amount (ETB)', 'Running Balance (ETB)', 'Created By', 'Branch', 'Notes / Reference', 'Status'],
+    ...loanEqubRcvTransactions.map((t, i) => {
+      if (!t.reversed) {
+        loanEqubRunningBal += t.type === 'INCOME' ? t.amount : -t.amount;
+      }
+      return [
+        i + 1,
+        t.id,
+        formatDateByCalendar(t.date, state.calendarType || 'GREGORIAN', true),
+        t.type,
+        t.category,
+        t.description,
+        getWalletName(t.walletId, state),
+        t.amount,
+        loanEqubRunningBal,
+        t.creatorName || 'System',
+        t.branch || 'Main',
+        t.notes || t.refType || (t.category?.includes('Equb') ? 'EQUB' : t.category?.includes('Loan') ? 'LOAN' : '-'),
+        t.reversed ? 'Reversed' : 'Active'
+      ];
+    })
+  ];
+
+  const wsLoanEqub = XLSX.utils.aoa_to_sheet(loanEqubAOA);
+  formatWorksheet(wsLoanEqub, {
+    headerRowIdx: 3,
+    headerStyle: STYLES.tableHeaderIndigo,
+    creatorColIdx: 9,
+    colWidths: [6, 16, 22, 12, 22, 36, 26, 18, 20, 24, 14, 22, 12]
+  });
+
+  XLSX.utils.book_append_sheet(wb, wsLoanEqub, 'Loans Equb Receivables');
+
+  // ---------------- TAB 4: REGISTER STATUS SUMMARY ----------------
+  const totalUncollectedReceivables = state.receivables.reduce((s, r) => s + (r.status === 'OUTSTANDING' ? r.amountOwed - r.amountCollected : 0), 0);
+  const registerStatusAOA: any[][] = [
+    ['PLUS GAMEZONE PLC — AUDIT REGISTER STATUS & RECONCILIATION SUMMARY'],
+    [`Total Outstanding Liabilities: ${formatETB(totalLoansOutstanding)}`, `Total Pending Receivables: ${formatETB(totalUncollectedReceivables)}`, `Generated: ${formatDateByCalendar(new Date(), state.calendarType || 'GREGORIAN', true)}`],
+    [],
+    ['#', 'Register Name', 'Register Status', 'Total Records', 'Reported Outstanding (ETB)', 'Audit Status & Reconciliation Notes'],
+    [
+      1,
+      'Receivables',
+      state.receivables.length > 0 ? 'Active records entered in dedicated register' : 'No records entered in dedicated register',
+      state.receivables.length,
+      totalUncollectedReceivables,
+      'Customer credits mapped with customer names, issue dates, due dates, amounts owed, collected, and outstanding statuses.'
+    ],
+    [
+      2,
+      'Loans & Liabilities',
+      state.loans.length > 0 ? 'Active records entered in dedicated register' : 'No records entered in dedicated register',
+      state.loans.length,
+      totalLoansOutstanding,
+      'Liability records mapped with lenders, counterparties, directions, initial amounts, payment installments, and outstanding balances.'
+    ],
+    [
+      3,
+      'Equb Ledger',
+      state.equbs.length > 0 ? 'Active records entered in dedicated register' : 'No records entered in dedicated register',
+      state.equbs.length,
+      0,
+      'Rotational community savings groups mapped with round contributions, active members, rounds completed, and payouts claimed.'
+    ]
+  ];
+
+  const wsRegisterStatus = XLSX.utils.aoa_to_sheet(registerStatusAOA);
+  formatWorksheet(wsRegisterStatus, {
+    headerRowIdx: 3,
+    headerStyle: STYLES.tableHeaderNavy,
+    colWidths: [6, 24, 38, 16, 26, 60]
+  });
+
+  XLSX.utils.book_append_sheet(wb, wsRegisterStatus, 'Register Status');
+
+  // ---------------- TAB 5: INCOME STATEMENT ----------------
   const incomeTransactions = transactions.filter(t => t.type === 'INCOME');
   const incomeAOA: any[][] = [
     ['PLUS GAMEZONE PLC — GROSS REVENUE & INCOME STATEMENT'],

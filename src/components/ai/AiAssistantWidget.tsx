@@ -590,6 +590,98 @@ const BaselineIncomeExpenseControl: React.FC<BaselineIncomeExpenseControlProps> 
   );
 };
 
+export type GeminiModelId = 'gemini-3.5-flash' | 'gemini-3.1-pro-preview' | 'gemini-3.1-flash-lite';
+export type ChatbotRole = 'controller' | 'lounge' | 'equb' | 'speed';
+
+export interface ChatbotRoleConfig {
+  id: ChatbotRole;
+  name: string;
+  shortName: string;
+  badge: string;
+  icon: string;
+  description: string;
+  instruction: string;
+  recommendedModel: GeminiModelId;
+  starterPrompt: string;
+}
+
+export const CHATBOT_ROLES: Record<ChatbotRole, ChatbotRoleConfig> = {
+  controller: {
+    id: 'controller',
+    name: 'Financial Controller',
+    shortName: 'Controller',
+    badge: 'P&L & Runway',
+    icon: '💼',
+    description: 'Deep ledger audits, working capital runway, cashflow margins & cost reduction',
+    instruction: 'You are the Chief Financial Controller of Plus Game Zone. Provide accurate, disciplined balance sheet and P&L analysis, identify expense leaks, evaluate cash reserve runways, and ensure mathematical precision on all ETB figures.',
+    recommendedModel: 'gemini-3.1-pro-preview',
+    starterPrompt: 'Controller, what is our exact working capital buffer across CBE, Telebirr and cash, and how many months can we survive if income drops by 25%?'
+  },
+  lounge: {
+    id: 'lounge',
+    name: 'Lounge General Partner',
+    shortName: 'Lounge Ops',
+    badge: 'PlayStation Ops',
+    icon: '🎮',
+    description: 'PlayStation 5 station turns, hourly pricing, tournament models & snacks',
+    instruction: 'You are the Operations Director of Plus Game Zone PlayStation House. Focus on gaming station hourly yields, peak hour pricing, FIFA/FC 26 tournament monetization, snack sales margins, and hardware maintenance scheduling.',
+    recommendedModel: 'gemini-3.5-flash',
+    starterPrompt: 'Lounge Partner, what will be the exact projected outcome if I increase hourly PlayStation prices by 5%? Calculate customer churn elasticity, monthly revenue change, and profit delta.'
+  },
+  equb: {
+    id: 'equb',
+    name: 'Equb Strategist',
+    shortName: 'Equb Advisor',
+    badge: 'Traditional Equb (ዕቁብ)',
+    icon: '🤝',
+    description: 'Cycle rotation economics, 0% interest capital injections & member reliability',
+    instruction: 'You are an expert Ethiopian Equb and community finance strategist. Analyze cycle rotation economics, 0% interest capital injections for PS5 acquisition, payout round bidding, and member default risk mitigation.',
+    recommendedModel: 'gemini-3.1-pro-preview',
+    starterPrompt: 'Equb Strategist, evaluate joining an ETB 15,000/month Equb circle based on our current liquid cash and monthly profit. What are the pros, cons, and safe limits?'
+  },
+  speed: {
+    id: 'speed',
+    name: 'Speed Accountant',
+    shortName: 'Speed Math',
+    badge: 'Instant Facts',
+    icon: '⚡',
+    description: 'Instant reconciliations (CBE, Telebirr, Cash), quick margins & numerical facts',
+    instruction: 'You are an ultra-fast accounting clerk. Provide concise, immediate balance reconciliations (CBE, Telebirr, eBirr, Cash on Hand), quick daily net profit calculations, and lightning-fast factual answers.',
+    recommendedModel: 'gemini-3.1-flash-lite',
+    starterPrompt: 'Speed Accountant, give me the instant balance breakdown for all our active wallets right now.'
+  }
+};
+
+export const GEMINI_MODELS: Array<{
+  id: GeminiModelId;
+  name: string;
+  tag: string;
+  icon: string;
+  description: string;
+}> = [
+  {
+    id: 'gemini-3.5-flash',
+    name: 'Gemini 3.5 Flash',
+    tag: 'General Tasks',
+    icon: '⚡',
+    description: 'Balanced speed and strategic reasoning for general lounge management and day-to-day operations.'
+  },
+  {
+    id: 'gemini-3.1-pro-preview',
+    name: 'Gemini 3.1 Pro',
+    tag: 'Complex Tasks',
+    icon: '🧠',
+    description: 'Deep analytical thinking for multifaceted CapEx modeling, loan vs Equb tradeoffs, and scenario stress tests.'
+  },
+  {
+    id: 'gemini-3.1-flash-lite',
+    name: 'Gemini 3.1 Flash-Lite',
+    tag: 'Fast Tasks',
+    icon: '🚀',
+    description: 'Ultra-low latency streaming for rapid balance checks, daily math, and immediate ledger answers.'
+  }
+];
+
 export const AiAssistantWidget: React.FC<AiAssistantWidgetProps> = ({
   isOpen,
   onClose,
@@ -1225,17 +1317,26 @@ export const AiAssistantWidget: React.FC<AiAssistantWidgetProps> = ({
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Chat State
+  // Gemini Chatbot State
+  const [selectedModel, setSelectedModel] = useState<GeminiModelId>('gemini-3.5-flash');
+  const [selectedRole, setSelectedRole] = useState<ChatbotRole>('controller');
+  const [showRoleInfo, setShowRoleInfo] = useState<boolean>(false);
+
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'm-welcome',
       sender: 'ai',
-      text: `### 🤝 Selam ${userName}! I'm your AI Business Partner & Scenario Advisor
-I continuously analyze our live ledger and cash balances across CBE, Telebirr & Cash (with **70% recency weight** on the last 8 weeks) to answer your business questions and forecast financial outcomes.
+      text: `### 🤖 Selam ${userName}! I'm your Gemini Multi-Turn Chatbot
+I am equipped with specialized roles to assist Plus Game Zone with financial audits, PlayStation lounge operations, Equb cycles, and real-time ledger intelligence.
 
-**What we can do right now:**
-1. 💬 **AI Business Chat**: Ask any operational, financial, or strategic question.
-2. 🔮 **Scenario Simulator**: Test *"What if I increase prices 5%?"*, *"What if I open a 2nd branch in Bole?"*, or *"What if expenses rise 10%?"* using real-time sliders and financial models.`,
+**Active Role:** **Financial Controller** (Deep ledger audits, working capital runway & profit analysis)  
+**Active Engine:** **Gemini 3.5 Flash** (Balanced strategic speed & intelligence)
+
+**Capabilities & Controls:**
+- 💬 **Multi-Turn Thread:** I remember earlier questions in this session for continuous context.
+- 🎭 **Role Selector:** Switch between **Financial Controller**, **Lounge Partner**, **Equb Strategist**, and **Speed Accountant** above.
+- ⚡ **Model Switcher:** Toggle between **gemini-3.5-flash** (general), **gemini-3.1-pro-preview** (complex tasks), and **gemini-3.1-flash-lite** (fast math).
+- 🔮 **Scenario Simulator:** Switch tabs to simulate prices, expansions, and operational shocks.`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -1247,29 +1348,53 @@ I continuously analyze our live ledger and cash balances across CBE, Telebirr & 
   const suggestedPrompts = [
     {
       label: '🔮 What if I increase prices by 5%?',
-      prompt: 'Partner, what will be the exact projected outcome if I increase hourly PlayStation prices by 5%? Calculate customer churn elasticity, monthly revenue change, and profit delta.'
+      prompt: 'Gemini, what will be the exact projected outcome if I increase hourly PlayStation prices by 5%? Calculate customer churn elasticity, monthly revenue change, and profit delta.'
     },
     {
       label: '🏢 What if I open a 2nd branch in Bole?',
-      prompt: 'What if we open another branch in Addis Ababa (Bole or Megenagna) with ETB 450,000 CapEx and ETB 55,000 monthly overhead? Model the payback period and cash buffer impact.'
+      prompt: 'Gemini, what if we open another branch in Addis Ababa (Bole or Megenagna) with ETB 450,000 CapEx and ETB 55,000 monthly overhead? Model the payback period and cash buffer impact.'
     },
     {
       label: '⚠️ What if expenses increase 10%?',
-      prompt: 'What if our operating expenses increase by 10% over the next 3 months? Calculate how much our monthly profit and zero-revenue survival runway will shrink.'
+      prompt: 'Gemini, what if our operating expenses increase by 10% over the next 3 months? Calculate how much our monthly profit and zero-revenue survival runway will shrink.'
     },
     {
       label: '👨‍💼 What if I hire another technician?',
-      prompt: 'What if we hire a full-time lounge technician and shift manager at ETB 12,000/month? Will the station uptime and service boost make it self-funding?'
+      prompt: 'Gemini, what if we hire a full-time lounge technician and shift manager at ETB 12,000/month? Will the station uptime and service boost make it self-funding?'
     },
     {
       label: '📉 What if revenue drops 20%?',
-      prompt: 'Stress-test scenario: What if income decreases by 20% next month during school exams or rainy weeks? Will we remain cashflow positive?'
+      prompt: 'Gemini stress-test: What if income decreases by 20% next month during school exams or rainy weeks? Will we remain cashflow positive?'
     },
     {
       label: '🤝 Equb Pros & Cons vs Loan',
-      prompt: 'Evaluate joining a new ETB 15,000/month Equb circle based on our current liquid cash and monthly profit. What are the exact pros, cons, and safe contribution limits?'
+      prompt: 'Gemini, evaluate joining a new ETB 15,000/month Equb circle based on our current liquid cash and monthly profit. What are the exact pros, cons, and safe contribution limits?'
     }
   ];
+
+  const handleClearChat = () => {
+    triggerHaptic('medium');
+    const roleCfg = CHATBOT_ROLES[selectedRole];
+    setMessages([
+      {
+        id: `m-reset-${Date.now()}`,
+        sender: 'ai',
+        text: `### 🤖 Conversation Reset\n\nI am ready as your **${roleCfg.name}** powered by **${selectedModel}**.\n\n*${roleCfg.description}*\n\nAsk me any question or pick a suggested topic below:`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
+    ]);
+    if (onShowToast) onShowToast('🧹 Chat history cleared');
+  };
+
+  const handleExportChat = () => {
+    triggerHaptic('light');
+    const roleCfg = CHATBOT_ROLES[selectedRole];
+    const textToCopy = messages
+      .map((m) => `**${m.sender === 'user' ? 'You' : `Gemini (${roleCfg.name})`}** [${m.timestamp}]:\n${m.text}\n`)
+      .join('\n---\n\n');
+    navigator.clipboard.writeText(textToCopy);
+    if (onShowToast) onShowToast('📋 Conversation copied to clipboard');
+  };
 
   // Handle initial prompt if passed
   useEffect(() => {
@@ -1303,12 +1428,21 @@ I continuously analyze our live ledger and cash balances across CBE, Telebirr & 
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
+    // Maintain multi-turn conversation history excluding welcome message
+    const conversationHistory = messages
+      .filter((m) => m.text.trim().length > 0 && m.id !== 'm-welcome' && !m.id.startsWith('m-reset'))
+      .map((m) => ({
+        role: m.sender === 'user' ? 'user' : 'model',
+        text: m.text
+      }));
+
     setMessages((prev) => [...prev, userMsg, initialAiMsg]);
     if (!textToSend) setInputPrompt('');
     setIsLoading(true);
     setActiveTab('chat');
 
     try {
+      const activeRoleConfig = CHATBOT_ROLES[selectedRole];
       const res = await fetch('/api/ai-assistant?stream=true', {
         method: 'POST',
         headers: {
@@ -1317,6 +1451,10 @@ I continuously analyze our live ledger and cash balances across CBE, Telebirr & 
         },
         body: JSON.stringify({
           message: query.trim(),
+          history: conversationHistory,
+          model: selectedModel,
+          role: selectedRole,
+          systemInstruction: activeRoleConfig.instruction,
           ledgerSummary: {
             totalBalance: formatETB(totalBalance),
             monthlyIncome: formatETB(income),
@@ -1633,15 +1771,19 @@ ${activeLoans.length > 0 ? activeLoans.map((l) => `* 💳 **${l.title}:** Remain
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <h3 className="text-sm sm:text-base font-black text-white tracking-tight truncate">
-                  PlusZone AI Partner
+                  Gemini Chatbot
                 </h3>
+                <span className="text-[9px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1 shrink-0">
+                  <Sparkles className="w-2.5 h-2.5 text-indigo-400" />
+                  Multi-Turn
+                </span>
                 <span className="text-[9px] bg-[#00D4AA]/15 text-[#00D4AA] border border-[#00D4AA]/30 px-1.5 py-0.5 rounded-full font-mono font-bold flex items-center gap-1 shrink-0">
                   <Zap className="w-2.5 h-2.5 text-[#00D4AA] fill-[#00D4AA]" />
-                  Fast Stream
+                  {selectedModel.replace('gemini-', '')}
                 </span>
               </div>
               <p className="text-[10px] sm:text-[11px] text-slate-400 truncate">
-                Strategic Advisory & Decision Simulator
+                Multi-Turn Strategic Reasoning & Decision Simulator
               </p>
             </div>
           </div>
@@ -1663,7 +1805,7 @@ ${activeLoans.length > 0 ? activeLoans.map((l) => `* 💳 **${l.title}:** Remain
                 }`}
               >
                 <Bot className="w-3.5 h-3.5" />
-                <span>AI Chat</span>
+                <span>Gemini Chat</span>
               </button>
 
               <button
@@ -1686,7 +1828,7 @@ ${activeLoans.length > 0 ? activeLoans.map((l) => `* 💳 **${l.title}:** Remain
             <button
               type="button"
               onClick={onClose}
-              aria-label="Close AI Assistant"
+              aria-label="Close Gemini Assistant"
               className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-all cursor-pointer active:scale-95 shrink-0"
             >
               <X className="w-4 h-4" />
@@ -1710,7 +1852,7 @@ ${activeLoans.length > 0 ? activeLoans.map((l) => `* 💳 **${l.title}:** Remain
               }`}
             >
               <Bot className="w-4 h-4" />
-              <span>AI Chat</span>
+              <span>Gemini Chat</span>
             </button>
 
             <button
@@ -1731,12 +1873,122 @@ ${activeLoans.length > 0 ? activeLoans.map((l) => `* 💳 **${l.title}:** Remain
           </div>
         </div>
 
-        {/* TAB 1: CONVERSATIONAL AI PARTNER CHAT */}
+        {/* TAB 1: CONVERSATIONAL GEMINI CHAT */}
         {activeTab === 'chat' && (
           <div className="flex-1 flex flex-col min-h-0 bg-[#0B101B]">
+            {/* GEMINI CHATBOT ROLE & MODEL CONTROLS TOOLBAR */}
+            <div className="px-3.5 py-2.5 bg-[#0D1424] border-b border-[#1E2D40] space-y-2 shrink-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                {/* Specific Chatbot Role Selector */}
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scrollbar-none">
+                  <span className="text-[10px] font-extrabold uppercase text-slate-400 shrink-0 mr-0.5">Role:</span>
+                  {(Object.keys(CHATBOT_ROLES) as ChatbotRole[]).map((rKey) => {
+                    const r = CHATBOT_ROLES[rKey];
+                    const isSelected = selectedRole === rKey;
+                    return (
+                      <button
+                        key={rKey}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setSelectedRole(rKey);
+                        }}
+                        title={r.description}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 border ${
+                          isSelected
+                            ? 'bg-[#00D4AA]/20 border-[#00D4AA] text-[#00D4AA] shadow-xs'
+                            : 'bg-[#141C2B] border-[#1E2D40] text-slate-300 hover:text-white hover:border-slate-600'
+                        }`}
+                      >
+                        <span>{r.icon}</span>
+                        <span>{r.shortName}</span>
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    type="button"
+                    onClick={() => setShowRoleInfo((prev) => !prev)}
+                    title="View Role System Instruction Details"
+                    className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                  >
+                    <Info className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Gemini Model Selector & Chat Actions */}
+                <div className="flex items-center gap-1.5 ml-auto">
+                  {/* Model Selector */}
+                  <div className="flex items-center bg-[#141C2B] border border-[#1E2D40] rounded-lg p-0.5">
+                    {GEMINI_MODELS.map((m) => {
+                      const isModelActive = selectedModel === m.id;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setSelectedModel(m.id);
+                          }}
+                          title={`${m.name} — ${m.description}`}
+                          className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                            isModelActive
+                              ? 'bg-[#00D4AA] text-slate-950 font-extrabold shadow-xs'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <span>{m.icon}</span>
+                          <span className="hidden md:inline">{m.name.replace('Gemini ', '')}</span>
+                          <span className="md:hidden">{m.id === 'gemini-3.5-flash' ? '3.5' : m.id === 'gemini-3.1-pro-preview' ? '3.1 Pro' : 'Lite'}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Clear Thread Button */}
+                  <button
+                    type="button"
+                    onClick={handleClearChat}
+                    title="Clear Conversation History (Start New Session)"
+                    className="p-1.5 rounded-lg bg-[#141C2B] border border-[#1E2D40] text-slate-400 hover:text-rose-400 hover:border-rose-500/50 transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Export / Copy Thread Button */}
+                  <button
+                    type="button"
+                    onClick={handleExportChat}
+                    title="Copy Full Conversation Thread"
+                    className="p-1.5 rounded-lg bg-[#141C2B] border border-[#1E2D40] text-slate-400 hover:text-[#00D4AA] hover:border-[#00D4AA]/50 transition-colors cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Collapsible System Instruction Description */}
+              {showRoleInfo && (
+                <div className="p-2.5 rounded-xl bg-[#090D17] border border-[#00D4AA]/30 text-xs space-y-1 animate-fade-in">
+                  <div className="flex items-center justify-between text-[#00D4AA] font-bold text-[11px]">
+                    <span className="flex items-center gap-1">
+                      <span>{CHATBOT_ROLES[selectedRole].icon}</span>
+                      <span>System Instruction Role: {CHATBOT_ROLES[selectedRole].name}</span>
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-400">
+                      Recommended: {CHATBOT_ROLES[selectedRole].recommendedModel}
+                    </span>
+                  </div>
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    {CHATBOT_ROLES[selectedRole].instruction}
+                  </p>
+                </div>
+              )}
+            </div>
+
             {/* Suggested Prompts Bar */}
             <div className="px-3 py-2 sm:p-3 bg-[#0A0E17] border-b border-[#1E2D40] overflow-x-auto no-scrollbar scrollbar-none touch-pan-x shrink-0 flex items-center gap-1.5">
-              <span className="text-[10px] font-extrabold uppercase text-slate-500 shrink-0">Quick What-Ifs:</span>
+              <span className="text-[10px] font-extrabold uppercase text-slate-500 shrink-0">Quick Queries:</span>
               {suggestedPrompts.map((p, idx) => (
                 <button
                   key={idx}
@@ -1833,7 +2085,9 @@ ${activeLoans.length > 0 ? activeLoans.map((l) => `* 💳 **${l.title}:** Remain
                           ) : (
                             <div className="flex items-center gap-2.5 py-1 text-slate-400">
                               <span className="w-2 h-2 rounded-full bg-[#00D4AA] animate-ping" />
-                              <span className="text-xs font-mono text-slate-300 animate-pulse">Partner is formulating fast response...</span>
+                              <span className="text-xs font-mono text-slate-300 animate-pulse">
+                                Gemini ({CHATBOT_ROLES[selectedRole].shortName}) is formulating response with {selectedModel}...
+                              </span>
                             </div>
                           )}
                         </div>
@@ -1872,11 +2126,16 @@ ${activeLoans.length > 0 ? activeLoans.map((l) => `* 💳 **${l.title}:** Remain
                     )}
 
                     <div
-                      className={`text-[9px] text-slate-500 font-mono px-1 ${
-                        m.sender === 'user' ? 'text-right' : 'text-left'
+                      className={`text-[9px] text-slate-500 font-mono px-1 flex items-center gap-2 ${
+                        m.sender === 'user' ? 'justify-end' : 'justify-start'
                       }`}
                     >
-                      {m.timestamp}
+                      {m.sender === 'ai' && (
+                        <span className="text-[8px] bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded border border-slate-700 font-mono">
+                          {CHATBOT_ROLES[selectedRole].shortName} • {selectedModel.replace('gemini-', '')}
+                        </span>
+                      )}
+                      <span>{m.timestamp}</span>
                     </div>
                   </div>
                 </div>
@@ -1888,7 +2147,7 @@ ${activeLoans.length > 0 ? activeLoans.map((l) => `* 💳 **${l.title}:** Remain
                     <Bot className="w-3.5 h-3.5 animate-spin" />
                   </div>
                   <span className="font-mono text-[11px] animate-pulse">
-                    Partner AI is streaming financial insights...
+                    Gemini is streaming financial insights with {selectedModel}...
                   </span>
                 </div>
               )}
@@ -1909,7 +2168,7 @@ ${activeLoans.length > 0 ? activeLoans.map((l) => `* 💳 **${l.title}:** Remain
                   type="text"
                   value={inputPrompt}
                   onChange={(e) => setInputPrompt(e.target.value)}
-                  placeholder="Ask a What-If question (e.g. 'What if I increase prices 5%?')..."
+                  placeholder={`Ask Gemini as ${CHATBOT_ROLES[selectedRole].name} (e.g. 'What if I increase prices 5%?')...`}
                   className="flex-1 bg-[#141C2B] border border-[#1E2D40] focus:border-[#00D4AA] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all"
                   disabled={isLoading}
                 />
@@ -1919,7 +2178,7 @@ ${activeLoans.length > 0 ? activeLoans.map((l) => `* 💳 **${l.title}:** Remain
                   className="min-w-[42px] h-[42px] px-3.5 sm:px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-[#00D4AA] hover:opacity-95 text-slate-950 font-black text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-[#00D4AA]/20 shrink-0 active:scale-95"
                 >
                   <Send className="w-4 h-4" />
-                  <span className="hidden sm:inline">Ask Partner</span>
+                  <span className="hidden sm:inline">Ask Gemini</span>
                 </button>
               </form>
             </div>

@@ -8,6 +8,7 @@ import {
   RotateCcw,
   X,
   AlertCircle,
+  AlertTriangle,
   Calendar,
   Wallet as WalletIcon,
   Tag,
@@ -28,13 +29,14 @@ import {
   ShieldAlert,
   Smartphone,
   Layers,
+  Plus,
   Moon,
   Coffee,
   CalendarOff,
   MessageSquare,
   HelpCircle
 } from 'lucide-react';
-import { Transaction, Transfer, Receivable, Wallet, Category, UserProfile, TransactionType, ERPState, NavTab, Loan, Equb } from '../../types';
+import { Transaction, Transfer, Receivable, Wallet, Category, UserProfile, TransactionType, ERPState, NavTab, Loan, Equb, Asset, RecurringTemplate } from '../../types';
 import {
   formatETB,
   isTransactionEditable,
@@ -49,7 +51,7 @@ import {
   getTransactionDisplayTitle
 } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
-import { generatePDFReport, generateExcelReport } from '../../lib/exports';
+import { generatePDFReport, generateAuditPDFReport, generateExcelReport } from '../../lib/exports';
 import { formatDateByCalendar } from '../../lib/ethiopianCalendar';
 import { ModernDateInput } from '../common/ModernDateInput';
 
@@ -59,12 +61,15 @@ interface TransactionsViewProps {
   receivables?: Receivable[];
   loans?: Loan[];
   equbs?: Equb[];
+  assets?: Asset[];
+  recurring?: RecurringTemplate[];
   wallets: Wallet[];
   categories: Category[];
   currentUser: UserProfile;
   hideBalances: boolean;
   calendarType?: 'ETHIOPIAN' | 'GREGORIAN';
   onReverseTransaction: (txId: string) => void;
+  onRefreshTransactions?: () => void;
   onUpdateTransaction?: (txId: string, data: {
     date: string;
     amount: number;
@@ -73,6 +78,9 @@ interface TransactionsViewProps {
     description: string;
     walletId: string;
     expenseScope?: 'BUSINESS' | 'PERSONAL';
+    splits?: Array<{ walletId: string; amount: number }>;
+    refType?: Transaction['refType'];
+    refId?: string;
   }) => void;
   onDeleteTransaction?: (txId: string) => void;
   onClearAllTransactions?: () => void;
@@ -88,6 +96,8 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   receivables = [],
   loans = [],
   equbs = [],
+  assets = [],
+  recurring = [],
   wallets,
   categories,
   currentUser,
@@ -95,6 +105,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   hideBalances,
   calendarType = 'GREGORIAN',
   onReverseTransaction,
+  onRefreshTransactions,
   onUpdateTransaction,
   onDeleteTransaction,
   onClearAllTransactions,
@@ -102,6 +113,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   onNavigateTab,
   onOpenHelp
 }) => {
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedWalletId, setSelectedWalletId] = useState('ALL');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
@@ -166,21 +178,140 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     setNoteInputText('');
   };
 
-  // Edit modal state
+  // Edit modal state with full Split Payment support
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
-  const [editForm, setEditForm] = useState({
+  const [isSplitMode, setIsSplitMode] = useState<boolean>(false);
+  const [editSplitRows, setEditSplitRows] = useState<Array<{ walletId: string; amount: string }>>([]);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<{
+    date: string;
+    amount: string;
+    type: TransactionType;
+    category: string;
+    description: string;
+    walletId: string;
+    expenseScope: 'BUSINESS' | 'PERSONAL';
+    refType?: Transaction['refType'];
+    refId?: string;
+  }>({
     date: '',
     amount: '',
     type: 'INCOME' as TransactionType,
     category: '',
     description: '',
     walletId: '',
-    expenseScope: 'BUSINESS' as 'BUSINESS' | 'PERSONAL'
+    expenseScope: 'BUSINESS' as 'BUSINESS' | 'PERSONAL',
+    refType: undefined,
+    refId: undefined
   });
+
+  // Helper to extract split allocations if already present on transaction or documented in description
+  const extractSplitsFromTransaction = (
+    tx: Transaction,
+    availableWallets: Wallet[],
+    allTransactions?: Transaction[]
+  ): Array<{ walletId: string; amount: string }> | null => {
+    // 1. If explicit splits array is already present with 2 or more wallets
+    if (Array.isArray(tx.splits) && tx.splits.length >= 2) {
+      return tx.splits.map(s => ({
+        walletId: s.walletId,
+        amount: Math.abs(s.amount).toString()
+      }));
+    }
+
+    // 2. If explicit splits array is present but has only 1 item:
+    // Only if remainder > 0 (meaning it was a partial split allocation), pair with another wallet.
+    // If the single split equals the total transaction amount, it is a single-wallet payment, NOT a multi-wallet split.
+    if (Array.isArray(tx.splits) && tx.splits.length === 1) {
+      const firstSplit = tx.splits[0];
+      const parsedFirst = Math.abs(firstSplit.amount);
+      const targetAmt = tx.amount || parsedFirst;
+      const remainder = targetAmt - parsedFirst;
+      if (remainder > 0) {
+        const secondW = availableWallets.find(w => w.id !== firstSplit.walletId)?.id || availableWallets[0]?.id;
+        return [
+          { walletId: firstSplit.walletId, amount: parsedFirst.toString() },
+          { walletId: secondW, amount: remainder.toString() }
+        ];
+      }
+      return null;
+    }
+
+    // 3. If transaction is a consolidated equb or loan payment with sibling transactions
+    if (tx.siblingTxIds && tx.siblingTxIds.length > 0 && Array.isArray(allTransactions)) {
+      const siblings = allTransactions.filter(t => tx.siblingTxIds!.includes(t.id));
+      if (siblings.length > 0) {
+        const rows: Array<{ walletId: string; amount: string }> = [
+          { walletId: tx.walletId, amount: tx.amount.toString() },
+          ...siblings.map(s => ({ walletId: s.walletId, amount: s.amount.toString() }))
+        ];
+        return rows;
+      }
+    }
+
+    // 4. If transaction ID matches batch split format (tx-eq-<ts>-<idx>, tx-lp-<ts>-<idx>, tx-<ts>-<idx>)
+    const batchMatch = tx.id.match(/^((?:tx-eq|tx-lp|tx)-\d+)-\d+$/);
+    if (batchMatch && Array.isArray(allTransactions)) {
+      const prefix = batchMatch[1];
+      const siblings = allTransactions.filter(t => t.id.startsWith(`${prefix}-`));
+      if (siblings.length >= 2) {
+        return siblings.map(s => ({ walletId: s.walletId, amount: s.amount.toString() }));
+      }
+    }
+
+    const desc = tx.description || '';
+    const cat = tx.category || '';
+    const isSplitMentioned = /split/i.test(desc) || /split/i.test(cat);
+
+    if (isSplitMentioned) {
+      const foundSplits: Array<{ walletId: string; amount: string }> = [];
+      availableWallets.forEach(w => {
+        const wName = w.name;
+        const wNick = getWalletNickname(wName);
+        const re1 = new RegExp(`(?:${wName}|${wNick})(?:\\s*split)?[\\s:]*(?:ETB\\s*)?([\\d,]+(?:\\.\\d+)?)`, 'i');
+        const re2 = new RegExp(`(?:ETB\\s*)?([\\d,]+(?:\\.\\d+)?)\\s*(?:from|in|via)?\\s*(?:${wName}|${wNick})`, 'i');
+        const match = desc.match(re1) || desc.match(re2);
+        if (match) {
+          const parsedVal = parseFloat(match[1].replace(/,/g, ''));
+          if (!isNaN(parsedVal) && parsedVal > 0) {
+            foundSplits.push({ walletId: w.id, amount: parsedVal.toString() });
+          }
+        }
+      });
+      if (foundSplits.length >= 2) {
+        return foundSplits;
+      }
+      if (foundSplits.length === 1) {
+        const parsed1 = parseFloat(foundSplits[0].amount) || 0;
+        const rem = Math.max(0, (tx.amount || 0) - parsed1);
+        if (rem > 0) {
+          const secondW = availableWallets.find(w => w.id !== foundSplits[0].walletId)?.id || availableWallets[0]?.id;
+          return [
+            foundSplits[0],
+            { walletId: secondW, amount: rem.toString() }
+          ];
+        }
+      }
+      // If description explicitly mentions (Split: ...) with 2+ items, initialize split rows
+      if (/\(Split:[^)]*\)/i.test(desc) || /\(Split\s*\d+\/\d+[^)]*\)/i.test(desc)) {
+        const w1 = tx.walletId || availableWallets[0]?.id || '';
+        const w2 = availableWallets.find(w => w.id !== w1)?.id || availableWallets[1]?.id || w1;
+        const targetAmt = tx.amount || 0;
+        const half1 = Math.round(targetAmt / 2);
+        const half2 = Math.max(0, targetAmt - half1);
+        return [
+          { walletId: w1, amount: half1 > 0 ? half1.toString() : targetAmt.toString() },
+          { walletId: w2, amount: half2 > 0 ? half2.toString() : '0' }
+        ];
+      }
+    }
+
+    return null;
+  };
 
   const handleOpenEdit = (tx: Transaction) => {
     triggerHaptic('medium');
-    // Format date string for datetime-local input (YYYY-MM-DDTHH:mm)
+    setEditError(null);
     let formattedDate = '';
     try {
       const d = new Date(tx.date);
@@ -195,26 +326,192 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       ? (tx.expenseScope || 'BUSINESS')
       : 'BUSINESS';
 
-    setEditForm({
-      date: formattedDate,
-      amount: tx.amount.toString(),
-      type: tx.type,
-      category: tx.category,
-      description: tx.description,
-      walletId: tx.walletId,
-      expenseScope: defaultScope
-    });
+    const detectedSplits = extractSplitsFromTransaction(tx, wallets, transactions);
+    const hasSplits = detectedSplits !== null && detectedSplits.length >= 2;
+    setIsSplitMode(hasSplits);
+
+    if (hasSplits && detectedSplits) {
+      setEditSplitRows(detectedSplits);
+      const splitsSum = detectedSplits.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
+      setEditForm({
+        date: formattedDate,
+        amount: splitsSum > 0 ? splitsSum.toString() : tx.amount.toString(),
+        type: tx.type,
+        category: tx.category,
+        description: tx.description,
+        walletId: detectedSplits[0]?.walletId || tx.walletId || wallets[0]?.id || '',
+        expenseScope: defaultScope,
+        refType: tx.refType,
+        refId: tx.refId
+      });
+    } else {
+      const w1 = tx.walletId || wallets[0]?.id || '';
+      const w2 = wallets.find(w => w.id !== w1)?.id || wallets[1]?.id || w1;
+      const targetAmt = tx.amount || 0;
+      const half1 = Math.round(targetAmt / 2);
+      const half2 = Math.max(0, targetAmt - half1);
+      setEditSplitRows([
+        { walletId: w1, amount: half1 > 0 ? half1.toString() : targetAmt.toString() },
+        { walletId: w2, amount: half2 > 0 ? half2.toString() : '0' }
+      ]);
+      setEditForm({
+        date: formattedDate,
+        amount: tx.amount.toString(),
+        type: tx.type,
+        category: tx.category,
+        description: tx.description,
+        walletId: w1,
+        expenseScope: defaultScope,
+        refType: tx.refType,
+        refId: tx.refId
+      });
+    }
+
     setEditingTx(tx);
   };
+
+  const handleToggleSplitMode = (enableSplit: boolean) => {
+    triggerHaptic('light');
+    setIsSplitMode(enableSplit);
+    setEditError(null);
+    if (enableSplit) {
+      const targetTotal = parseSummedAmount(editForm.amount).total || 0;
+      const currentRowsSum = editSplitRows.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+      if (editSplitRows.length < 2) {
+        const w1 = editForm.walletId || editSplitRows[0]?.walletId || wallets[0]?.id || '';
+        const w2 = wallets.find(w => w.id !== w1)?.id || wallets[1]?.id || w1;
+        const half1 = Math.round(targetTotal / 2);
+        const half2 = Math.max(0, targetTotal - half1);
+        setEditSplitRows([
+          { walletId: w1, amount: half1 > 0 ? half1.toString() : targetTotal.toString() },
+          { walletId: w2, amount: half2 > 0 ? half2.toString() : '0' }
+        ]);
+      } else if (Math.abs(currentRowsSum - targetTotal) > 0.01 && targetTotal > 0) {
+        const half1 = Math.round(targetTotal / 2);
+        const half2 = Math.max(0, targetTotal - half1);
+        setEditSplitRows(prev => [
+          { walletId: prev[0]?.walletId || wallets[0]?.id, amount: half1.toString() },
+          { walletId: prev[1]?.walletId || wallets[1]?.id || wallets[0]?.id, amount: half2.toString() },
+          ...prev.slice(2).map(r => ({ ...r, amount: '0' }))
+        ]);
+      }
+    }
+  };
+
+  const handleAddEditSplitRow = () => {
+    triggerHaptic('light');
+    setEditError(null);
+    const usedWallets = editSplitRows.map(r => r.walletId);
+    const unusedWallet = wallets.find(w => !usedWallets.includes(w.id)) || wallets[0];
+    const targetTotal = parseSummedAmount(editForm.amount).total;
+    const currentSum = editSplitRows.reduce((acc, r) => acc + (parseFloat(r.amount) || 0), 0);
+    const remainder = targetTotal > currentSum ? targetTotal - currentSum : 0;
+    setEditSplitRows(prev => [...prev, { walletId: unusedWallet?.id || '', amount: remainder > 0 ? remainder.toString() : '0' }]);
+  };
+
+  const handleRemoveEditSplitRow = (index: number) => {
+    if (editSplitRows.length <= 1) return;
+    triggerHaptic('light');
+    setEditError(null);
+    setEditSplitRows(prev => {
+      const next = prev.filter((_, i) => i !== index);
+      const newTotal = next.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+      setEditForm(f => ({ ...f, amount: newTotal > 0 ? newTotal.toString() : f.amount }));
+      return next;
+    });
+  };
+
+  const handleEditSplitRowChange = (index: number, field: 'walletId' | 'amount', value: string) => {
+    setEditError(null);
+    setEditSplitRows(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      if (field === 'amount') {
+        const newTotal = next.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+        setEditForm(f => ({ ...f, amount: newTotal > 0 ? newTotal.toString() : f.amount }));
+      }
+      return next;
+    });
+  };
+
+  const handleAutoBalanceEditSplits = () => {
+    triggerHaptic('medium');
+    setEditError(null);
+    const targetTotal = parseSummedAmount(editForm.amount).total;
+    if (targetTotal <= 0 || editSplitRows.length < 2) return;
+    const filledBeforeLast = editSplitRows.slice(0, -1).reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+    const remainder = Math.max(0, targetTotal - filledBeforeLast);
+    setEditSplitRows(prev => {
+      const next = [...prev];
+      next[next.length - 1] = { ...next[next.length - 1], amount: remainder.toString() };
+      return next;
+    });
+  };
+
+  const handleDistributeEvenly = () => {
+    triggerHaptic('medium');
+    setEditError(null);
+    const targetTotal = parseSummedAmount(editForm.amount).total;
+    if (targetTotal <= 0 || editSplitRows.length === 0) return;
+    const count = editSplitRows.length;
+    const perWallet = Math.floor(targetTotal / count);
+    const remainder = targetTotal - perWallet * (count - 1);
+    setEditSplitRows(prev => prev.map((r, idx) => ({
+      ...r,
+      amount: (idx === count - 1 ? remainder : perWallet).toString()
+    })));
+  };
+
+  const handleSyncAmountFromSplits = () => {
+    triggerHaptic('light');
+    setEditError(null);
+    const sum = editSplitRows.reduce((acc, r) => acc + (parseFloat(r.amount) || 0), 0);
+    setEditForm(prev => ({ ...prev, amount: sum.toString() }));
+  };
+
+  const currentEditSplitTotal = useMemo(() => {
+    return editSplitRows.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+  }, [editSplitRows]);
 
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTx || !onUpdateTransaction) return;
 
+    setEditError(null);
+    let numAmount = parseSummedAmount(editForm.amount).total;
+    let validSplits: Array<{ walletId: string; amount: number }> | undefined = undefined;
+
+    if (isSplitMode) {
+      const filtered = editSplitRows
+        .map(r => ({ walletId: r.walletId, amount: parseFloat(r.amount) || 0 }))
+        .filter(r => r.walletId && r.amount > 0);
+
+      if (filtered.length === 0) {
+        setEditError('Please specify funding wallets with valid amounts greater than 0.');
+        return;
+      }
+
+      if (filtered.length === 1) {
+        setEditError('A split payment requires at least two funding wallets with amounts greater than 0. Otherwise, switch to Single Wallet mode.');
+        return;
+      }
+
+      const totalSplit = filtered.reduce((sum, r) => sum + r.amount, 0);
+      if (totalSplit <= 0) {
+        setEditError('Total split payment amount must be greater than 0.');
+        return;
+      }
+
+      numAmount = totalSplit;
+      validSplits = filtered;
+    } else {
+      if (isNaN(numAmount) || numAmount <= 0) {
+        setEditError('Please enter a valid amount greater than 0.');
+        return;
+      }
+    }
+
     triggerHaptic('success');
-    const parsedRes = parseSummedAmount(editForm.amount);
-    const numAmount = parsedRes.total;
-    if (isNaN(numAmount) || numAmount <= 0) return;
 
     let isoDate = editingTx.date;
     try {
@@ -227,11 +524,41 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       ? (editForm.expenseScope || 'BUSINESS')
       : undefined;
 
+    const finalWalletId = validSplits && validSplits.length > 0
+      ? validSplits[0].walletId
+      : editForm.walletId || wallets[0]?.id || '';
+
+    // Synchronize split description if applicable
+    let finalDescription = editForm.description || '';
+    if (isSplitMode && validSplits && validSplits.length > 1) {
+      const splitSummary = validSplits.map(s => {
+        const w = wallets.find(wal => wal.id === s.walletId);
+        return `${getWalletNickname(w?.name)}: ${formatETB(s.amount)}`;
+      }).join(', ');
+
+      if (/\(Split:[^)]*\)/i.test(finalDescription)) {
+        finalDescription = finalDescription.replace(/\(Split:[^)]*\)/i, `(Split: ${splitSummary})`);
+      } else if (/\(Cash split\)/i.test(finalDescription)) {
+        finalDescription = finalDescription.replace(/\(Cash split\)/i, `(Split: ${splitSummary})`);
+      } else if (/\(Split\s*\d+\/\d+[^)]*\)/i.test(finalDescription)) {
+        finalDescription = finalDescription.replace(/\(Split\s*\d+\/\d+[^)]*\)/i, `(Split: ${splitSummary})`);
+      } else {
+        finalDescription = `${finalDescription.trim()} (Split: ${splitSummary})`;
+      }
+    } else if (!isSplitMode) {
+      finalDescription = finalDescription
+        .replace(/\s*\(Split:[^)]*\)/gi, '')
+        .replace(/\s*\(Cash split\)/gi, '')
+        .replace(/\s*\(Split\s*\d+\/\d+[^)]*\)/gi, '')
+        .trim();
+    }
+
     const isOld = !isTransactionEditable(editingTx.date);
     const activeOtherUsers = (users || []).filter(u => u.id !== currentUser.id && u.active !== false);
     const hasOtherUsers = activeOtherUsers.length > 0;
 
-    if (isOld && hasOtherUsers && onRequestApproval) {
+    const isPrivileged = currentUser.role === 'SuperAdmin' || currentUser.role === 'Admin';
+    if (isOld && hasOtherUsers && !isPrivileged && onRequestApproval) {
       onRequestApproval({
         actionType: 'EDIT_TRANSACTION',
         targetId: editingTx.id,
@@ -242,9 +569,10 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
           amount: numAmount,
           type: editForm.type,
           category: editForm.category || 'General',
-          description: editForm.description,
-          walletId: editForm.walletId,
-          expenseScope: finalScope
+          description: finalDescription,
+          walletId: finalWalletId,
+          expenseScope: finalScope,
+          splits: validSplits
         }
       });
       setEditingTx(null);
@@ -257,9 +585,12 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       amount: numAmount,
       type: editForm.type,
       category: editForm.category || 'General',
-      description: editForm.description,
-      walletId: editForm.walletId,
-      expenseScope: finalScope
+      description: finalDescription,
+      walletId: finalWalletId,
+      expenseScope: finalScope,
+      splits: validSplits,
+      refType: editForm.refType,
+      refId: editForm.refId
     });
 
     setEditingTx(null);
@@ -359,7 +690,16 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
         const matchDesc = (tx.description || '').toLowerCase().includes(q);
         const matchCat = (tx.category || '').toLowerCase().includes(q);
         const matchCreator = (tx.creatorName || '').toLowerCase().includes(q);
-        if (!matchDesc && !matchCat && !matchCreator) return false;
+        const matchNotes = (tx.notes || '').toLowerCase().includes(q);
+        const matchId = (tx.id || '').toLowerCase().includes(q);
+        const matchAmount = (tx.amount?.toString() || '').includes(q);
+        const targetW = wallets.find(w => w.id === tx.walletId);
+        const matchWallet = (targetW?.name || '').toLowerCase().includes(q) || (targetW?.accountNumber || '').toLowerCase().includes(q);
+        const matchSplits = (tx.splits || []).some(s => {
+          const sw = wallets.find(w => w.id === s.walletId);
+          return (sw?.name || '').toLowerCase().includes(q) || (sw?.accountNumber || '').toLowerCase().includes(q) || (s.amount?.toString() || '').includes(q);
+        });
+        if (!matchDesc && !matchCat && !matchCreator && !matchNotes && !matchId && !matchAmount && !matchWallet && !matchSplits) return false;
       }
       if (selectedWalletId !== 'ALL' && tx.walletId !== selectedWalletId) {
         if (!tx.splits || !tx.splits.some(s => s.walletId === selectedWalletId)) {
@@ -502,7 +842,9 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     }
 
     // Determine start and end date range for the timeline
-    let maxDateStr = '2026-09-20';
+    const todayStr = new Date().toISOString().slice(0, 10);
+    let maxDateStr = filtered[0]?.date ? filtered[0].date.slice(0, 10) : todayStr;
+    if (todayStr > maxDateStr) maxDateStr = todayStr;
     let minDateStr = '2026-07-01';
 
     if (filtered.length > 0) {
@@ -605,29 +947,51 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
           <p className="text-xs text-slate-500 dark:text-[#8899BB] mt-0.5">{filtered.length} entries recorded</p>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap sm:flex-nowrap">
+          {onRefreshTransactions && (
+            <button
+              type="button"
+              id="btn-update-transactions"
+              onClick={() => {
+                triggerHaptic('medium');
+                setIsRefreshing(true);
+                onRefreshTransactions();
+                setTimeout(() => setIsRefreshing(false), 900);
+              }}
+              disabled={isRefreshing}
+              className="px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer transition-all active:scale-95 disabled:opacity-75"
+              title="Update and synchronize transactions with Cloud Ledger"
+            >
+              <RotateCcw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span>{isRefreshing ? 'Updating...' : 'Update Transactions'}</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => {
               triggerHaptic('medium');
-              const dummyState: any = {
+              const fullReportState: any = {
                 currentUser,
                 wallets,
                 transactions,
-                transfers: [],
-                equbs: [],
-                loans: [],
-                assets: [],
-                receivables: [],
-                users: [],
+                transfers,
+                equbs,
+                loans,
+                assets,
+                receivables,
+                users,
                 categories,
-                recurring: [],
+                recurring,
+                goals: [],
                 auditLogs: [],
-                savedReports: []
+                savedReports: [],
+                hideBalances,
+                calendarType
               };
               const filteredTxs = filtered.filter(item => item.kind === 'TX').map(item => (item as any).tx);
               generatePDFReport({
-                state: dummyState,
+                state: fullReportState,
                 transactions: filteredTxs,
                 dateRangeLabel: 'Filtered Ledger View',
                 reportTitle: 'Financial Ledger & Transaction Creator Report'
@@ -643,25 +1007,63 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
           <button
             type="button"
             onClick={() => {
-              triggerHaptic('heavy');
-              const dummyState: any = {
+              triggerHaptic('medium');
+              const fullReportState: any = {
                 currentUser,
                 wallets,
                 transactions,
-                transfers: [],
-                equbs: [],
-                loans: [],
-                assets: [],
-                receivables: [],
-                users: [],
+                transfers,
+                equbs,
+                loans,
+                assets,
+                receivables,
+                users,
                 categories,
-                recurring: [],
+                recurring,
+                goals: [],
                 auditLogs: [],
-                savedReports: []
+                savedReports: [],
+                hideBalances,
+                calendarType
+              };
+              const filteredTxs = filtered.filter(item => item.kind === 'TX').map(item => (item as any).tx);
+              generateAuditPDFReport({
+                state: fullReportState,
+                transactions: filteredTxs
+              });
+            }}
+            className="px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1 shadow-sm cursor-pointer transition-all active:scale-95"
+            title="Download 13-Column Transaction, Loan, Equb & Receivable Audit PDF"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Audit PDF</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('heavy');
+              const fullReportState: any = {
+                currentUser,
+                wallets,
+                transactions,
+                transfers,
+                equbs,
+                loans,
+                assets,
+                receivables,
+                users,
+                categories,
+                recurring,
+                goals: [],
+                auditLogs: [],
+                savedReports: [],
+                hideBalances,
+                calendarType
               };
               const filteredTxs = filtered.filter(item => item.kind === 'TX').map(item => (item as any).tx);
               generateExcelReport({
-                state: dummyState,
+                state: fullReportState,
                 transactions: filteredTxs,
                 dateRangeLabel: 'Filtered Ledger View',
                 reportTitle: 'Banking & Financial Reporting Package'
@@ -1261,6 +1663,11 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                                   <span>🏠 Rent</span>
                                 </span>
                               )}
+                              {tx.category === 'Bad Debt' && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded border shrink-0 flex items-center gap-0.5 bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-300 border-rose-200 dark:border-rose-500/30">
+                                  <span>⚠️ Bad Debt Write-off</span>
+                                </span>
+                              )}
                               {!isTransactionEditable(tx.date) && !tx.reversed && currentUser.role !== 'SuperAdmin' && currentUser.role !== 'Admin' && (
                                 <span title="Can't be edited: older than 1 week" className="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0 font-medium">
                                   <Lock className="w-2.5 h-2.5" />
@@ -1329,10 +1736,12 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       {/* Transaction Detail Sheet Modal */}
       {activeTxDetail && (() => {
         const isSuperAdmin = currentUser.role === 'SuperAdmin';
+        const isAdmin = currentUser.role === 'Admin';
+        const isPrivileged = isSuperAdmin || isAdmin;
         const activeOtherUsers = (users || []).filter(u => u.id !== currentUser.id && u.active !== false);
         const hasOtherUsers = activeOtherUsers.length > 0;
         const isWithin7Days = isTransactionEditable(activeTxDetail.date);
-        const canDirectEdit = (isWithin7Days || !hasOtherUsers) && !activeTxDetail.reversed;
+        const canDirectEdit = (isPrivileged || isWithin7Days || !hasOtherUsers) && !activeTxDetail.reversed;
         const isDetailCreditCollected = isCreditSaleCollected(activeTxDetail);
 
         return (
@@ -1592,7 +2001,9 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                           <WalletIcon className="w-3.5 h-3.5 text-emerald-600 dark:text-[#00D4AA]" />
                           <span className="font-bold text-slate-900 dark:text-white">{rel.walletName}</span>
                           {rel.amount !== undefined && activeTxDetail.splits && activeTxDetail.splits.length > 1 && (
-                            <span className="text-[10px] text-rose-600 dark:text-rose-400 font-mono font-bold">(-{formatETB(rel.amount)})</span>
+                            <span className={`text-[10px] font-mono font-bold ${activeTxDetail.type === 'INCOME' ? 'text-emerald-600 dark:text-[#00D4AA]' : 'text-rose-600 dark:text-rose-400'}`}>
+                              ({activeTxDetail.type === 'INCOME' ? '+' : '-'}{formatETB(rel.amount)})
+                            </span>
                           )}
                         </div>
                         <span className="font-bold font-mono text-emerald-700 dark:text-[#00D4AA]">
@@ -1751,18 +2162,23 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       {/* Edit Transaction Modal */}
       {editingTx && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#00D4AA]/40 max-w-sm w-full p-5 rounded-2xl text-slate-900 dark:text-[#F0F4FF] space-y-4 shadow-2xl animate-scaleUp">
+          <div className="bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#00D4AA]/40 max-w-md w-full max-h-[90vh] overflow-y-auto p-5 rounded-2xl text-slate-900 dark:text-[#F0F4FF] space-y-4 shadow-2xl animate-scaleUp">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-[#1E2D40] pb-3">
               <h4 className="text-sm font-bold flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-emerald-600 dark:text-[#00D4AA]" />
                 <span>Edit Transaction Entry</span>
+                {isSplitMode && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                    Split ({editSplitRows.length})
+                  </span>
+                )}
               </h4>
-              <button onClick={() => setEditingTx(null)} className="p-1 rounded-lg bg-slate-100 dark:bg-[#1C2333] text-slate-500 dark:text-[#8899BB]">
+              <button onClick={() => setEditingTx(null)} className="p-1 rounded-lg bg-slate-100 dark:bg-[#1C2333] text-slate-500 dark:text-[#8899BB] cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveEdit} className="space-y-3">
+            <form onSubmit={handleSaveEdit} className="space-y-3.5">
               {/* Type Switcher */}
               <div>
                 <label className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono block mb-1">TRANSACTION TYPE</label>
@@ -1770,7 +2186,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setEditForm(prev => ({ ...prev, type: 'INCOME' }))}
-                    className={`py-2 rounded-xl font-bold text-xs border ${
+                    className={`py-2 rounded-xl font-bold text-xs border cursor-pointer ${
                       editForm.type === 'INCOME'
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-500/20 dark:border-emerald-500 dark:text-emerald-400'
                         : 'bg-slate-50 border-slate-200 dark:bg-[#1C2333] dark:border-[#1E2D40] text-slate-600 dark:text-[#8899BB]'
@@ -1781,7 +2197,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setEditForm(prev => ({ ...prev, type: 'EXPENSE' }))}
-                    className={`py-2 rounded-xl font-bold text-xs border ${
+                    className={`py-2 rounded-xl font-bold text-xs border cursor-pointer ${
                       editForm.type === 'EXPENSE'
                         ? 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-red-500/20 dark:border-red-500 dark:text-red-400'
                         : 'bg-slate-50 border-slate-200 dark:bg-[#1C2333] dark:border-[#1E2D40] text-slate-600 dark:text-[#8899BB]'
@@ -1802,7 +2218,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setEditForm(prev => ({ ...prev, expenseScope: 'BUSINESS' }))}
-                      className={`py-1.5 px-2 rounded-xl font-bold text-xs border flex items-center justify-center gap-1.5 ${
+                      className={`py-1.5 px-2 rounded-xl font-bold text-xs border flex items-center justify-center gap-1.5 cursor-pointer ${
                         editForm.expenseScope === 'BUSINESS'
                           ? 'bg-indigo-600 dark:bg-indigo-500 text-white border-indigo-600 shadow-sm'
                           : 'bg-slate-50 border-slate-200 dark:bg-[#1C2333] dark:border-[#1E2D40] text-slate-600 dark:text-[#8899BB]'
@@ -1814,7 +2230,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setEditForm(prev => ({ ...prev, expenseScope: 'PERSONAL' }))}
-                      className={`py-1.5 px-2 rounded-xl font-bold text-xs border flex items-center justify-center gap-1.5 ${
+                      className={`py-1.5 px-2 rounded-xl font-bold text-xs border flex items-center justify-center gap-1.5 cursor-pointer ${
                         editForm.expenseScope === 'PERSONAL'
                           ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
                           : 'bg-slate-50 border-slate-200 dark:bg-[#1C2333] dark:border-[#1E2D40] text-slate-600 dark:text-[#8899BB]'
@@ -1830,8 +2246,12 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
               {/* Amount */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <label className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono block">AMOUNT (ETB)</label>
-                  <span className="text-[9px] text-emerald-600 dark:text-[#00D4AA] font-mono">Supports 40,50 or 40+50</span>
+                  <label className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono block">
+                    {isSplitMode ? 'TOTAL AMOUNT (ETB)' : 'AMOUNT (ETB)'}
+                  </label>
+                  <span className="text-[9px] text-emerald-600 dark:text-[#00D4AA] font-mono">
+                    {isSplitMode ? 'Summed from split funding' : 'Supports 40,50 or 40+50'}
+                  </span>
                 </div>
                 <input
                   type="text"
@@ -1859,6 +2279,184 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                 })()}
               </div>
 
+              {/* Payment Funding: Single Wallet vs Split Payment Mode */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono block">
+                    PAYMENT FUNDING METHOD
+                  </label>
+                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                    {isSplitMode ? 'Multi-Wallet Split' : 'Single Account'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-[#0A0E1A] rounded-xl border border-slate-200 dark:border-[#1E2D40]">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleSplitMode(false)}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      !isSplitMode
+                        ? 'bg-white dark:bg-[#1E2D40] text-slate-900 dark:text-white shadow-xs'
+                        : 'text-slate-500 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <WalletIcon className="w-3.5 h-3.5" />
+                    <span>Single Wallet</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleSplitMode(true)}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      isSplitMode
+                        ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-xs'
+                        : 'text-slate-500 dark:text-[#8899BB] hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>Split Payment 🔀</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Single Wallet Select */}
+              {!isSplitMode && (
+                <div>
+                  <label className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono block mb-1">FUNDING WALLET</label>
+                  <select
+                    value={editForm.walletId}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, walletId: e.target.value }))}
+                    className="w-full bg-slate-50 dark:bg-[#0A0E1A] border border-slate-200 dark:border-[#1E2D40] rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 dark:focus:border-[#00D4AA]"
+                  >
+                    {wallets.map(w => (
+                      <option key={w.id} value={w.id}>
+                        {w.name} ({w.type})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Split Payment Multi-Wallet Breakdown */}
+              {isSplitMode && (
+                <div className="space-y-2.5 p-3 rounded-xl bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800/50">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-purple-900 dark:text-purple-300 font-mono flex items-center gap-1">
+                      <Layers className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                      <span>SPLIT FUNDING WALLETS ({editSplitRows.length})</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleSyncAmountFromSplits}
+                      className="text-[10px] text-purple-700 dark:text-purple-300 hover:underline font-medium cursor-pointer"
+                      title="Set transaction amount to sum of splits"
+                    >
+                      Sum to Total
+                    </button>
+                  </div>
+
+                  {/* Split Rows */}
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {editSplitRows.map((row, idx) => (
+                      <div key={idx} className="flex items-center gap-2 bg-white dark:bg-[#131926] p-2 rounded-xl border border-slate-200 dark:border-[#1E2D40]">
+                        <select
+                          value={row.walletId}
+                          onChange={(e) => handleEditSplitRowChange(idx, 'walletId', e.target.value)}
+                          className="flex-1 bg-transparent text-xs text-slate-900 dark:text-white font-medium focus:outline-none"
+                        >
+                          {wallets.map(w => (
+                            <option key={w.id} value={w.id}>
+                              {w.name} ({w.type})
+                            </option>
+                          ))}
+                        </select>
+                        <div className="relative w-28 shrink-0">
+                          <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            value={row.amount}
+                            onChange={(e) => handleEditSplitRowChange(idx, 'amount', e.target.value)}
+                            placeholder="0"
+                            className="w-full bg-slate-50 dark:bg-[#0A0E1A] border border-slate-200 dark:border-[#1E2D40] rounded-lg px-2 py-1.5 text-xs text-right font-mono font-bold text-purple-700 dark:text-purple-300 focus:outline-none focus:border-purple-500"
+                          />
+                        </div>
+                        {editSplitRows.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEditSplitRow(idx)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 cursor-pointer shrink-0"
+                            title="Remove funding wallet"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Add Row Button & Auto Balance */}
+                  <div className="flex items-center justify-between pt-1">
+                    {editSplitRows.length < wallets.length && (
+                      <button
+                        type="button"
+                        onClick={handleAddEditSplitRow}
+                        className="text-[11px] font-bold text-purple-700 dark:text-purple-300 hover:text-purple-900 dark:hover:text-purple-100 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Add Wallet</span>
+                      </button>
+                    )}
+                    {editSplitRows.length >= 2 && (
+                      <div className="flex items-center gap-2 ml-auto">
+                        <button
+                          type="button"
+                          onClick={handleDistributeEvenly}
+                          className="text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer"
+                          title="Split amount equally across all wallets"
+                        >
+                          ⚖️ Equal Split
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleAutoBalanceEditSplits}
+                          className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 dark:hover:text-indigo-100 cursor-pointer"
+                          title="Auto-fill remainder on last wallet"
+                        >
+                          ⚡ Auto-Balance
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Live Split Total Comparison */}
+                  {(() => {
+                    const parsedTarget = parseSummedAmount(editForm.amount).total;
+                    const diff = parsedTarget - currentEditSplitTotal;
+                    const isBalanced = Math.abs(diff) < 0.01;
+                    return (
+                      <div className={`p-2 rounded-lg text-xs font-mono flex items-center justify-between border ${
+                        isBalanced
+                          ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                          : 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
+                      }`}>
+                        <span>Splits Total: <strong>{formatETB(currentEditSplitTotal)}</strong></span>
+                        <span>
+                          {isBalanced ? (
+                            <span className="font-bold flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                              Balanced
+                            </span>
+                          ) : (
+                            <span className="font-bold">
+                              {diff > 0 ? `Remaining: ${formatETB(diff)}` : `Over by: ${formatETB(Math.abs(diff))}`}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
               {/* Date & Time */}
               <ModernDateInput
                 type="datetime-local"
@@ -1869,22 +2467,6 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                 accentColor="emerald"
                 helperText="Click anywhere in the box to adjust timestamp"
               />
-
-              {/* Wallet Select */}
-              <div>
-                <label className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono block mb-1">WALLET</label>
-                <select
-                  value={editForm.walletId}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, walletId: e.target.value }))}
-                  className="w-full bg-slate-50 dark:bg-[#0A0E1A] border border-slate-200 dark:border-[#1E2D40] rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 dark:focus:border-[#00D4AA]"
-                >
-                  {wallets.map(w => (
-                    <option key={w.id} value={w.id}>
-                      {w.name} ({w.type})
-                    </option>
-                  ))}
-                </select>
-              </div>
 
               {/* Category */}
               <div>
@@ -1912,17 +2494,53 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                 />
               </div>
 
+              {/* Linked Equb Circle (Shown if Equb category or refType === 'EQUB') */}
+              {(editForm.category.toLowerCase().includes('equb') || editForm.category.toLowerCase().includes('ekub') || editForm.refType === 'EQUB') && equbs && equbs.length > 0 && (
+                <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/60 space-y-1.5">
+                  <label className="text-[10px] text-purple-900 dark:text-purple-300 font-bold block flex items-center justify-between">
+                    <span>👥 LINKED EQUB CIRCLE</span>
+                    {editForm.refId && <span className="font-mono text-purple-600 dark:text-purple-400">ID: {editForm.refId}</span>}
+                  </label>
+                  <select
+                    value={editForm.refId || ''}
+                    onChange={(e) => {
+                      const selId = e.target.value;
+                      setEditForm(prev => ({
+                        ...prev,
+                        refType: selId ? 'EQUB' : undefined,
+                        refId: selId || undefined
+                      }));
+                    }}
+                    className="w-full bg-white dark:bg-[#0A0E1A] border border-purple-300 dark:border-purple-700/60 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white font-medium"
+                  >
+                    <option value="">-- Select Equb Circle --</option>
+                    {equbs.map(eq => (
+                      <option key={eq.id} value={eq.id}>
+                        {eq.name} ({formatETB(eq.contributionPerRound)} / round, Round {eq.currentRound})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {editError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-xs text-rose-600 dark:text-rose-400 font-bold flex items-center gap-1.5 animate-fadeIn">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
+                  <span>{editError}</span>
+                </div>
+              )}
+
               <div className="flex gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setEditingTx(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] text-xs font-bold text-slate-600 dark:text-[#8899BB] cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-[#1C2333] text-xs font-bold text-slate-600 dark:text-[#8899BB] cursor-pointer hover:bg-slate-200 dark:hover:bg-[#253248]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#00D4AA] to-[#00B894] text-xs font-bold text-[#0A0E1A] cursor-pointer shadow-lg hover:brightness-110"
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#00D4AA] to-[#00B894] text-xs font-bold text-[#0A0E1A] cursor-pointer shadow-lg hover:brightness-110 active:scale-98 transition-all"
                 >
                   Save Changes
                 </button>

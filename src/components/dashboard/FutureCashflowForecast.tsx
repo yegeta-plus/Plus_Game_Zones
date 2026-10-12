@@ -165,7 +165,8 @@ function getEqubDuesInWindow(
   if (c <= 0 || e.status !== 'ACTIVE') return { isDue: false, roundsCount: 0, fullAmount: 0, dueDateStr: '' };
 
   const interval = (e.interval || 'WEEKLY').toUpperCase();
-  const roundsRemaining = Math.max(0, e.totalRounds - e.currentRound + 1);
+  const completed = typeof e.completedRounds === 'number' ? e.completedRounds : Math.max(0, e.currentRound - 1);
+  const roundsRemaining = Math.max(0, e.totalRounds - completed);
   if (roundsRemaining <= 0) return { isDue: false, roundsCount: 0, fullAmount: 0, dueDateStr: '' };
 
   if (interval === 'DAILY') {
@@ -186,7 +187,13 @@ function getEqubDuesInWindow(
 
   // Compute next round date
   let nextRoundMs = now.getTime();
-  if (e.startDate) {
+  if (e.computedEndingDate) {
+    const endMs = new Date(e.computedEndingDate).getTime();
+    if (!isNaN(endMs)) {
+      const roundsAfterCurrent = Math.max(0, e.totalRounds - e.currentRound);
+      nextRoundMs = endMs - roundsAfterCurrent * intervalDays * 86400000;
+    }
+  } else if (e.startDate) {
     const startMs = new Date(e.startDate).getTime();
     if (!isNaN(startMs)) {
       const offsetMs = (e.currentRound - 1) * intervalDays * 86400000;
@@ -194,9 +201,9 @@ function getEqubDuesInWindow(
     }
   }
 
-  // If next round is in the past, it's due now (Week 1)
-  if (isFirstWeek && nextRoundMs <= wEnd.getTime()) {
-    return { isDue: true, roundsCount: 1, fullAmount: c, dueDateStr: new Date(nextRoundMs).toISOString().split('T')[0] };
+  // If next round is in the past, anchor it to current date
+  if (nextRoundMs < now.getTime()) {
+    nextRoundMs = now.getTime();
   }
 
   // Step through remaining rounds
@@ -445,7 +452,8 @@ export const FutureCashflowForecast: React.FC<FutureCashflowForecastProps> = ({
     activeEqubs.forEach(e => {
       const contribution = Number(e.contributionPerRound) || 0;
       const interval = (e.interval || 'WEEKLY').toUpperCase();
-      const roundsRemaining = Math.max(0, e.totalRounds - e.currentRound + 1);
+      const completed = typeof e.completedRounds === 'number' ? e.completedRounds : Math.max(0, e.currentRound - 1);
+      const roundsRemaining = Math.max(0, e.totalRounds - completed);
 
       const equbDue = getEqubDuesInWindow(e, wStart0, wEnd0, true, now);
       if (equbDue.isDue) {
@@ -461,9 +469,10 @@ export const FutureCashflowForecast: React.FC<FutureCashflowForecastProps> = ({
       else if (interval === 'EVERY_15_DAYS') mRounds = 2;
       else if (interval === 'MONTHLY') mRounds = 1;
 
-      const monthlyCommitment = contribution * mRounds;
+      // In the immediate current month, commitment cannot exceed the actual rounds remaining
+      const monthlyCommitment = contribution * Math.min(mRounds, roundsRemaining);
       equbMonthly += monthlyCommitment;
-      equbYearly += Math.min(monthlyCommitment * 12, contribution * roundsRemaining);
+      equbYearly += contribution * roundsRemaining;
     });
 
     // Mandatory totals (recurring + equb) — NOT divided
@@ -953,6 +962,20 @@ export const FutureCashflowForecast: React.FC<FutureCashflowForecastProps> = ({
     const now = new Date();
     let rollingBalance = currentTotalBalance;
 
+    // Track remaining rounds for each active Equb across the 12-month trajectory
+    const equbRoundsTracker = new Map<string, number>();
+    obligationsStats.activeEqubs.forEach(e => {
+      const completed = typeof e.completedRounds === 'number' ? e.completedRounds : Math.max(0, e.currentRound - 1);
+      const rem = Math.max(0, e.totalRounds - completed);
+      equbRoundsTracker.set(e.id, rem);
+    });
+
+    // Track remaining balance for active loans across the 12-month trajectory
+    const loanBalanceTracker = new Map<string, number>();
+    obligationsStats.activeLoans.forEach(l => {
+      loanBalanceTracker.set(l.id, Math.max(0, Number(l.outstandingBalance || 0)));
+    });
+
     for (let i = 0; i < 12; i++) {
       // Advance by i months in Gregorian or Ethiopian
       const mDate = new Date(now.getFullYear(), now.getMonth() + i, 15);
@@ -1035,85 +1058,122 @@ export const FutureCashflowForecast: React.FC<FutureCashflowForecastProps> = ({
             });
           }
         } else {
-          rOut += monthlyAmt;
-          expenses.push({
-            id: `m-rec-${r.id}`,
-            title: r.title,
-            category: r.category || 'Utilities',
-            description: `[MANDATORY COMMITMENT] ${r.notes?.trim() || `${r.category || 'Operating'} scheduled monthly expense payable via ${wName}.`}`,
-            amount: monthlyAmt,
-            scheduledAmount: monthlyAmt,
-            type: 'RECURRING',
-            frequency: 'Monthly',
-            walletName: wName,
-            isExempt: false,
-            isMandatory: true
-          });
+          // Check if this recurring item is prepaid in advance past this forecast month
+          const dueMs = r.nextDueDate ? new Date(r.nextDueDate).getTime() : 0;
+          const monthEndMs = new Date(now.getFullYear(), now.getMonth() + i + 1, 0, 23, 59, 59).getTime();
+          const isPrepaidForThisMonth = dueMs > monthEndMs;
+
+          if (isPrepaidForThisMonth) {
+            expenses.push({
+              id: `m-rec-${r.id}-${i}`,
+              title: r.title,
+              category: r.category || 'Rent & Facilities',
+              description: `[PREPAID IN ADVANCE] ${r.title} settled in advance (covered until ${r.nextDueDate ? new Date(r.nextDueDate).toLocaleDateString() : 'future date'}). ETB 0 outflow needed this month.`,
+              amount: 0,
+              scheduledAmount: 0,
+              type: 'RECURRING',
+              frequency: 'Prepaid in advance',
+              walletName: wName,
+              isExempt: true,
+              exemptionReason: 'Paid in advance',
+              isMandatory: false
+            });
+          } else {
+            rOut += monthlyAmt;
+            expenses.push({
+              id: `m-rec-${r.id}-${i}`,
+              title: r.title,
+              category: r.category || 'Utilities',
+              description: `[MANDATORY COMMITMENT] ${r.notes?.trim() || `${r.category || 'Operating'} scheduled monthly expense payable via ${wName}.`}`,
+              amount: monthlyAmt,
+              scheduledAmount: monthlyAmt,
+              type: 'RECURRING',
+              frequency: 'Monthly',
+              walletName: wName,
+              isExempt: false,
+              isMandatory: true
+            });
+          }
         }
       });
 
-      // Equb (MANDATORY)
+      // Equb (MANDATORY - Decreases accordingly as remaining rounds are completed)
       obligationsStats.activeEqubs.forEach(e => {
         const c = Number(e.contributionPerRound) || 0;
         const wName = getWalletName(e.walletId);
         const interval = (e.interval || 'WEEKLY').toUpperCase();
-        let monthlyAmt = c;
-        if (interval === 'DAILY') monthlyAmt = c * 30;
-        else if (interval === 'EVERY_5_DAYS') monthlyAmt = c * 6;
-        else if (interval === 'EVERY_10_DAYS') monthlyAmt = c * 3; // 3 rounds in a month = exactly 15,000 ETB
-        else if (interval === 'WEEKLY') monthlyAmt = c * 4;
-        else if (interval === 'BI_WEEKLY' || interval === 'BIWEEKLY') monthlyAmt = c * 2;
-        else if (interval === 'EVERY_15_DAYS') monthlyAmt = c * 2;
-        else if (interval === 'MONTHLY') monthlyAmt = c;
+        let standardMonthlyRounds = 1;
+        if (interval === 'DAILY') standardMonthlyRounds = 30;
+        else if (interval === 'EVERY_5_DAYS') standardMonthlyRounds = 6;
+        else if (interval === 'EVERY_10_DAYS') standardMonthlyRounds = 3;
+        else if (interval === 'WEEKLY') standardMonthlyRounds = 4;
+        else if (interval === 'BI_WEEKLY' || interval === 'BIWEEKLY') standardMonthlyRounds = 2;
+        else if (interval === 'EVERY_15_DAYS') standardMonthlyRounds = 2;
+        else if (interval === 'MONTHLY') standardMonthlyRounds = 1;
 
-        const equbDesc = `Monthly round contributions for ${e.name} Equb (${e.interval.replace(/_/g, ' ').toLowerCase()}, round ${e.currentRound} of ${e.totalRounds}, via ${wName}).`;
+        const remRoundsBefore = equbRoundsTracker.get(e.id) || 0;
 
         if (isPagume) {
-          pagumeExemptionSaved += monthlyAmt;
-          expenses.push({
-            id: `m-eq-${e.id}`,
-            title: `Equb: ${e.name}`,
-            category: 'Equb Savings',
-            description: `[MANDATORY COMMITMENT] ${equbDesc} — [Pagumē Exemption: Equb rounds paused during 13th month]`,
-            amount: monthlyAmt,
-            scheduledAmount: monthlyAmt,
-            type: 'EQUB',
-            frequency: e.interval.replace(/_/g, ' ').toLowerCase(),
-            walletName: wName,
-            isExempt: true,
-            exemptionReason: 'Pagumē holiday custom',
-            isMandatory: true
-          });
+          if (remRoundsBefore > 0) {
+            const pausedAmt = c * Math.min(standardMonthlyRounds, remRoundsBefore);
+            pagumeExemptionSaved += pausedAmt;
+            expenses.push({
+              id: `m-eq-${e.id}-${i}`,
+              title: `Equb: ${e.name}`,
+              category: 'Equb Savings',
+              description: `[MANDATORY COMMITMENT] Round contribution for ${e.name} Equb paused under Pagumē 13th-month calendar convention (${remRoundsBefore} rounds remaining).`,
+              amount: pausedAmt,
+              scheduledAmount: pausedAmt,
+              type: 'EQUB',
+              frequency: e.interval.replace(/_/g, ' ').toLowerCase(),
+              walletName: wName,
+              isExempt: true,
+              exemptionReason: 'Pagumē holiday custom',
+              isMandatory: true
+            });
+          }
         } else {
-          eqOut += monthlyAmt;
-          expenses.push({
-            id: `m-eq-${e.id}`,
-            title: `Equb: ${e.name}`,
-            category: 'Equb Savings',
-            description: `[MANDATORY COMMITMENT] ${equbDesc} (Mandatory community savings rotation).`,
-            amount: monthlyAmt,
-            scheduledAmount: monthlyAmt,
-            type: 'EQUB',
-            frequency: e.interval.replace(/_/g, ' ').toLowerCase(),
-            walletName: wName,
-            isExempt: false,
-            isMandatory: true
-          });
+          const roundsToPay = Math.min(standardMonthlyRounds, remRoundsBefore);
+          const monthlyAmt = roundsToPay * c;
+          const remRoundsAfter = remRoundsBefore - roundsToPay;
+          equbRoundsTracker.set(e.id, remRoundsAfter);
+
+          if (roundsToPay > 0) {
+            eqOut += monthlyAmt;
+            const isCompletedThisMonth = remRoundsAfter === 0;
+            expenses.push({
+              id: `m-eq-${e.id}-${i}`,
+              title: `Equb: ${e.name}`,
+              category: 'Equb Savings',
+              description: `[MANDATORY COMMITMENT] ${roundsToPay} round${roundsToPay > 1 ? 's' : ''} for ${e.name} Equb (${formatETB(monthlyAmt)} total • ${isCompletedThisMonth ? 'All rounds completed!' : `${remRoundsAfter} round${remRoundsAfter > 1 ? 's' : ''} remaining after this month`}).`,
+              amount: monthlyAmt,
+              scheduledAmount: monthlyAmt,
+              type: 'EQUB',
+              frequency: `${e.interval.replace(/_/g, ' ').toLowerCase()} • ${roundsToPay} round${roundsToPay > 1 ? 's' : ''}`,
+              walletName: wName,
+              isExempt: false,
+              isMandatory: true
+            });
+          }
         }
       });
 
       const mandatoryOut = rOut + eqOut;
       const operatingSurplus = projectedIncome - mandatoryOut;
 
-      // Loans (FLEXIBLE - paid on opportunity in the middle)
+      // Loans (FLEXIBLE - paid on opportunity in the middle, tracked against remaining principal)
       let lScheduled = 0;
       obligationsStats.activeLoans.forEach(l => {
-        let inst = Number(l.monthlyInstallment || l.outstandingBalance || 0);
-        if (inst < 1000 && l.outstandingBalance >= 1000) {
-          inst = 1000;
-        }
-        if (!isPagume) {
-          lScheduled += inst;
+        const curRemLoan = loanBalanceTracker.get(l.id) || 0;
+        if (curRemLoan > 0) {
+          let inst = Number(l.monthlyInstallment || curRemLoan || 0);
+          if (inst < 1000 && curRemLoan >= 1000) {
+            inst = 1000;
+          }
+          inst = Math.min(inst, curRemLoan);
+          if (!isPagume) {
+            lScheduled += inst;
+          }
         }
       });
 
@@ -1121,18 +1181,23 @@ export const FutureCashflowForecast: React.FC<FutureCashflowForecastProps> = ({
       let loanOpportunityDeferred = 0;
       const allocatedMonthlyLoanPayments = new Map<string, number>();
 
-      if (isPagume) {
+      if (isPagume || lScheduled === 0) {
         actualLoanPaid = 0;
         loanOpportunityDeferred = 0;
         obligationsStats.activeLoans.forEach(l => allocatedMonthlyLoanPayments.set(l.id, 0));
       } else if (loanStrategy === 'FLEXIBLE_OPPORTUNITY') {
-        // Business Rule: Loans / repayments cannot be less than ETB 1,000 (1k)
         if (operatingSurplus >= 1000 && lScheduled > 0) {
           let pool = Math.min(lScheduled, operatingSurplus);
 
           for (const l of obligationsStats.activeLoans) {
-            let inst = Number(l.monthlyInstallment || l.outstandingBalance || 0);
-            if (inst < 1000 && l.outstandingBalance >= 1000) inst = 1000;
+            const curRemLoan = loanBalanceTracker.get(l.id) || 0;
+            if (curRemLoan <= 0) {
+              allocatedMonthlyLoanPayments.set(l.id, 0);
+              continue;
+            }
+            let inst = Number(l.monthlyInstallment || curRemLoan || 0);
+            if (inst < 1000 && curRemLoan >= 1000) inst = 1000;
+            inst = Math.min(inst, curRemLoan);
             const minAllowed = Math.min(1000, inst);
 
             if (pool >= minAllowed) {
@@ -1150,8 +1215,11 @@ export const FutureCashflowForecast: React.FC<FutureCashflowForecastProps> = ({
 
           if (pool > 0) {
             for (const l of obligationsStats.activeLoans) {
-              let inst = Number(l.monthlyInstallment || l.outstandingBalance || 0);
-              if (inst < 1000 && l.outstandingBalance >= 1000) inst = 1000;
+              const curRemLoan = loanBalanceTracker.get(l.id) || 0;
+              if (curRemLoan <= 0) continue;
+              let inst = Number(l.monthlyInstallment || curRemLoan || 0);
+              if (inst < 1000 && curRemLoan >= 1000) inst = 1000;
+              inst = Math.min(inst, curRemLoan);
               const curPaid = allocatedMonthlyLoanPayments.get(l.id) || 0;
               if (curPaid > 0 && curPaid < inst) {
                 const add = Math.min(inst - curPaid, pool);
@@ -1173,11 +1241,21 @@ export const FutureCashflowForecast: React.FC<FutureCashflowForecastProps> = ({
         actualLoanPaid = lScheduled;
         loanOpportunityDeferred = 0;
         obligationsStats.activeLoans.forEach(l => {
-          let inst = Number(l.monthlyInstallment || l.outstandingBalance || 0);
-          if (inst < 1000 && l.outstandingBalance >= 1000) inst = 1000;
+          const curRemLoan = loanBalanceTracker.get(l.id) || 0;
+          let inst = Number(l.monthlyInstallment || curRemLoan || 0);
+          if (inst < 1000 && curRemLoan >= 1000) inst = 1000;
+          inst = Math.min(inst, curRemLoan);
           allocatedMonthlyLoanPayments.set(l.id, inst);
         });
       }
+
+      // Deduct paid loan principal from loanBalanceTracker
+      allocatedMonthlyLoanPayments.forEach((paidAmt, lId) => {
+        if (paidAmt > 0) {
+          const cur = loanBalanceTracker.get(lId) || 0;
+          loanBalanceTracker.set(lId, Math.max(0, cur - paidAmt));
+        }
+      });
 
       obligationsStats.activeLoans.forEach(l => {
         let inst = Number(l.monthlyInstallment || l.outstandingBalance || 0);
@@ -1264,7 +1342,7 @@ export const FutureCashflowForecast: React.FC<FutureCashflowForecastProps> = ({
 
       const mandatorySummary = [
         obligationsStats.activeRecurring.length > 0 ? `${obligationsStats.activeRecurring.length} Bills (${formatETB(rOut, true)})` : '',
-        obligationsStats.activeEqubs.length > 0 ? `Equb (${formatETB(eqOut, true)})` : ''
+        eqOut > 0 ? `Equb (${formatETB(eqOut, true)})` : ''
       ].filter(Boolean).join(' • ');
 
       const flexibleSummary = obligationsStats.activeLoans.length > 0
@@ -1309,6 +1387,12 @@ export const FutureCashflowForecast: React.FC<FutureCashflowForecastProps> = ({
 
   // 5. YEARLY CALENDAR DATA (13 Ethiopian Months Detailed Schedule)
   const yearlyCalendarMonths = useMemo(() => {
+    const calEqubTracker = new Map<string, number>();
+    obligationsStats.activeEqubs.forEach(e => {
+      const completed = typeof e.completedRounds === 'number' ? e.completedRounds : Math.max(0, e.currentRound - 1);
+      calEqubTracker.set(e.id, Math.max(0, e.totalRounds - completed));
+    });
+
     return ETHIOPIAN_MONTHS.map(m => {
       const isPagume = m.id === 13;
       const daysCount = isPagume ? 5 : 30;
@@ -1323,7 +1407,27 @@ export const FutureCashflowForecast: React.FC<FutureCashflowForecastProps> = ({
         ? (obligationsStats.recurringMonthly * 0.15) // electricity only
         : obligationsStats.recurringMonthly;
 
-      const equbBill = isPagume ? 0 : obligationsStats.equbMonthly;
+      let equbBill = 0;
+      if (!isPagume) {
+        obligationsStats.activeEqubs.forEach(e => {
+          const c = Number(e.contributionPerRound) || 0;
+          const interval = (e.interval || 'WEEKLY').toUpperCase();
+          let mRounds = 1;
+          if (interval === 'DAILY') mRounds = 30;
+          else if (interval === 'EVERY_5_DAYS') mRounds = 6;
+          else if (interval === 'EVERY_10_DAYS') mRounds = 3;
+          else if (interval === 'WEEKLY') mRounds = 4;
+          else if (interval === 'BI_WEEKLY' || interval === 'BIWEEKLY') mRounds = 2;
+          else if (interval === 'EVERY_15_DAYS') mRounds = 2;
+          else if (interval === 'MONTHLY') mRounds = 1;
+
+          const rem = calEqubTracker.get(e.id) || 0;
+          const toPay = Math.min(mRounds, rem);
+          calEqubTracker.set(e.id, rem - toPay);
+          equbBill += toPay * c;
+        });
+      }
+
       const mandatoryBill = recurringBill + equbBill;
       const monthSurplus = monthIncome - mandatoryBill;
 
@@ -2261,8 +2365,8 @@ export const FutureCashflowForecast: React.FC<FutureCashflowForecastProps> = ({
                         <Building2 className="w-3.5 h-3.5 text-purple-500" />
                         Mandatory Equb:
                       </span>
-                      <span className="font-mono text-purple-600 dark:text-purple-400">
-                        -{hideBalances ? '••••' : formatETB(m.equbOut, true)}
+                      <span className={`font-mono ${m.equbOut > 0 ? 'text-purple-600 dark:text-purple-400 font-semibold' : 'text-slate-400 dark:text-slate-500'}`}>
+                        {m.equbOut > 0 ? `-${hideBalances ? '••••' : formatETB(m.equbOut, true)}` : 'Completed (0)'}
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">

@@ -58,6 +58,23 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
       payoutsClaimed: 1
     },
     {
+      id: 'eq-leli-2',
+      name: 'Leli ekub 2',
+      members: [{ id: 'm-1', name: 'Yegeta Huawei', isWinner: true, wonRound: 1 }],
+      contributionPerRound: 10000,
+      mySlots: 1,
+      interval: 'EVERY_10_DAYS',
+      currentRound: 4,
+      completedRounds: 3,
+      totalRounds: 6,
+      startDate: '2026-09-04T00:00:00.000Z',
+      computedEndingDate: '2026-11-04T00:00:00.000Z',
+      status: 'ACTIVE',
+      isOverdue: false,
+      walletId: 'w-cash',
+      payoutsClaimed: 1
+    },
+    {
       id: 'eq-leli',
       name: 'Leli',
       members: [{ id: 'm-1', name: 'Yegeta Huawei', isWinner: true, wonRound: 1 }],
@@ -106,7 +123,7 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
       status: 'ACTIVE',
       payments: []
     },
-    // 3. Zerubabel 2 (Active, Installment, Due 2026-09-26, Rem: 20,400 ETB)
+    // 3. Zerubabel 2 (Active, Installment, Due 2026-11-29, Rem: 15,300 ETB)
     {
       id: 'loan-zeru-2',
       title: 'Zerubabel 2',
@@ -115,20 +132,39 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
       direction: 'BORROWED',
       repaymentType: 'INSTALLMENT',
       initialAmount: 25500,
-      outstandingBalance: 20400,
+      outstandingBalance: 15300,
       monthlyInstallment: 5100,
-      dueDate: '2026-09-26T00:00:00.000Z',
-      walletId: 'w-cash',
+      dueDate: '2026-11-29T00:00:00.000Z',
+      walletId: 'w-telebirr',
       status: 'ACTIVE',
       payments: [
         {
           id: 'lp-zeru2-1',
           loanId: 'loan-zeru-2',
-          date: '2026-08-27T12:00:00.000Z',
+          date: '2026-08-31T12:00:00.000Z',
           amount: 5100,
           principal: 5100,
           interest: 0,
-          walletId: 'w-cash'
+          walletId: 'w-telebirr',
+          splits: [
+            { walletId: 'w-telebirr', amount: 3700 },
+            { walletId: 'w-cbe', amount: 1400 }
+          ],
+          note: 'Split: 3,700 ETB from Telebirr, 1,400 ETB from CBE'
+        },
+        {
+          id: 'lp-zeru2-2',
+          loanId: 'loan-zeru-2',
+          date: '2026-10-09T14:01:00.000Z',
+          amount: 5100,
+          principal: 5100,
+          interest: 0,
+          walletId: 'w-telebirr',
+          splits: [
+            { walletId: 'w-telebirr', amount: 3700 },
+            { walletId: 'w-cbe', amount: 1400 }
+          ],
+          note: 'Split: 3,700 ETB from Telebirr, 1,400 ETB from CBE'
         }
       ]
     },
@@ -176,7 +212,22 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
         }
       ]
     },
-    // 5. Gg (Active, One-time, Due 2026-09-20, Rem: 25,500 ETB)
+    // 5. Zeru (Sep 10) (Active, One-time, Due 2026-10-10, Rem: 19,000 ETB)
+    {
+      id: 'loan-zeru-sep10',
+      title: 'Zeru (Sep 10)',
+      counterparty: 'Zerubabel',
+      type: 'FRIEND_FAMILY',
+      direction: 'BORROWED',
+      repaymentType: 'ONE_TIME',
+      initialAmount: 19000,
+      outstandingBalance: 19000,
+      dueDate: '2026-10-10T00:00:00.000Z',
+      walletId: 'w-cash',
+      status: 'ACTIVE',
+      payments: []
+    },
+    // 6. Gg (Active, One-time, Due 2026-10-30, Rem: 25,500 ETB)
     {
       id: 'loan-gg',
       title: 'Gg',
@@ -186,12 +237,12 @@ export const INITIAL_DATASET_JULY_AUG: DatasetResult = {
       repaymentType: 'ONE_TIME',
       initialAmount: 25500,
       outstandingBalance: 25500,
-      dueDate: '2026-09-20T00:00:00.000Z',
+      dueDate: '2026-10-30T00:00:00.000Z',
       walletId: 'w-cash',
       status: 'ACTIVE',
       payments: []
     },
-    // 6. Zerubabel 3 (Settled, One-time, Due 2026-08-19, Rem: 0 ETB)
+    // 7. Zerubabel 3 (Settled, One-time, Due 2026-08-19, Rem: 0 ETB)
     {
       id: 'loan-zeru-3',
       title: 'Zerubabel 3',

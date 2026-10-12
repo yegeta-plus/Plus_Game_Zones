@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { PwaInstallBanner } from './components/pwa/PwaInstallBanner';
-import { PwaCapabilitiesModal } from './components/pwa/PwaCapabilitiesModal';
 import { OfflineIndicator } from './components/pwa/OfflineIndicator';
 import {
   initPwaServiceWorker,
@@ -31,6 +29,7 @@ import {
   ERPState,
   loadInitialState,
   saveStateToStorage,
+  DEFAULT_TRANSACTIONS,
   calculateWalletBalance,
   isTransactionEditable,
   formatETB,
@@ -44,7 +43,10 @@ import {
   findMatchingEqub,
   revertEqubForDeletedContribution,
   revertEqubForDeletedPayout,
-  getTransactionDisplayTitle
+  getTransactionDisplayTitle,
+  isCanonicalTransactionId,
+  syncRecurringWithTransaction,
+  syncEqubWithTransaction
 } from './lib/store';
 import { calculateNextEthiopianDueDate } from './lib/ethiopianCalendar';
 import {
@@ -160,7 +162,6 @@ export default function App() {
   const [showQuickEntry, setShowQuickEntry] = useState(false);
   const [quickEntryWalletId, setQuickEntryWalletId] = useState<string | undefined>(undefined);
   const [showTransferModal, setShowTransferModal] = useState(false);
-  const [showPwaModal, setShowPwaModal] = useState(false);
   const [sharedSmsPrefill, setSharedSmsPrefill] = useState<string | null>(null);
   const [showAiAssistant, setShowAiAssistant] = useState(false);
   const [aiAssistantPrompt, setAiAssistantPrompt] = useState<string | undefined>(undefined);
@@ -275,6 +276,15 @@ export default function App() {
   // Specific Confirmation Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Periodic ticker so relative notification times and time-sensitive alerts auto-update automatically
+  const [autoNotificationTicker, setAutoNotificationTicker] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const ticker = setInterval(() => {
+      setAutoNotificationTicker(Date.now());
+    }, 10000);
+    return () => clearInterval(ticker);
+  }, []);
+
   // Dismissed Notifications Tracking (Persisted in localStorage so seen notifications stay removed)
   const [dismissedNotifIds, setDismissedNotifIds] = useState<string[]>(() => {
     try {
@@ -351,8 +361,80 @@ export default function App() {
     setDismissedNotifIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
   }, []);
 
+  // Active safeguard on mount: Ensure all verified canonical ledger transactions are present and sorted
+  useEffect(() => {
+    setState((current) => {
+      const existingIds = new Set(current.transactions.map((t) => t.id));
+      const missingCanonical = DEFAULT_TRANSACTIONS.filter((t) => isCanonicalTransactionId(t.id) && !existingIds.has(t.id));
+
+      let hasReceivableUpdate = false;
+      const updatedReceivables = (current.receivables || []).map(r => {
+        if (r.id === 'rcv-20260923-solomon' && r.status !== 'COLLECTED') {
+          hasReceivableUpdate = true;
+          return { ...r, amountCollected: 180, status: 'COLLECTED' as const };
+        }
+        return r;
+      });
+      if (!updatedReceivables.some(r => r.id === 'rcv-20261002-solomon')) {
+        hasReceivableUpdate = true;
+        updatedReceivables.push({
+          id: 'rcv-20261002-solomon',
+          customerName: 'Solomon',
+          description: "Bale'da credit for Solomon",
+          amountOwed: 300,
+          amountCollected: 0,
+          createdDate: '2026-10-02T19:32:00.000Z',
+          dueDate: '2026-10-16T19:32:00.000Z',
+          status: 'OUTSTANDING',
+          walletId: 'w-cash'
+        });
+      }
+      if (!updatedReceivables.some(r => r.id === 'rcv-20261006-solomon-190')) {
+        hasReceivableUpdate = true;
+        updatedReceivables.push({
+          id: 'rcv-20261006-solomon-190',
+          customerName: 'Solomon',
+          description: "Bale'da credit for Solomon",
+          amountOwed: 190,
+          amountCollected: 0,
+          createdDate: '2026-10-06T08:47:00.000Z',
+          dueDate: '2026-10-20T08:47:00.000Z',
+          status: 'OUTSTANDING',
+          walletId: 'w-cash'
+        });
+      }
+
+      let hasTxSplitUpdate = false;
+      const canonicalMap = new Map(DEFAULT_TRANSACTIONS.map(t => [t.id, t]));
+      const refreshedTxs = current.transactions.map(t => {
+        const canonical = canonicalMap.get(t.id);
+        if (canonical?.splits && canonical.splits.length > 0 && (!t.splits || t.splits.length === 0)) {
+          hasTxSplitUpdate = true;
+          return { ...t, splits: canonical.splits };
+        }
+        return t;
+      });
+
+      if (missingCanonical.length > 0 || hasReceivableUpdate || hasTxSplitUpdate) {
+        const updatedTxs = [...missingCanonical, ...refreshedTxs]
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        const next = {
+          ...current,
+          transactions: updatedTxs,
+          receivables: updatedReceivables,
+          deletedEntityIds: (current.deletedEntityIds || []).filter(id => !isCanonicalTransactionId(id))
+        };
+        saveStateToStorage(next);
+        syncStateToFirebaseNow(next);
+        return next;
+      }
+      return current;
+    });
+  }, []);
+
   // Real-time Firebase Firestore Subscription & Chat Notifications
   const prevChatCountRef = useRef<number>(0);
+  const prevTxCountRef = useRef<number>(0);
   const locallySentMsgIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     // Ensure any stale quota lockout is cleared so multi-device sync connects immediately
@@ -361,8 +443,8 @@ export default function App() {
     const unsubscribe = subscribeToFirebaseState((remoteState) => {
       if (remoteState && typeof remoteState === 'object') {
         setState(prev => {
-          const remoteDeletedIds = Array.isArray(remoteState.deletedEntityIds) ? remoteState.deletedEntityIds : [];
-          const localDeletedIds = Array.isArray(prev.deletedEntityIds) ? prev.deletedEntityIds : [];
+          const remoteDeletedIds = (Array.isArray(remoteState.deletedEntityIds) ? remoteState.deletedEntityIds : []).filter(id => !isCanonicalTransactionId(id));
+          const localDeletedIds = (Array.isArray(prev.deletedEntityIds) ? prev.deletedEntityIds : []).filter(id => !isCanonicalTransactionId(id));
           const combinedDeletedIds = Array.from(new Set([...localDeletedIds, ...remoteDeletedIds]));
 
           const mergedUsers = mergeListById(prev.users, remoteState.users, combinedDeletedIds);
@@ -411,6 +493,26 @@ export default function App() {
             }
           }
           prevChatCountRef.current = incomingMsgs.length;
+
+          // Check for newly logged transactions from other team members
+          const incomingTxs = mergedTransactions || [];
+          if (prevTxCountRef.current > 0 && incomingTxs.length > prevTxCountRef.current) {
+            const prevIds = new Set(prev.transactions.map(t => t.id));
+            const newTxs = incomingTxs.filter(t => !prevIds.has(t.id));
+            if (newTxs.length > 0) {
+              const latestTx = newTxs[0];
+              if (latestTx.creatorName !== activeUser.name) {
+                playNotificationSound('alert');
+                triggerHaptic('medium');
+                sendExternalNotification(`PlusZone ERP • New Transaction 💰`, {
+                  body: `${latestTx.creatorName}: ${latestTx.description} (${latestTx.type === 'INCOME' ? '+' : '-'}${formatETB(latestTx.amount)})`,
+                  tag: `tx-${latestTx.id}`
+                });
+                triggerToast(`🔔 Live Ledger: ${latestTx.type === 'INCOME' ? '+' : '-'}${formatETB(latestTx.amount)} by ${latestTx.creatorName}`);
+              }
+            }
+          }
+          prevTxCountRef.current = incomingTxs.length;
 
           return {
             ...prev,
@@ -809,6 +911,7 @@ export default function App() {
     expenseScope?: 'BUSINESS' | 'PERSONAL';
     refType?: 'LOAN' | 'RECEIVABLE' | 'EQUB' | 'TRANSFER' | 'SPLIT_SUB_ENTRY';
     refId?: string;
+    splits?: Array<{ walletId: string; amount: number }>;
   }) => {
     const targetWallet = state.wallets.find(w => w.id === data.walletId);
 
@@ -875,7 +978,8 @@ export default function App() {
       creatorName: state.currentUser.name,
       branch: state.currentUser.branch,
       refType: data.refType,
-      refId: data.refId
+      refId: data.refId,
+      splits: data.splits && data.splits.length > 0 ? data.splits : undefined
     };
 
     const targetEqub = data.refType === 'EQUB' && data.refId ? state.equbs.find(e => e.id === data.refId) : undefined;
@@ -897,44 +1001,50 @@ export default function App() {
         expenseScope: determinedScope,
         refType: data.refType,
         refId: data.refId,
+        splits: data.splits,
         equbName: targetEqub?.name,
         loanTitle: targetLoan?.title
       },
       branch: state.currentUser.branch
     };
 
+    let matchedRecInfo: { title: string; nextDueDate: string; periodsCovered: number } | null = null;
+
     setState(prev => {
-      const updatedEqubs = data.refType === 'EQUB' && data.refId
-        ? prev.equbs.map(e => {
-            if (e.id !== data.refId) return e;
-            const nextRound = e.currentRound + 1;
-            const isFinished = nextRound > e.totalRounds || e.currentRound >= e.totalRounds;
-            return {
-              ...e,
-              currentRound: Math.min(e.totalRounds, nextRound),
-              status: (isFinished ? 'COMPLETED' : 'ACTIVE') as 'ACTIVE' | 'COMPLETED'
-            };
-          })
-        : prev.equbs;
+      // 1. Synchronize Equb circle progress (tracks completedRounds and status)
+      const { updatedEqubs } = syncEqubWithTransaction(newTx, prev.equbs);
+
+      // 2. Synchronize Recurring payments (e.g. advance rent payments, utilities)
+      const { updatedRecurring, matchedTemplate, periodsCovered } = syncRecurringWithTransaction(newTx, prev.recurring);
+      if (matchedTemplate && periodsCovered > 0) {
+        matchedRecInfo = {
+          title: matchedTemplate.title,
+          nextDueDate: matchedTemplate.nextDueDate,
+          periodsCovered
+        };
+      }
 
       const updatedLoans = data.refType === 'LOAN' && data.refId
         ? prev.loans.map(l => {
             if (l.id !== data.refId) return l;
             const newBal = Math.max(0, l.outstandingBalance - data.amount);
-            const loanPaymentRecord: LoanPayment = {
-              id: `lp-tx-${Date.now()}`,
+            const loanSplits = data.splits && data.splits.length > 0
+              ? data.splits
+              : [{ walletId: data.walletId, amount: data.amount }];
+            const newRecords: LoanPayment[] = loanSplits.map((s, idx) => ({
+              id: `lp-tx-${Date.now()}-${idx}`,
               loanId: data.refId!,
               date: data.date,
-              amount: data.amount,
-              principal: data.amount,
+              amount: s.amount,
+              principal: s.amount,
               interest: 0,
-              walletId: data.walletId
-            };
+              walletId: s.walletId
+            }));
             return {
               ...l,
               outstandingBalance: newBal,
               status: (newBal <= 0 ? 'PAID' : 'ACTIVE') as 'ACTIVE' | 'PAID',
-              payments: [loanPaymentRecord, ...l.payments]
+              payments: [...newRecords, ...l.payments]
             };
           })
         : prev.loans;
@@ -944,12 +1054,18 @@ export default function App() {
         transactions: [newTx, ...prev.transactions],
         equbs: updatedEqubs,
         loans: updatedLoans,
+        recurring: updatedRecurring,
         auditLogs: [newAuditLog, ...prev.auditLogs]
       };
       saveStateToStorage(updatedState);
       syncStateToFirebaseNow(updatedState);
       return updatedState;
     });
+
+    if (matchedRecInfo) {
+      const info = matchedRecInfo as { title: string; nextDueDate: string; periodsCovered: number };
+      triggerToast(`🔄 Recurring schedule updated for ${info.title}! Paid in advance until ${new Date(info.nextDueDate).toLocaleDateString()} (${info.periodsCovered} cycle${info.periodsCovered > 1 ? 's' : ''}). Trajectory updated.`);
+    }
 
     if (targetEqub) {
       triggerToast(`🤝 ${formatETB(data.amount)} Equb contribution recorded for ${targetEqub.name} (Round #${targetEqub.currentRound})!`);
@@ -1035,6 +1151,13 @@ export default function App() {
       refId: item.refId
     }));
 
+    if (newTxs.length > 1) {
+      const allBatchIds = newTxs.map(t => t.id);
+      newTxs.forEach(t => {
+        t.siblingTxIds = allBatchIds.filter(id => id !== t.id);
+      });
+    }
+
     const totalAmount = items.reduce((acc, i) => acc + i.amount, 0);
     const equbRef = items.find(i => i.refType === 'EQUB' && i.refId);
     const targetEqub = equbRef ? state.equbs.find(e => e.id === equbRef.refId) : undefined;
@@ -1094,11 +1217,21 @@ export default function App() {
           })
         : prev.loans;
 
+      let currentRecurring = prev.recurring;
+      let currentEqubs = updatedEqubs;
+      for (const tx of newTxs) {
+        const recRes = syncRecurringWithTransaction(tx, currentRecurring);
+        currentRecurring = recRes.updatedRecurring;
+        const eqRes = syncEqubWithTransaction(tx, currentEqubs);
+        currentEqubs = eqRes.updatedEqubs;
+      }
+
       const updatedState = {
         ...prev,
         transactions: [...newTxs, ...prev.transactions],
-        equbs: updatedEqubs,
+        equbs: currentEqubs,
         loans: updatedLoans,
+        recurring: currentRecurring,
         auditLogs: [newAuditLog, ...prev.auditLogs]
       };
       saveStateToStorage(updatedState);
@@ -1358,7 +1491,7 @@ export default function App() {
     performRefresh(true);
   };
 
-  // 3.1 Update Transaction (CRUD Edit allowed only within 1 week of date)
+  // 3.1 Update Transaction (CRUD Edit with full Split Payment support)
   const handleUpdateTransaction = (
     txId: string,
     updatedData: {
@@ -1369,28 +1502,84 @@ export default function App() {
       description: string;
       walletId: string;
       expenseScope?: 'BUSINESS' | 'PERSONAL';
+      splits?: Array<{ walletId: string; amount: number }>;
+      refType?: Transaction['refType'];
+      refId?: string;
     }
   ) => {
-    const existingTx = state.transactions.find(t => t.id === txId);
+    const consolidatedList = consolidateEqubSplitTransactions(state.transactions, state.wallets);
+    const existingTx = state.transactions.find(t => t.id === txId) || consolidatedList.find(t => t.id === txId);
     if (!existingTx) return;
 
-    if (!isTransactionEditable(existingTx.date) && state.currentUser.role !== 'SuperAdmin') {
+    if (!isTransactionEditable(existingTx.date) && state.currentUser.role !== 'SuperAdmin' && state.currentUser.role !== 'Admin') {
       triggerToast(`⚠️ Can't be edited: transaction is older than 1 week!`);
       return;
     }
 
     setState(prev => {
-      const updatedTxs = prev.transactions.map(t =>
-        t.id === txId
-          ? {
-              ...t,
-              ...updatedData,
-              expenseScope: updatedData.type === 'EXPENSE'
-                ? (updatedData.expenseScope || 'BUSINESS')
-                : undefined
-            }
-          : t
-      );
+      // Find explicit sibling IDs to remove if updating a consolidated group
+      const consolidated = consolidateEqubSplitTransactions(prev.transactions, prev.wallets);
+      const isConsolidated = consolidated.find(c => c.id === txId);
+      
+      const siblingIdsToRemove = new Set<string>();
+      if (isConsolidated?.siblingTxIds && Array.isArray(isConsolidated.siblingTxIds)) {
+        isConsolidated.siblingTxIds.forEach(id => siblingIdsToRemove.add(id));
+      }
+      if (existingTx.siblingTxIds && Array.isArray(existingTx.siblingTxIds)) {
+        existingTx.siblingTxIds.forEach(id => siblingIdsToRemove.add(id));
+      }
+
+      // If txId is explicitly a batch-split Equb or Loan payment (e.g. tx-eq-<ts>-<idx> or tx-lp-<ts>-<idx>)
+      const eqBatchMatch = txId.match(/^(tx-eq-\d+)-\d+$/);
+      if (eqBatchMatch) {
+        prev.transactions.forEach(t => {
+          if (t.id !== txId && t.id.startsWith(`${eqBatchMatch[1]}-`)) {
+            siblingIdsToRemove.add(t.id);
+          }
+        });
+      }
+      const lpBatchMatch = txId.match(/^(tx-lp-\d+)-\d+$/);
+      if (lpBatchMatch) {
+        prev.transactions.forEach(t => {
+          if (t.id !== txId && t.id.startsWith(`${lpBatchMatch[1]}-`)) {
+            siblingIdsToRemove.add(t.id);
+          }
+        });
+      }
+      const txBatchMatch = txId.match(/^(tx-\d+)-\d+$/);
+      if (txBatchMatch) {
+        prev.transactions.forEach(t => {
+          if (t.id !== txId && t.id.startsWith(`${txBatchMatch[1]}-`)) {
+            siblingIdsToRemove.add(t.id);
+          }
+        });
+      }
+
+      const updatedItem: Transaction = {
+        ...existingTx,
+        ...updatedData,
+        id: txId,
+        refType: updatedData.refType !== undefined ? updatedData.refType : existingTx.refType,
+        refId: updatedData.refId !== undefined ? updatedData.refId : existingTx.refId,
+        splits: updatedData.splits && updatedData.splits.length > 0 ? updatedData.splits : undefined,
+        expenseScope: updatedData.type === 'EXPENSE'
+          ? (updatedData.expenseScope || 'BUSINESS')
+          : undefined
+      };
+
+      let replaced = false;
+      const mapped = prev.transactions
+        .filter(t => !siblingIdsToRemove.has(t.id))
+        .map(t => {
+          if (t.id === txId) {
+            replaced = true;
+            return updatedItem;
+          }
+          return t;
+        });
+
+      const updatedTxs = (replaced ? mapped : [updatedItem, ...mapped])
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
       const targetWallet = prev.wallets.find(w => w.id === updatedData.walletId);
       const newAuditLog = {
@@ -1405,14 +1594,20 @@ export default function App() {
           amount: updatedData.amount,
           category: updatedData.category,
           date: updatedData.date,
-          wallet: targetWallet?.name
+          wallet: targetWallet?.name,
+          splits: updatedData.splits
         },
         branch: prev.currentUser.branch
       };
 
+      const { updatedRecurring } = syncRecurringWithTransaction(updatedItem, prev.recurring);
+      const { updatedEqubs } = syncEqubWithTransaction(updatedItem, prev.equbs);
+
       const updatedState = {
         ...prev,
         transactions: updatedTxs,
+        equbs: updatedEqubs,
+        recurring: updatedRecurring,
         auditLogs: [newAuditLog, ...prev.auditLogs]
       };
       saveStateToStorage(updatedState);
@@ -1420,8 +1615,47 @@ export default function App() {
       return updatedState;
     });
 
-    triggerToast(`Transaction successfully updated!`);
+    if (updatedData.splits && updatedData.splits.length > 1) {
+      triggerToast(`Split payment successfully updated across ${updatedData.splits.length} wallets!`);
+    } else {
+      triggerToast(`Transaction successfully updated!`);
+    }
     performRefresh(true);
+  };
+
+  // 3.1b Full Ledger Refresh and Synchronization with Cloud Firestore
+  const handleRefreshTransactions = async () => {
+    triggerHaptic('medium');
+    try {
+      const latestRemote = await fetchLatestFirebaseState();
+      setState(prev => {
+        const canonicalMap = new Map<string, Transaction>();
+        DEFAULT_TRANSACTIONS.forEach(t => canonicalMap.set(t.id, t));
+        if (latestRemote?.transactions && Array.isArray(latestRemote.transactions)) {
+          latestRemote.transactions.forEach(t => {
+            if (t && t.id) canonicalMap.set(t.id, t);
+          });
+        }
+        prev.transactions.forEach(t => {
+          if (t && t.id) canonicalMap.set(t.id, t);
+        });
+        const allTxs = Array.from(canonicalMap.values())
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        const next: ERPState = {
+          ...prev,
+          transactions: allTxs,
+          deletedEntityIds: (prev.deletedEntityIds || []).filter(id => !isCanonicalTransactionId(id))
+        };
+        saveStateToStorage(next);
+        syncStateToFirebaseNow(next);
+        return next;
+      });
+      triggerToast('✅ All transactions refreshed and synchronized with Cloud Ledger');
+    } catch (err) {
+      console.error('Failed to refresh transactions', err);
+      triggerToast('⚠️ Ledger refreshed from local verified state');
+    }
   };
 
   // 3.2 Delete Transaction (Direct deletion authority for Admin and SuperAdmin)
@@ -1913,25 +2147,30 @@ export default function App() {
       walletId: s.walletId
     }));
 
-    const newTransactions: Transaction[] = effectiveSplits.map((s, idx) => {
+    const splitSummary = effectiveSplits.map(s => {
       const splitW = state.wallets.find(w => w.id === s.walletId);
-      return {
-        id: `tx-lp-${batchTimestamp}-${idx}`,
+      return `${getWalletNickname(splitW?.name)}: ${formatETB(s.amount)}`;
+    }).join(', ');
+
+    const newTransactions: Transaction[] = [
+      {
+        id: `tx-lp-${batchTimestamp}`,
         date: nowIso,
         type: isLent ? 'INCOME' : 'EXPENSE',
-        amount: s.amount,
-        walletId: s.walletId,
+        amount: totalAmount,
+        walletId: effectiveSplits[0].walletId,
         category: 'Loan Payment',
         description: isLent
-          ? `Collected loan repayment from ${targetLoan.counterparty}${effectiveSplits.length > 1 ? ` (Split ${idx + 1}/${effectiveSplits.length} - ${splitW?.name || 'Wallet'})` : ''}`
-          : `Paid loan installment to ${targetLoan.counterparty}${effectiveSplits.length > 1 ? ` (Split ${idx + 1}/${effectiveSplits.length} - ${splitW?.name || 'Wallet'})` : ''}`,
+          ? `Collected loan repayment from ${targetLoan.counterparty}${effectiveSplits.length > 1 ? ` (Split: ${splitSummary})` : ''}`
+          : `Paid loan installment to ${targetLoan.counterparty}${effectiveSplits.length > 1 ? ` (Split: ${splitSummary})` : ''}`,
         creatorId: state.currentUser.id,
         creatorName: state.currentUser.name,
         branch: state.currentUser.branch,
         refType: 'LOAN',
-        refId: loanId
-      };
-    });
+        refId: loanId,
+        splits: effectiveSplits.length > 1 ? effectiveSplits : undefined
+      }
+    ];
 
     const newAuditLog = {
       id: `aud-${batchTimestamp}`,
@@ -2480,10 +2719,31 @@ export default function App() {
           toastText = `🗑️ Transaction deleted from financial ledger.`;
         }
       } else if (req.actionType === 'EDIT_TRANSACTION' && req.payload) {
-        const existingTx = prev.transactions.find(t => t.id === req.targetId);
-        updatedTransactions = prev.transactions.map(t =>
-          t.id === req.targetId ? { ...t, ...req.payload } : t
-        );
+        const existingTx = prev.transactions.find(t => t.id === req.targetId) ||
+          consolidateEqubSplitTransactions(prev.transactions, prev.wallets).find(t => t.id === req.targetId);
+        const siblingIdsToRemove = new Set<string>();
+        if (existingTx?.siblingTxIds && Array.isArray(existingTx.siblingTxIds)) {
+          existingTx.siblingTxIds.forEach(id => siblingIdsToRemove.add(id));
+        }
+        const updatedItem = {
+          ...(existingTx || {}),
+          ...req.payload,
+          id: req.targetId,
+          splits: req.payload.splits && req.payload.splits.length > 0 ? req.payload.splits : undefined
+        } as Transaction;
+
+        let found = false;
+        const mapped = prev.transactions
+          .filter(t => !siblingIdsToRemove.has(t.id))
+          .map(t => {
+            if (t.id === req.targetId) {
+              found = true;
+              return updatedItem;
+            }
+            return t;
+          });
+        updatedTransactions = (found ? mapped : [updatedItem, ...mapped])
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         newAuditLogs.push({
           id: `aud-${Date.now()}`,
           timestamp: new Date().toISOString(),
@@ -2926,22 +3186,6 @@ export default function App() {
       });
     });
 
-    // Wallet low balance warnings
-    state.wallets.forEach(w => {
-      const bal = calculateWalletBalance(w, state.transactions, state.transfers);
-      if (bal < 10000) {
-        list.push({
-          id: `notif-bal-${w.id}`,
-          title: `Low Balance: ${w.name}`,
-          message: `Wallet balance is ${formatETB(bal)}. Top-up recommended.`,
-          type: 'HIGH',
-          time: 'Urgent',
-          timestamp: Date.now(),
-          actionTab: 'wallets'
-        });
-      }
-    });
-
     // Uncollected Receivables Alert
     const uncollectedReceivablesTotal = (state.receivables || [])
       .filter(r => r.status === 'OUTSTANDING')
@@ -2976,12 +3220,16 @@ export default function App() {
       });
     }
 
-    // Filter out dismissed notifications so seen ones stay removed!
-    const unreadList = list.filter(n => !dismissedNotifIds.includes(n.id));
+    // Filter out dismissed notifications & float alerts so seen ones stay removed!
+    const unreadList = list.filter(n =>
+      !dismissedNotifIds.includes(n.id) &&
+      !n.title.toLowerCase().includes('float') &&
+      !n.message.toLowerCase().includes('float')
+    );
 
     // Sort descending by timestamp (LATEST FIRST)
     return unreadList.sort((a, b) => b.timestamp - a.timestamp);
-  }, [state.equbs, state.loans, state.wallets, state.transactions, state.transfers, state.approvalRequests, state.receivables, state.chatMessages, state.currentUser, dismissedNotifIds, lastSeenChatTime]);
+  }, [state.equbs, state.loans, state.wallets, state.transactions, state.transfers, state.approvalRequests, state.receivables, state.chatMessages, state.currentUser, dismissedNotifIds, lastSeenChatTime, autoNotificationTicker]);
 
   const handleClearAllNotifications = React.useCallback(() => {
     const allIds = headerNotifications.map(n => n.id);
@@ -3251,9 +3499,6 @@ export default function App() {
   return (
     <div className={`min-h-screen transition-colors duration-200 ${state.theme === 'dark' ? 'dark bg-[#0A0E1A] text-[#F0F4FF]' : 'bg-[#F8FAFC] text-slate-900'}`}>
       
-      {/* PWA Install Banner & Offline Alert */}
-      <PwaInstallBanner />
-
       {/* Cloud Firestore Free Tier Quota Alert Banner */}
       <FirestoreQuotaBanner state={state} />
 
@@ -3294,7 +3539,6 @@ export default function App() {
         onToggleAutoRefresh={() => setAutoRefreshEnabled(prev => !prev)}
         onManualRefresh={() => performRefresh(true)}
         unreadChatCount={unreadChatCount}
-        onOpenPwaModal={() => setShowPwaModal(true)}
       />
 
       {/* Main Screen Container */}
@@ -3332,6 +3576,8 @@ export default function App() {
             receivables={state.receivables}
             loans={state.loans}
             equbs={state.equbs}
+            assets={state.assets}
+            recurring={state.recurring}
             wallets={state.wallets}
             categories={state.categories}
             currentUser={state.currentUser}
@@ -3339,6 +3585,7 @@ export default function App() {
             hideBalances={state.hideBalances}
             calendarType={state.calendarType || 'GREGORIAN'}
             onReverseTransaction={handleReverseTransaction}
+            onRefreshTransactions={handleRefreshTransactions}
             onUpdateTransaction={handleUpdateTransaction}
             onDeleteTransaction={handleDeleteTransaction}
             onClearAllTransactions={handleClearAllTransactions}
@@ -3377,6 +3624,7 @@ export default function App() {
         {activeTab === 'equb' && (
           <EqubView
             equbs={state.equbs}
+            transactions={state.transactions}
             loans={state.loans}
             receivables={state.receivables}
             wallets={state.wallets}
@@ -3440,7 +3688,6 @@ export default function App() {
             onCollectReceivable={handleCollectReceivable}
             onReplayTour={handleStartTour}
             onOpenHelp={handleOpenHelp}
-            onOpenPwaModal={() => setShowPwaModal(true)}
           />
         )}
       </main>
@@ -3454,6 +3701,9 @@ export default function App() {
           setShowQuickEntry(true);
         }}
         unreadChatCount={unreadChatCount}
+        onDismissNotification={handleDismissNotification}
+        onClearAllNotifications={handleClearAllNotifications}
+        onNavigateTab={(tab) => handleNavigateTab(tab)}
       />
 
       {/* Quick Entry Sheet Modal */}
@@ -3494,7 +3744,7 @@ export default function App() {
           triggerHaptic('medium');
           setShowAiAssistant(prev => !prev);
         }}
-        aria-label="Open PlusZone AI Business Partner"
+        aria-label="Open Gemini Chatbot"
         className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40 w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-[#0F172A]/95 hover:bg-[#1E293B] border border-[#00D4AA]/60 text-[#00D4AA] shadow-xl hover:shadow-[#00D4AA]/25 backdrop-blur-md hover:scale-105 active:scale-95 transition-all cursor-pointer group flex items-center justify-center"
       >
         <div className="relative flex items-center justify-center">
@@ -3581,26 +3831,7 @@ export default function App() {
       />
 
       {/* Non-intrusive Offline Connectivity Indicator */}
-      <OfflineIndicator onOpenCapabilities={() => setShowPwaModal(true)} />
-
-      {/* PWA Capabilities & Service Worker Inspector Modal */}
-      <PwaCapabilitiesModal
-        isOpen={showPwaModal}
-        onClose={() => setShowPwaModal(false)}
-        onSimulateShareTarget={(smsText) => {
-          setSharedSmsPrefill(smsText);
-          setShowQuickEntry(true);
-          triggerToast('📲 Payment SMS loaded into Quick Entry');
-        }}
-        onSimulateFileImport={() => {
-          triggerToast('📁 Financial ledger file processed by File Handler');
-        }}
-        onSimulateNote={() => {
-          setActiveTab('more');
-          setMoreSubView('CATEGORIES');
-          triggerToast('📝 Quick note launcher activated');
-        }}
-      />
+      <OfflineIndicator />
 
     </div>
   );

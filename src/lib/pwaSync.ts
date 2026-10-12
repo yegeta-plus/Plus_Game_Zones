@@ -90,6 +90,8 @@ export function initPwaServiceWorker(onSyncTriggered?: (tag: string) => void): (
   navigator.serviceWorker.register('/sw.js', { scope: '/' })
     .then((registration) => {
       console.log('[PWA] Service Worker registered with scope:', registration.scope);
+      // Immediately check for newer service worker on load
+      registration.update().catch(() => {});
 
       // Check for periodic sync support
       if ('periodicSync' in registration) {

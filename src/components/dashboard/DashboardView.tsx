@@ -131,6 +131,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const incomeAverages = calculateIncomeAverages(transactions, receivables);
 
   const [reportTimeframe, setReportTimeframe] = useState<'ALL' | 'DAILY' | 'MONTHLY' | 'YEARLY'>('ALL');
+  const [hideOperationalAlerts, setHideOperationalAlerts] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('pluszone_hide_operational_alerts') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const hasSeenOnboarding = useMemo(() => {
     try {
       const stored = localStorage.getItem(`has_seen_onboarding_${currentUser.id}`) || localStorage.getItem(ONBOARDING_STORAGE_KEY);
@@ -502,23 +509,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       });
     }
 
-    // Wallet low balance warnings
-    wallets.forEach(w => {
-      const bal = calculateWalletBalance(w, transactions, transfers);
-      if (bal < 10000) {
-        list.push({
-          id: `notif-bal-${w.id}`,
-          title: `Low Balance: ${w.name}`,
-          message: `Wallet balance is ${formatETB(bal)}. Top-up recommended.`,
-          type: 'HIGH',
-          time: 'Urgent',
-          timestamp: Date.now(),
-          icon: <AlertTriangle className="w-4 h-4 text-amber-400" />,
-          actionTab: 'wallets'
-        });
-      }
-    });
-
     // Recent Transactions (top 3)
     const sortedTxs = [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     if (sortedTxs.length > 0) {
@@ -537,8 +527,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       });
     }
 
-    // Filter out dismissed notifications & sort latest first
-    const activeList = list.filter(n => !dismissedNotifIds.includes(n.id));
+    // Filter out dismissed notifications & float alerts & sort latest first
+    const activeList = list.filter(n =>
+      !dismissedNotifIds.includes(n.id) &&
+      !n.title.toLowerCase().includes('float') &&
+      !n.message.toLowerCase().includes('float')
+    );
     return activeList.sort((a, b) => b.timestamp - a.timestamp);
   }, [activeEqubs, activeLoans, uncollectedReceivablesTotal, wallets, transactions, transfers, dismissedNotifIds]);
 
@@ -1504,80 +1498,114 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="space-y-6">
 
           {/* Operational Alerts Card */}
-          <div id="tour-operational-alerts" data-tour="dashboard-alerts" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-5 shadow-xs space-y-3.5">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#1C2638] pb-3">
-              <div className="flex items-center gap-2">
-                <Bell className="w-4 h-4 text-amber-500 animate-pulse" />
-                <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                  Operational Alerts
-                </h4>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-full">
-                  {notifications.length} Priority
-                </span>
-                {notifications.length > 0 && onClearAllNotifications && (
+          {!hideOperationalAlerts ? (
+            <div id="tour-operational-alerts" data-tour="dashboard-alerts" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-5 shadow-xs space-y-3.5 animate-fadeIn">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#1C2638] pb-3">
+                <div className="flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-amber-500 animate-pulse" />
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                    Operational Alerts
+                  </h4>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-full">
+                    {notifications.length} Priority
+                  </span>
+                  {notifications.length > 0 && onClearAllNotifications && (
+                    <button
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        onClearAllNotifications();
+                      }}
+                      className="text-[10px] font-bold text-slate-500 hover:text-rose-500 dark:text-slate-400 dark:hover:text-rose-400 transition-colors flex items-center gap-1 cursor-pointer"
+                      title="Clear all seen alerts"
+                    >
+                      <CheckCheck className="w-3.5 h-3.5" />
+                      <span>Clear All</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       triggerHaptic('medium');
-                      onClearAllNotifications();
+                      setHideOperationalAlerts(true);
+                      try {
+                        localStorage.setItem('pluszone_hide_operational_alerts', 'true');
+                      } catch (e) {}
                     }}
-                    className="text-[10px] font-bold text-slate-500 hover:text-rose-500 dark:text-slate-400 dark:hover:text-rose-400 transition-colors flex items-center gap-1 cursor-pointer"
-                    title="Clear all seen alerts"
+                    className="p-1 rounded-md text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors cursor-pointer"
+                    title="Dismiss / Hide Operational Alerts Card"
                   >
-                    <CheckCheck className="w-3.5 h-3.5" />
-                    <span>Clear All</span>
+                    <X className="w-3.5 h-3.5" />
                   </button>
+                </div>
+              </div>
+
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {notifications.map((n) => (
+                  <div
+                    key={n.id}
+                    onClick={() => {
+                      if (onDismissNotification) onDismissNotification(n.id);
+                      if (n.actionTab) onNavigateTab(n.actionTab, n.actionSubView);
+                    }}
+                    className="p-3 rounded-xl bg-slate-50 dark:bg-[#151C2A] border border-slate-200/80 dark:border-[#1C2638] hover:border-amber-400 transition-all cursor-pointer space-y-1 group relative"
+                  >
+                    <div className="flex items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-white overflow-hidden">
+                        {n.icon}
+                        <span className="truncate">{n.title}</span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[9px] font-mono font-medium text-slate-400">{n.time}</span>
+                        {onDismissNotification && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerHaptic('light');
+                              onDismissNotification(n.id);
+                            }}
+                            className="p-1 rounded-md hover:bg-black/10 dark:hover:bg-white/10 text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors cursor-pointer"
+                            title="Mark as seen / Dismiss"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-600 dark:text-[#8899BB] leading-snug">
+                      {n.message}
+                    </p>
+                  </div>
+                ))}
+
+                {notifications.length === 0 && (
+                  <div className="text-center py-6 text-slate-400 dark:text-slate-500 space-y-1">
+                    <CheckCircle2 className="w-6 h-6 text-emerald-500 dark:text-[#00D4AA] mx-auto opacity-90" />
+                    <p className="text-xs font-bold">No active operational alerts.</p>
+                  </div>
                 )}
               </div>
             </div>
-
-            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-              {notifications.map((n) => (
-                <div
-                  key={n.id}
-                  onClick={() => {
-                    if (onDismissNotification) onDismissNotification(n.id);
-                    if (n.actionTab) onNavigateTab(n.actionTab, n.actionSubView);
-                  }}
-                  className="p-3 rounded-xl bg-slate-50 dark:bg-[#151C2A] border border-slate-200/80 dark:border-[#1C2638] hover:border-amber-400 transition-all cursor-pointer space-y-1 group relative"
-                >
-                  <div className="flex items-center justify-between gap-1.5">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-white overflow-hidden">
-                      {n.icon}
-                      <span className="truncate">{n.title}</span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-[9px] font-mono font-medium text-slate-400">{n.time}</span>
-                      {onDismissNotification && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            triggerHaptic('light');
-                            onDismissNotification(n.id);
-                          }}
-                          className="p-1 rounded-md hover:bg-black/10 dark:hover:bg-white/10 text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors cursor-pointer"
-                          title="Mark as seen / Dismiss"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-slate-600 dark:text-[#8899BB] leading-snug">
-                    {n.message}
-                  </p>
-                </div>
-              ))}
-
-              {notifications.length === 0 && (
-                <div className="text-center py-6 text-slate-400 dark:text-slate-500 space-y-1">
-                  <CheckCircle2 className="w-6 h-6 text-emerald-500 dark:text-[#00D4AA] mx-auto opacity-90" />
-                  <p className="text-xs font-bold">No active operational alerts.</p>
-                </div>
-              )}
+          ) : (
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] text-xs animate-fadeIn">
+              <span className="text-[11px] text-slate-500 dark:text-[#8899BB] flex items-center gap-1.5 font-medium">
+                <Bell className="w-3.5 h-3.5 text-slate-400" />
+                Operational Alerts hidden
+              </span>
+              <button
+                onClick={() => {
+                  triggerHaptic('light');
+                  setHideOperationalAlerts(false);
+                  try {
+                    localStorage.removeItem('pluszone_hide_operational_alerts');
+                  } catch (e) {}
+                }}
+                className="text-[10px] font-bold text-emerald-600 dark:text-[#00D4AA] hover:underline cursor-pointer"
+              >
+                Restore
+              </button>
             </div>
-          </div>
+          )}
 
           {/* Upcoming Obligations Agenda */}
           <div id="tour-agenda-dues" data-tour="dashboard-agenda" className="bg-white dark:bg-[#111622] border border-slate-200/80 dark:border-[#1C2638] rounded-2xl p-5 shadow-xs space-y-3.5">

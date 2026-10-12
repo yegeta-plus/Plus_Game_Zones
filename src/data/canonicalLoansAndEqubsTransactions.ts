@@ -36,7 +36,7 @@ export const CANONICAL_LOAN_TRANSACTIONS: Transaction[] = [
     refId: 'loan-zeru-1'
   },
 
-  // 3. Zerubabel 2 (25,500 ETB Borrowed + 5,100 Repaid)
+  // 3. Zerubabel 2 (25,500 ETB Borrowed + 10,200 Repaid across 2 installments of 5,100 each)
   {
     id: 'tx-loan-zeru2-inflow',
     date: '2026-07-26T09:00:00.000Z',
@@ -51,12 +51,33 @@ export const CANONICAL_LOAN_TRANSACTIONS: Transaction[] = [
   },
   {
     id: 'tx-loan-zeru2-repay-1',
-    date: '2026-08-27T12:00:00.000Z',
+    date: '2026-08-31T12:00:00.000Z',
     type: 'EXPENSE',
     category: 'Loan Repayments',
     amount: 5100,
-    walletId: 'w-cash',
-    description: 'Monthly installment repayment to Zerubabel 2',
+    walletId: 'w-telebirr',
+    splits: [
+      { walletId: 'w-telebirr', amount: 3700 },
+      { walletId: 'w-cbe', amount: 1400 }
+    ],
+    description: 'Repayment on loan [Zerubabel 2] (Split: 3,700 ETB from Telebirr, 1,400 ETB from CBE)',
+    creatorName: 'Yegeta Huawei',
+    refType: 'LOAN',
+    refId: 'loan-zeru-2',
+    expenseScope: 'BUSINESS'
+  },
+  {
+    id: 'tx-loan-zeru2-repay-2',
+    date: '2026-10-09T14:01:00.000Z',
+    type: 'EXPENSE',
+    category: 'Loan Repayments',
+    amount: 5100,
+    walletId: 'w-telebirr',
+    splits: [
+      { walletId: 'w-telebirr', amount: 3700 },
+      { walletId: 'w-cbe', amount: 1400 }
+    ],
+    description: 'Repayment on loan [Zerubabel 2] (Split: 3,700 ETB from Telebirr, 1,400 ETB from CBE)',
     creatorName: 'Yegeta Huawei',
     refType: 'LOAN',
     refId: 'loan-zeru-2',
@@ -96,6 +117,7 @@ export const CANONICAL_LOAN_TRANSACTIONS: Transaction[] = [
     category: 'Loan Repayments',
     amount: 5000,
     walletId: 'w-cash',
+    splits: [{ walletId: 'w-cash', amount: 5000 }],
     description: 'Repayment installment to Hermi father (Cash split)',
     creatorName: 'Yegeta Huawei',
     refType: 'LOAN',
@@ -302,6 +324,20 @@ export const CANONICAL_LOAN_TRANSACTIONS: Transaction[] = [
     refType: 'LOAN',
     refId: 'loan-zeru-settled-1200',
     expenseScope: 'BUSINESS'
+  },
+
+  // 11. Zeru (Sep 10) (19,000 ETB Borrowed)
+  {
+    id: 'tx-20260910-inc-loan-zeru-19k',
+    date: '2026-09-10T10:00:00.000Z',
+    type: 'INCOME',
+    category: 'Loans Received',
+    amount: 19000,
+    walletId: 'w-cash',
+    description: 'Loan received from Zeru (Zerubabel)',
+    creatorName: 'Yegeta Huawei',
+    refType: 'LOAN',
+    refId: 'loan-zeru-sep10'
   }
 ];
 
@@ -323,7 +359,7 @@ export const CANONICAL_EQUB_TRANSACTIONS: Transaction[] = [
     refType: 'EQUB',
     refId: 'eq-agerye'
   },
-  // All 24 historical completed rounds prior to Round 25
+  // Agerye historical completed rounds
   ...[
     { r: 1, date: '2026-06-01T10:00:00.000Z' },
     { r: 2, date: '2026-06-11T10:00:00.000Z' },
@@ -335,7 +371,7 @@ export const CANONICAL_EQUB_TRANSACTIONS: Transaction[] = [
     { r: 8, date: '2026-08-01T10:00:00.000Z' },
     { r: 9, date: '2026-08-04T10:00:00.000Z' },
     { r: 10, date: '2026-08-07T10:00:00.000Z' },
-    { r: 11, date: '2026-08-10T10:00:00.000Z' },
+    { r: 11, date: '2026-08-10T10:00:00.000Z' }, // Aug 10: 5000 cash
     { r: 12, date: '2026-08-12T10:00:00.000Z' },
     { r: 13, date: '2026-08-14T10:00:00.000Z' },
     { r: 14, date: '2026-08-16T10:00:00.000Z' },
@@ -343,12 +379,11 @@ export const CANONICAL_EQUB_TRANSACTIONS: Transaction[] = [
     { r: 16, date: '2026-08-20T10:00:00.000Z' },
     { r: 17, date: '2026-08-22T10:00:00.000Z' },
     { r: 18, date: '2026-08-24T10:00:00.000Z' },
-    { r: 19, date: '2026-08-26T10:00:00.000Z' },
+    // Round 19 on Aug 26 handled below with split
     { r: 20, date: '2026-08-28T10:00:00.000Z' },
     { r: 21, date: '2026-08-29T10:00:00.000Z' },
     { r: 22, date: '2026-08-30T10:00:00.000Z' },
-    { r: 23, date: '2026-08-31T10:00:00.000Z' },
-    { r: 24, date: '2026-09-10T10:00:00.000Z' }
+    { r: 23, date: '2026-08-31T10:00:00.000Z' }
   ].map(({ r, date }): Transaction => ({
     id: `tx-equb-agerye-round-${r}`,
     date,
@@ -362,7 +397,42 @@ export const CANONICAL_EQUB_TRANSACTIONS: Transaction[] = [
     refId: 'eq-agerye',
     expenseScope: 'BUSINESS'
   })),
-  // Round 25 (Verified payment on Sep 20, 2026)
+
+  // Round 19: Aug 26 = 300 tele, 2000 cash
+  {
+    id: 'tx-equb-agerye-round-19',
+    date: '2026-08-26T10:00:00.000Z',
+    type: 'EXPENSE',
+    category: 'Equb Contribution',
+    amount: 2300,
+    walletId: 'w-cash',
+    splits: [
+      { walletId: 'w-telebirr', amount: 300 },
+      { walletId: 'w-cash', amount: 2000 }
+    ],
+    description: 'Ekub round contribution: Agerye (Round 19 - Split: Telebirr ETB 300, Cash ETB 2,000)',
+    creatorName: 'Yegeta Huawei',
+    refType: 'EQUB',
+    refId: 'eq-agerye',
+    expenseScope: 'PERSONAL'
+  },
+
+  // Round 24: Sep 8 = 5000 cash
+  {
+    id: 'tx-20260908-exp-ekub-5000',
+    date: '2026-09-08T10:00:00.000Z',
+    type: 'EXPENSE',
+    category: 'Equb Contribution',
+    amount: 5000,
+    walletId: 'w-cash',
+    description: 'Ekub round contribution: Agerye (Round 24)',
+    creatorName: 'Yegeta Huawei',
+    refType: 'EQUB',
+    refId: 'eq-agerye',
+    expenseScope: 'PERSONAL'
+  },
+
+  // Round 25: Sep 20 = 5000 cash
   {
     id: 'tx-20260920-exp-ekub-1456',
     date: '2026-09-20T14:56:00.000Z',
@@ -371,10 +441,10 @@ export const CANONICAL_EQUB_TRANSACTIONS: Transaction[] = [
     amount: 5000,
     walletId: 'w-cash',
     description: 'Ekub round contribution: Agerye (Round 25)',
-    creatorName: 'Yegeta Huawei',
     refType: 'EQUB',
     refId: 'eq-agerye',
-    expenseScope: 'PERSONAL'
+    expenseScope: 'PERSONAL',
+    creatorName: 'Yegeta Huawei'
   },
 
   // ==========================================
@@ -418,7 +488,90 @@ export const CANONICAL_EQUB_TRANSACTIONS: Transaction[] = [
     refType: 'EQUB',
     refId: 'eq-leli',
     expenseScope: 'BUSINESS'
-  }))
+  })),
+
+  // ==========================================
+  // LELI EKUB 2 (Every 10 days, 10,000 ETB / round)
+  // Won Round 1 Payout: 60,000 ETB in cash on Sep 10
+  // Rounds Completed: 3 (Round 1: Sep 10, Round 2: Sep 24, Round 3: Oct 5)
+  // ==========================================
+  {
+    id: 'tx-20260910-inc-ekub-leli2-payout',
+    date: '2026-09-10T10:15:00.000Z',
+    type: 'INCOME',
+    category: 'Equb Payout',
+    amount: 60000,
+    walletId: 'w-cash',
+    description: 'Ekub payout won: Leli ekub 2 (Round 1 Pool Winnings)',
+    creatorName: 'Yegeta Huawei',
+    refType: 'EQUB',
+    refId: 'eq-leli-2'
+  },
+  {
+    id: 'tx-20260910-exp-ekub-10000',
+    date: '2026-09-10T10:00:00.000Z',
+    type: 'EXPENSE',
+    category: 'Equb Contribution',
+    amount: 10000,
+    walletId: 'w-cash',
+    description: 'Ekub round contribution: Leli ekub 2 (Round 1)',
+    creatorName: 'Yegeta Huawei',
+    refType: 'EQUB',
+    refId: 'eq-leli-2',
+    expenseScope: 'BUSINESS'
+  },
+  {
+    id: 'tx-20260924-exp-ekub-2242',
+    date: '2026-09-24T22:42:00.000Z',
+    type: 'EXPENSE',
+    category: 'Equb Contribution',
+    amount: 10000,
+    walletId: 'w-cash',
+    splits: [
+      { walletId: 'w-telebirr', amount: 2800 },
+      { walletId: 'w-cash', amount: 7200 }
+    ],
+    description: 'Ekub round contribution: Leli ekub 2 (Round 2 - Split: Telebirr ETB 2,800, Cash ETB 7,200)',
+    creatorName: 'Yegeta Huawei',
+    refType: 'EQUB',
+    refId: 'eq-leli-2',
+    expenseScope: 'PERSONAL'
+  },
+  {
+    id: 'tx-20261005-exp-ekub-1544',
+    date: '2026-10-05T15:44:00.000Z',
+    type: 'EXPENSE',
+    category: 'Equb Contribution',
+    amount: 10000,
+    walletId: 'w-cash',
+    splits: [
+      { walletId: 'w-telebirr', amount: 3550 },
+      { walletId: 'w-cbe', amount: 400 },
+      { walletId: 'w-cash', amount: 6050 }
+    ],
+    description: 'Ekub round contribution: Leli ekub 2 (Round 3 - Split: Telebirr ETB 3,550, CBE ETB 400, Cash ETB 6,050)',
+    refType: 'EQUB',
+    refId: 'eq-leli-2',
+    expenseScope: 'PERSONAL',
+    creatorName: 'Yegeta Huawei'
+  },
+
+  // 09/24 house renewal 14600 = 3000 telebirr, 11600 cash
+  {
+    id: 'tx-20260924-exp-house-renewal',
+    date: '2026-09-24T09:00:00.000Z',
+    type: 'EXPENSE',
+    category: 'Rent',
+    amount: 14600,
+    walletId: 'w-cash',
+    splits: [
+      { walletId: 'w-telebirr', amount: 3000 },
+      { walletId: 'w-cash', amount: 11600 }
+    ],
+    description: 'House renewal (Split: Telebirr ETB 3,000, Cash ETB 11,600)',
+    creatorName: 'Yegeta Huawei',
+    expenseScope: 'BUSINESS'
+  }
 ];
 
 export const SEPTEMBER_10_TO_12_TRANSACTIONS: Transaction[] = [
@@ -426,13 +579,61 @@ export const SEPTEMBER_10_TO_12_TRANSACTIONS: Transaction[] = [
   // SEPTEMBER 10, 2026
   // ==========================================
   {
-    id: 'tx-20260910-exp-rent-14600',
-    date: '2026-09-10T09:00:00.000Z',
+    id: 'tx-20260910-exp-rent-69000',
+    date: '2026-09-10T09:30:00.000Z',
     type: 'EXPENSE',
     category: 'Rent',
-    amount: 14600,
-    walletId: 'w-cbe',
-    description: 'Shop Rent for September',
+    amount: 69000,
+    walletId: 'w-cash',
+    description: 'Shop rent paid in cash (69k)',
+    creatorName: 'Yegeta Huawei',
+    expenseScope: 'BUSINESS'
+  },
+  {
+    id: 'tx-20260910-inc-loan-zeru-19k',
+    date: '2026-09-10T10:00:00.000Z',
+    type: 'INCOME',
+    category: 'Loans Received',
+    amount: 19000,
+    walletId: 'w-cash',
+    description: 'Loan received from Zeru (Zerubabel)',
+    creatorName: 'Yegeta Huawei',
+    refType: 'LOAN',
+    refId: 'loan-zeru-sep10'
+  },
+  {
+    id: 'tx-20260910-inc-ekub-leli2-payout',
+    date: '2026-09-10T10:15:00.000Z',
+    type: 'INCOME',
+    category: 'Equb Payout',
+    amount: 60000,
+    walletId: 'w-cash',
+    description: 'Ekub payout won: Leli ekub 2 (Round 1 Pool Winnings)',
+    creatorName: 'Yegeta Huawei',
+    refType: 'EQUB',
+    refId: 'eq-leli-2'
+  },
+  {
+    id: 'tx-20260910-exp-ekub-10000',
+    date: '2026-09-10T10:00:00.000Z',
+    type: 'EXPENSE',
+    category: 'Equb Contribution',
+    amount: 10000,
+    walletId: 'w-cash',
+    description: 'Ekub round contribution: Leli ekub 2 (Round 1)',
+    creatorName: 'Yegeta Huawei',
+    refType: 'EQUB',
+    refId: 'eq-leli-2',
+    expenseScope: 'BUSINESS'
+  },
+  {
+    id: 'tx-20260910-exp-yegodele-3520',
+    date: '2026-09-10T10:30:00.000Z',
+    type: 'EXPENSE',
+    category: 'Miscellaneous Expense',
+    amount: 3520,
+    walletId: 'w-cash',
+    description: 'Cash variance (Yegodele hisab lay yaltegegne)',
     creatorName: 'Yegeta Huawei',
     expenseScope: 'BUSINESS'
   },
@@ -470,17 +671,6 @@ export const SEPTEMBER_10_TO_12_TRANSACTIONS: Transaction[] = [
   // ==========================================
   // SEPTEMBER 11, 2026 (Enkutatash / Ethiopian New Year)
   // ==========================================
-  {
-    id: 'tx-20260911-exp-holiday-650',
-    date: '2026-09-11T12:00:00.000Z',
-    type: 'EXPENSE',
-    category: 'Food & Refreshments',
-    amount: 650,
-    walletId: 'w-cash',
-    description: 'Enkutatash holiday dinner & celebration',
-    creatorName: 'Yegeta Huawei',
-    expenseScope: 'PERSONAL'
-  },
   {
     id: 'tx-20260911-inc-cash-890',
     date: '2026-09-11T16:00:00.000Z',

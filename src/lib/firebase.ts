@@ -18,7 +18,7 @@ import {
 } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import config from '../../firebase-applet-config.json';
-import { ERPState } from './store';
+import { ERPState, isCanonicalTransactionId } from './store';
 import { ChatMessage, ChatMessageReaction, UserProfile } from '../types';
 
 const metaEnv = (import.meta as unknown as { env?: Record<string, string> }).env || {};
@@ -360,9 +360,23 @@ export function subscribeToFirebaseState(onUpdate: (remoteState: Partial<ERPStat
         if (snapshot.exists()) {
           const data = snapshot.data();
           if (data && data.state) {
+            const rawState: any = typeof data.state === 'string' ? JSON.parse(data.state) : { ...data.state };
+            const rawDeleted = Array.isArray(rawState.deletedEntityIds) ? rawState.deletedEntityIds : [];
+            const deletedTestIds = new Set(rawDeleted.filter((id: string) => !isCanonicalTransactionId(id)));
+            deletedTestIds.add('tx-1790749015154');
+            deletedTestIds.add('tx-1790748931615');
+            if (rawState && Array.isArray(rawState.transactions)) {
+              rawState.transactions = rawState.transactions
+                .filter((t: any) => {
+                  if (!t || !t.id) return false;
+                  if (isCanonicalTransactionId(t.id)) return true;
+                  return !deletedTestIds.has(t.id);
+                })
+                .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            }
             isRemoteUpdate = true;
-            lastSyncedFingerprint = getStateFingerprint(data.state as ERPState);
-            onUpdate(data.state as ERPState);
+            lastSyncedFingerprint = getStateFingerprint(rawState as ERPState);
+            onUpdate(rawState as ERPState);
             // Reset flag after 250ms so user interactions are never blocked
             setTimeout(() => {
               isRemoteUpdate = false;
@@ -416,8 +430,22 @@ export async function fetchLatestFirebaseState(): Promise<Partial<ERPState> | nu
     if (snapshot.exists()) {
       const data = snapshot.data();
       if (data && data.state) {
-        lastSyncedFingerprint = getStateFingerprint(data.state as ERPState);
-        return data.state as Partial<ERPState>;
+        const rawState: any = typeof data.state === 'string' ? JSON.parse(data.state) : { ...data.state };
+        const rawDeleted = Array.isArray(rawState.deletedEntityIds) ? rawState.deletedEntityIds : [];
+        const deletedTestIds = new Set(rawDeleted.filter((id: string) => !isCanonicalTransactionId(id)));
+        deletedTestIds.add('tx-1790749015154');
+        deletedTestIds.add('tx-1790748931615');
+        if (rawState && Array.isArray(rawState.transactions)) {
+          rawState.transactions = rawState.transactions
+            .filter((t: any) => {
+              if (!t || !t.id) return false;
+              if (isCanonicalTransactionId(t.id)) return true;
+              return !deletedTestIds.has(t.id);
+            })
+            .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        }
+        lastSyncedFingerprint = getStateFingerprint(rawState as ERPState);
+        return rawState as Partial<ERPState>;
       }
     }
   } catch (err: any) {

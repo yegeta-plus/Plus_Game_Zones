@@ -153,7 +153,7 @@ export const SecuritySystemView: React.FC<{ state: ERPState }> = ({ state }) => 
       {
         id: 'sess-mob-2',
         deviceName: 'Samsung Galaxy S24 Ultra',
-        browser: 'Mobile Safari / PWA',
+        browser: 'Mobile Browser',
         ipAddress: '196.189.102.55',
         location: 'Addis Ababa, Kazanchis, ET',
         lastActive: '12 mins ago',

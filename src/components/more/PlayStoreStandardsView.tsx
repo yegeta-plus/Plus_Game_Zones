@@ -169,7 +169,7 @@ export const PlayStoreStandardsView: React.FC<{ state: ERPState }> = ({ state })
               <ul className="space-y-2 text-xs">
                 <li className="flex items-start gap-2 text-slate-700 dark:text-slate-300">
                   <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                  <span><strong>Valid PWA Icons:</strong> 192x192 & 512x512 sharp PNG icons with maskable & any purposes defined in manifest.json.</span>
+                  <span><strong>Valid Application Icons:</strong> 192x192 & 512x512 sharp PNG icons with maskable & any purposes defined in manifest.json.</span>
                 </li>
                 <li className="flex items-start gap-2 text-slate-700 dark:text-slate-300">
                   <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
@@ -206,7 +206,7 @@ export const PlayStoreStandardsView: React.FC<{ state: ERPState }> = ({ state })
                 </li>
                 <li className="flex items-start gap-2 text-slate-700 dark:text-slate-300">
                   <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                  <span><strong>Offline Resilience:</strong> Service worker caching (`sw.js`) guarantees continuous operation offline.</span>
+                  <span><strong>Offline Resilience:</strong> Local high-performance caching guarantees continuous operation offline.</span>
                 </li>
               </ul>
             </div>

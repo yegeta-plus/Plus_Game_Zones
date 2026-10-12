@@ -734,17 +734,23 @@ export function simulateScenario(
     else if (eq.interval === 'EVERY_15_DAYS') intervalMult = 2;
     else if (eq.interval === 'MONTHLY') intervalMult = 1;
     const slots = eq.mySlots || 1;
-    const monthlyContrib = Math.round(slots * eq.contributionPerRound * intervalMult);
+    const completed = typeof eq.completedRounds === 'number' ? eq.completedRounds : Math.max(0, eq.currentRound - 1);
+    const remRounds = Math.max(0, eq.totalRounds - completed);
+    // In immediate month, commitment cannot exceed actual remaining rounds
+    const effectiveRoundsInMonth = Math.min(intervalMult, remRounds);
+    const monthlyContrib = Math.round(slots * eq.contributionPerRound * effectiveRoundsInMonth);
     activeEqubsMonthlyCommitment += monthlyContrib;
-    recurringBreakdown.push({
-      id: eq.id,
-      title: `Equb Circle: ${eq.name}`,
-      amount: eq.contributionPerRound * slots,
-      frequency: eq.interval,
-      category: 'Equb Contribution',
-      monthlyEquiv: monthlyContrib,
-      type: 'EXPENSE'
-    });
+    if (remRounds > 0) {
+      recurringBreakdown.push({
+        id: eq.id,
+        title: `Equb Circle: ${eq.name} (${remRounds} round${remRounds > 1 ? 's' : ''} left)`,
+        amount: eq.contributionPerRound * slots,
+        frequency: eq.interval,
+        category: 'Equb Contribution',
+        monthlyEquiv: monthlyContrib,
+        type: 'EXPENSE'
+      });
+    }
   });
 
   const totalFixedMonthlyObligations = recurringMonthlyExpense + loanMonthlyRepayment + activeEqubsMonthlyCommitment;
@@ -1316,7 +1322,8 @@ export function simulateScenario(
   if (input.equbs && input.equbs.length > 0) {
     const activeBusinessEqubs = input.equbs.filter((eq) => eq.status === 'ACTIVE');
     activeBusinessEqubs.forEach((eq) => {
-      const startRound = eq.currentRound || 1;
+      const completed = typeof eq.completedRounds === 'number' ? eq.completedRounds : Math.max(0, eq.currentRound - 1);
+      const startRound = Math.max(eq.currentRound || 1, completed + 1);
       const totalRounds = eq.totalRounds || 12;
       const slots = eq.mySlots || 1;
       const eqInterval = eq.interval || 'EVERY_10_DAYS';

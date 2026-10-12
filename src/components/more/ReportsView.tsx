@@ -46,6 +46,7 @@ import { triggerHaptic } from '../../lib/haptics';
 import { formatDateByCalendar } from '../../lib/ethiopianCalendar';
 import {
   generatePDFReport,
+  generateAuditPDFReport,
   generateExcelReport,
   printFinancialStatement
 } from '../../lib/exports';
@@ -655,6 +656,21 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
           >
             <FileText className="w-4 h-4" />
             <span>Export PDF</span>
+          </button>
+
+          <button
+            onClick={() => {
+              triggerHaptic('medium');
+              generateAuditPDFReport({
+                state,
+                transactions: filteredTransactions
+              });
+            }}
+            className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
+            title="Download 13-Column Transaction, Loan, Equb & Receivable Audit PDF"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>Audit PDF</span>
           </button>
 
           <button

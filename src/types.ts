@@ -101,6 +101,7 @@ export interface Transaction {
   reversed?: boolean;
   reversedAt?: string;
   splits?: Array<{ walletId: string; amount: number }>;
+  siblingTxIds?: string[];
   // Daily Aggregation & SMS Fraud-Prevention fields
   provider?: 'telebirr' | 'cbe' | 'ebirr';
   source?: 'auto_sms_confirmation' | 'manual' | 'import';
@@ -279,6 +280,7 @@ export interface RecurringTemplate {
   autoProcess: boolean;
   status: 'ACTIVE' | 'PAUSED';
   lastProcessedDate?: string;
+  prepaidUntilDate?: string;
   notes?: string;
   beneficiary?: string;
 }

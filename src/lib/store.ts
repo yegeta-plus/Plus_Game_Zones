@@ -36,11 +36,27 @@ import {
 } from '../data/verifiedLedgerTransactions';
 import { normalizeTransactionScopes, isPersonalExpense, resolveExpenseScope } from './expenseClassifier';
 import { getActiveAuthSession } from './authSession';
+import { calculateNextEthiopianDueDate } from './ethiopianCalendar';
 
 export type { ERPState } from '../types';
 export { isPersonalExpense, resolveExpenseScope, normalizeTransactionScopes };
 
-const STORAGE_KEY = 'pluszone_fin_erp_state_v31_equb_round25_updated';
+const STORAGE_KEY = 'pluszone_fin_erp_state_v52_oct12_advance_rent_and_equb_trajectory';
+
+/**
+ * Validates whether a transaction ID belongs to the immutable canonical business ledger.
+ * Canonical transactions (July 1 - October present) must never be purged or suppressed by test deletion logs.
+ */
+export function isCanonicalTransactionId(id: string): boolean {
+  if (!id || typeof id !== 'string') return false;
+  return (
+    id.startsWith('tx-2026') ||
+    id.startsWith('tx-jul') ||
+    id.startsWith('tx-equb') ||
+    id.startsWith('tx-loan') ||
+    id.startsWith('tx-rent')
+  );
+}
 
 export const DEFAULT_AUTOMATED_EMAIL_REPORTS: AutomatedEmailReportsSettings = {
   enabled: true,
@@ -146,7 +162,7 @@ const DEFAULT_WALLETS: Wallet[] = [
     id: 'w-telebirr',
     name: 'Telebirr',
     type: 'TELEBIRR',
-    accountNumber: '0989367877',
+    accountNumber: '0989367877 (acc-1782999486323-1)',
     openingBalance: INITIAL_DATASET_JULY_AUG.openingBalances.telebirr,
     totalIn: 0,
     totalOut: 0,
@@ -244,7 +260,8 @@ const DEFAULT_CATEGORIES: Category[] = [
   { id: 'cat-exp', name: 'Expense', type: 'EXPENSE', icon: 'MinusCircle', color: '#EF4444', active: true },
   { id: 'cat-rc', name: 'Receivable Created', type: 'INCOME', icon: 'Clock', color: '#6366F1', active: true },
   { id: 'cat-gen', name: 'Genesis / Setup', type: 'INCOME', icon: 'Settings', color: '#64748B', active: true },
-  { id: 'cat-ob', name: 'Opening Balance', type: 'INCOME', icon: 'Landmark', color: '#3B82F6', active: true }
+  { id: 'cat-ob', name: 'Opening Balance', type: 'INCOME', icon: 'Landmark', color: '#3B82F6', active: true },
+  { id: 'cat-bal-adj', name: 'Balance Correction', type: 'EXPENSE', icon: 'Sliders', color: '#6366F1', active: true }
 ];
 
 export const DEFAULT_TRANSACTIONS: Transaction[] = INITIAL_DATASET_JULY_AUG.transactions;
@@ -347,6 +364,21 @@ export const DEFAULT_RECURRING: RecurringTemplate[] = [
     status: 'ACTIVE',
     beneficiary: 'Person 3',
     notes: 'Staff transport allowance for Person 3 (ETB 1,000 on 25th of month). Manual confirmation required.'
+  },
+  {
+    id: 'rec-rent-shop',
+    title: 'Commercial Space / Shop Rent',
+    amount: 23000,
+    type: 'EXPENSE',
+    category: 'Rent & Lease',
+    walletId: 'w-cash',
+    frequency: 'MONTHLY',
+    nextDueDate: '2026-12-10T00:00:00.000Z',
+    prepaidUntilDate: '2026-12-10T00:00:00.000Z',
+    lastProcessedDate: '2026-09-10T09:30:00.000Z',
+    autoProcess: false,
+    status: 'ACTIVE',
+    notes: 'Commercial shop rent ETB 23,000/mo. Paid 69,000 in advance on Sep 10 (prepaid until Dec 10, 2026).'
   }
 ];
 const DEFAULT_RECEIVABLES: Receivable[] = INITIAL_DATASET_JULY_AUG.receivables;
@@ -388,9 +420,30 @@ export function loadInitialState(): ERPState {
     return createInitialState();
   }
   try {
-    const raw = localStorage.getItem(STORAGE_KEY) ||
-      localStorage.getItem('pluszone_fin_erp_state_v30_loans_equbs_included') ||
-      localStorage.getItem('pluszone_fin_erp_state_v29_restored_history');
+    // Actively purge obsolete localStorage keys so stale cached transactions never linger
+    const obsoleteKeys = [
+      'pluszone_fin_erp_state_v51_oct12_dynamic_equb_trajectory',
+      'pluszone_fin_erp_state_v50_oct11_wallet_balance_corrections',
+      'pluszone_fin_erp_state_v49_oct11_verified_sales_and_rcvs',
+      'pluszone_fin_erp_state_v48_oct9_agerye_round25_last',
+      'pluszone_fin_erp_state_v47_oct9_zerubabel2_repayments',
+      'pluszone_fin_erp_state_v46_oct9_oct6_to_oct8_txs',
+      'pluszone_fin_erp_state_v45_oct9_shop_rent_69k',
+      'pluszone_fin_erp_state_v44_oct9_loans_and_equbs_final',
+      'pluszone_fin_erp_state_v43_oct8_equb_and_tx_final',
+      'pluszone_fin_erp_state_v33_sep24_30_updated',
+      'pluszone_fin_erp_state_v32_sep24_30_updated',
+      'pluszone_fin_erp_state_v31_sep24_30_updated',
+      'pluszone_fin_erp_state_v30_loans_equbs_included',
+      'pluszone_fin_erp_state_v29_restored_history'
+    ];
+
+    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('pluszone_fin_erp_state_v50_oct11_wallet_balance_corrections') || localStorage.getItem('pluszone_fin_erp_state_v49_oct11_verified_sales_and_rcvs');
+    obsoleteKeys.forEach((k) => {
+      try {
+        localStorage.removeItem(k);
+      } catch (_) {}
+    });
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed) {
@@ -439,14 +492,17 @@ export function loadInitialState(): ERPState {
           parsed.equbs = parsed.equbs.map((existingEqub: Equb) => {
             const canonical = canonicalEqubMap.get(existingEqub.id);
             if (canonical) {
+              const completed = existingEqub.id === 'eq-agerye' ? (canonical.completedRounds ?? 25) : Math.max(existingEqub.completedRounds ?? 0, canonical.completedRounds ?? 0);
+              const current = existingEqub.id === 'eq-agerye' ? (canonical.currentRound || 26) : Math.max(existingEqub.currentRound || 1, canonical.currentRound);
+              const isDone = completed >= canonical.totalRounds || existingEqub.status === 'COMPLETED' || canonical.status === 'COMPLETED';
               return {
                 ...existingEqub,
-                currentRound: canonical.currentRound,
-                completedRounds: canonical.completedRounds,
+                currentRound: isDone ? canonical.totalRounds : current,
+                completedRounds: completed,
                 totalRounds: canonical.totalRounds,
                 contributionPerRound: canonical.contributionPerRound,
-                status: canonical.status,
-                isOverdue: canonical.isOverdue,
+                status: isDone ? 'COMPLETED' : 'ACTIVE',
+                isOverdue: isDone ? false : (existingEqub.isOverdue !== undefined ? existingEqub.isOverdue : canonical.isOverdue),
                 members: canonical.members,
                 payoutsClaimed: canonical.payoutsClaimed
               };
@@ -477,6 +533,8 @@ export function loadInitialState(): ERPState {
             if (canonical) {
               return {
                 ...existingLoan,
+                title: canonical.title,
+                counterparty: canonical.counterparty,
                 repaymentType: canonical.repaymentType || existingLoan.repaymentType,
                 dueDate: canonical.dueDate,
                 initialAmount: canonical.initialAmount,
@@ -523,19 +581,41 @@ export function loadInitialState(): ERPState {
           };
         });
 
-        // Retain any user-created or registered transactions in storage so they are not wiped
+        // Retain verified transactions and any valid user-created transactions
+        const obsoleteTxIds = new Set(['tx-20260910-exp-house-renewal', 'tx-20260910-exp-rent-6900', 'tx-20261002-exp-ekub-0956']);
         const existingTxMap = new Map<string, Transaction>();
-        baseTransactions.forEach(t => existingTxMap.set(t.id, t));
+        baseTransactions.forEach(t => {
+          if (!obsoleteTxIds.has(t.id)) {
+            existingTxMap.set(t.id, t);
+          }
+        });
         if (Array.isArray(parsed.transactions)) {
           parsed.transactions.forEach((t: Transaction) => {
-            if (t && t.id) {
+            if (t && t.id && !obsoleteTxIds.has(t.id)) {
               if (!existingTxMap.has(t.id)) {
                 existingTxMap.set(t.id, t);
               }
             }
           });
         }
-        parsed.transactions = Array.from(existingTxMap.values());
+        
+        // Exclude only known deleted test transactions, never canonical ledger items
+        const rawDeletedIds = Array.isArray(parsed.deletedEntityIds) ? parsed.deletedEntityIds : [];
+        const deletedTestIds = new Set(rawDeletedIds.filter((id: string) => !isCanonicalTransactionId(id)));
+        deletedTestIds.add('tx-1790749015154');
+        deletedTestIds.add('tx-1790748931615');
+
+        parsed.transactions = Array.from(existingTxMap.values())
+          .filter((t: Transaction) => {
+            if (!t || !t.id) return false;
+            if (obsoleteTxIds.has(t.id)) return false;
+            if (isCanonicalTransactionId(t.id)) return true;
+            if (deletedTestIds.has(t.id)) return false;
+            return true;
+          })
+          .sort((a: Transaction, b: Transaction) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        parsed.deletedEntityIds = Array.from(deletedTestIds);
 
         const baseTransfers = VERIFIED_TRANSFERS || [];
         const transferMap = new Map<string, Transfer>();
@@ -607,7 +687,7 @@ export function loadInitialState(): ERPState {
             return {
               ...w,
               name: 'Telebirr',
-              accountNumber: w.accountNumber && w.accountNumber !== '0911002233' ? w.accountNumber : '0989367877',
+              accountNumber: w.accountNumber && w.accountNumber.includes('acc-1782999486323-1') ? w.accountNumber : '0989367877 (acc-1782999486323-1)',
               color: '#0EA5E9',
               status,
               isCreditAccount: isCredit,
@@ -837,14 +917,14 @@ export function saveStateToStorage(state: ERPState) {
  * Calculations based on the ONE-LEDGER PRINCIPLE:
  * Wallet Balance = openingBalance + total Income Posted - total Expense Posted + Transfers In - Transfers Out
  */
-export function calculateWalletBalance(wallet: Wallet, transactions: Transaction[], transfers: Transfer[]): number {
+export function calculateWalletBalance(wallet: Wallet, transactions: Transaction[], transfers: Transfer[] = []): number {
   let balance = wallet.openingBalance || 0;
 
   // Active ledger period begins on 2026-09-07 where the user defined verified opening balances.
   // Prior period transactions (July 1 - Sep 6) are preserved for historical audit & reporting.
   const activePeriodStart = '2026-09-07T00:00:00.000Z';
   const activeTransactions = transactions.filter(tx => tx.date >= activePeriodStart);
-  const activeTransfers = transfers.filter(tr => tr.date >= activePeriodStart);
+  const activeTransfers = (transfers || []).filter(tr => tr.date >= activePeriodStart);
 
   for (const tx of activeTransactions) {
     if (tx.reversed) continue;
@@ -881,6 +961,60 @@ export function calculateWalletBalance(wallet: Wallet, transactions: Transaction
 
 export function calculateTotalBusinessBalance(wallets: Wallet[], transactions: Transaction[], transfers: Transfer[]): number {
   return Math.max(0, wallets.reduce((acc, w) => acc + calculateWalletBalance(w, transactions, transfers), 0));
+}
+
+/**
+ * Calculates net activity (inflows minus outflows) for a wallet since the active ledger start date.
+ */
+export function calculateWalletNetActivity(walletId: string, transactions: Transaction[], transfers: Transfer[] = []): number {
+  let net = 0;
+  const activePeriodStart = '2026-09-07T00:00:00.000Z';
+  const activeTransactions = transactions.filter(tx => tx.date >= activePeriodStart);
+  const activeTransfers = (transfers || []).filter(tr => tr.date >= activePeriodStart);
+
+  for (const tx of activeTransactions) {
+    if (tx.reversed) continue;
+    if (tx.splits && tx.splits.length > 0) {
+      const split = tx.splits.find(s => s.walletId === walletId);
+      if (split) {
+        if (tx.type === 'INCOME') {
+          net += Math.abs(split.amount);
+        } else {
+          net -= Math.abs(split.amount);
+        }
+      }
+    } else if (tx.walletId === walletId) {
+      if (tx.type === 'INCOME') {
+        net += Math.abs(tx.amount);
+      } else if (tx.type === 'EXPENSE') {
+        net -= Math.abs(tx.amount);
+      }
+    }
+  }
+
+  for (const tr of activeTransfers) {
+    if (tr.toWalletId === walletId) {
+      net += Math.abs(tr.amount);
+    }
+    if (tr.fromWalletId === walletId) {
+      net -= Math.abs(tr.amount);
+    }
+  }
+
+  return net;
+}
+
+/**
+ * Derives the opening balance required so that the current calculated wallet balance equals the target balance.
+ */
+export function getAdjustedOpeningBalanceForTargetBalance(
+  walletId: string,
+  targetBalance: number,
+  transactions: Transaction[],
+  transfers: Transfer[] = []
+): number {
+  const netActivity = calculateWalletNetActivity(walletId, transactions, transfers);
+  return Math.max(0, targetBalance - netActivity);
 }
 
 /**
@@ -1549,24 +1683,27 @@ export function mergeListById<T extends { id: string }>(
 ): T[] {
   if (!Array.isArray(localList)) localList = [];
   if (!Array.isArray(remoteList)) remoteList = [];
-  const deletedSet = new Set(Array.isArray(deletedEntityIds) ? deletedEntityIds : []);
+  const rawDeletedIds = Array.isArray(deletedEntityIds) ? deletedEntityIds : [];
+  const deletedSet = new Set(rawDeletedIds.filter((id: string) => !isCanonicalTransactionId(id)));
+  deletedSet.add('tx-1790749015154');
+  deletedSet.add('tx-1790748931615');
   const map = new Map<string, T>();
 
-  // 1. Populate remote items first (skipping deleted entities)
+  // 1. Populate remote items first (skipping deleted entities, keeping canonical ledger items)
   remoteList.forEach(item => {
-    if (item && typeof item === 'object' && item.id && !deletedSet.has(item.id)) {
+    if (item && typeof item === 'object' && item.id && (isCanonicalTransactionId(item.id) || !deletedSet.has(item.id))) {
       map.set(item.id, item);
     }
   });
 
-  // 2. Local items overwrite remote items with the same ID (skipping deleted entities)
+  // 2. Local items overwrite remote items with the same ID (skipping deleted entities, keeping canonical ledger items)
   localList.forEach(item => {
-    if (item && typeof item === 'object' && item.id && !deletedSet.has(item.id)) {
+    if (item && typeof item === 'object' && item.id && (isCanonicalTransactionId(item.id) || !deletedSet.has(item.id))) {
       map.set(item.id, item);
     }
   });
 
-  const merged = Array.from(map.values());
+  let merged = Array.from(map.values());
 
   // Additional safety check: If items are transactions with refType === 'RECEIVABLE', deduplicate accidental multi-posts
   if (merged.length > 0 && (merged[0] as any)?.refType !== undefined) {
@@ -1582,7 +1719,12 @@ export function mergeListById<T extends { id: string }>(
       }
       return true;
     });
-    return consolidateEqubSplitTransactions(deduplicated as any) as any;
+    merged = consolidateEqubSplitTransactions(deduplicated as any) as any;
+  }
+
+  // Update transactions and dated records sorted chronologically by their dates (descending)
+  if (merged.length > 0 && (merged[0] as any)?.date) {
+    return merged.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }
 
   return merged;
@@ -1785,7 +1927,8 @@ export function consolidateEqubSplitTransactions(
 
     const consolidatedTx: Transaction = {
       ...baseTx,
-      id: baseTx.id.replace(/-\d+$/, ''),
+      id: baseTx.id,
+      siblingTxIds: groupTxs.filter(t => t.id !== baseTx.id).map(t => t.id),
       amount: totalPaid,
       walletId: primaryWalletId,
       category: 'Equb Contribution',
@@ -1888,6 +2031,7 @@ export function revertEqubForDeletedContribution(equb: Equb, tx: Transaction): {
   const updatedEqub: Equb = {
     ...equb,
     currentRound: newRound,
+    completedRounds: Math.max(0, newRound - 1),
     status: 'ACTIVE'
   };
 
@@ -1906,6 +2050,141 @@ export function revertEqubForDeletedPayout(equb: Equb): Equb {
     ...equb,
     payoutsClaimed: Math.max(0, (equb.payoutsClaimed || 1) - 1)
   };
+}
+
+/**
+ * Automatically syncs and updates recurring templates when a transaction is recorded.
+ * E.g. If rent or another recurring expense is paid in advance, this advances nextDueDate
+ * by the number of prepaid periods so future trajectory projections reflect the advance payment.
+ */
+export function syncRecurringWithTransaction(
+  tx: Transaction,
+  recurring: RecurringTemplate[]
+): { updatedRecurring: RecurringTemplate[]; matchedTemplate?: RecurringTemplate; periodsCovered: number } {
+  if (tx.type !== 'EXPENSE' || tx.reversed) {
+    return { updatedRecurring: recurring, periodsCovered: 0 };
+  }
+
+  const catLower = (tx.category || '').toLowerCase();
+  const descLower = (tx.description || '').toLowerCase();
+
+  // Find matching recurring template
+  let matchedIndex = -1;
+  if (tx.refType === 'RECURRING' && tx.refId) {
+    matchedIndex = recurring.findIndex(r => r.id === tx.refId);
+  }
+
+  if (matchedIndex === -1) {
+    matchedIndex = recurring.findIndex(r => {
+      const rTitleLower = r.title.toLowerCase();
+      const rCatLower = (r.category || '').toLowerCase();
+
+      // Rent match (advance rent, shop rent, house renewal, etc.)
+      if (catLower.includes('rent') || descLower.includes('rent') || descLower.includes('renewal') || descLower.includes('lease')) {
+        return rCatLower.includes('rent') || rTitleLower.includes('rent') || rTitleLower.includes('lease') || r.id === 'rec-rent-shop';
+      }
+      // Internet / Fiber
+      if (catLower.includes('internet') || descLower.includes('internet') || descLower.includes('fiber')) {
+        return rCatLower.includes('internet') || rTitleLower.includes('internet') || r.id === 'rec-internet-monthly';
+      }
+      // Electricity
+      if (catLower.includes('electric') || descLower.includes('electric') || descLower.includes('power')) {
+        return rCatLower.includes('electric') || rTitleLower.includes('electric') || r.id === 'rec-electricity-3w';
+      }
+      // Water
+      if (catLower.includes('water') || descLower.includes('water')) {
+        return rCatLower.includes('water') || rTitleLower.includes('water') || r.id === 'rec-water-2m';
+      }
+      // Security / Police
+      if (catLower.includes('police') || catLower.includes('security') || descLower.includes('police') || descLower.includes('security')) {
+        return rCatLower.includes('police') || rTitleLower.includes('police') || rTitleLower.includes('security') || r.id === 'rec-police-2m';
+      }
+      // Transport
+      if (catLower.includes('transport') || descLower.includes('transport')) {
+        if (descLower.includes('person 1') || descLower.includes('p1')) return r.id === 'rec-transport-p1';
+        if (descLower.includes('person 2') || descLower.includes('p2')) return r.id === 'rec-transport-p2';
+        if (descLower.includes('person 3') || descLower.includes('p3')) return r.id === 'rec-transport-p3';
+        return rCatLower.includes('transport') || rTitleLower.includes('transport');
+      }
+      return false;
+    });
+  }
+
+  if (matchedIndex === -1) {
+    return { updatedRecurring: recurring, periodsCovered: 0 };
+  }
+
+  const r = recurring[matchedIndex];
+  const templateAmt = r.amount > 0 ? r.amount : tx.amount;
+  // Calculate how many periods this payment covers (e.g. paying 69k for 23k monthly rent = 3 periods)
+  const periodsCovered = Math.max(1, Math.round(tx.amount / templateAmt));
+
+  // Determine starting point for advancing the due date
+  const txDate = new Date(tx.date);
+  const curDue = r.nextDueDate ? new Date(r.nextDueDate) : txDate;
+  // If payment is made before or at current due date (advance payment), advance from current due date.
+  // If current due date is in the past, advance from transaction date.
+  let baseDate = curDue.getTime() > txDate.getTime() ? curDue : txDate;
+
+  for (let p = 0; p < periodsCovered; p++) {
+    baseDate = calculateNextEthiopianDueDate(baseDate, r.frequency);
+  }
+
+  const updatedItem: RecurringTemplate = {
+    ...r,
+    lastProcessedDate: tx.date,
+    nextDueDate: baseDate.toISOString(),
+    prepaidUntilDate: baseDate.toISOString(),
+    status: 'ACTIVE'
+  };
+
+  const updatedRecurring = recurring.map((item, idx) => (idx === matchedIndex ? updatedItem : item));
+  return { updatedRecurring, matchedTemplate: updatedItem, periodsCovered };
+}
+
+/**
+ * Automatically syncs Equb state when an Equb contribution transaction is recorded.
+ */
+export function syncEqubWithTransaction(
+  tx: Transaction,
+  equbs: Equb[]
+): { updatedEqubs: Equb[]; matchedEqub?: Equb } {
+  if (tx.type !== 'EXPENSE' || tx.reversed) {
+    return { updatedEqubs: equbs };
+  }
+
+  const targetEqub = findMatchingEqub(tx, equbs);
+  if (!targetEqub) {
+    return { updatedEqubs: equbs };
+  }
+
+  const match = tx.description?.match(/round\s*#?\s*(\d+)/i);
+  const roundInTx = match ? parseInt(match[1], 10) : null;
+
+  let newCompleted = typeof targetEqub.completedRounds === 'number'
+    ? targetEqub.completedRounds
+    : Math.max(0, targetEqub.currentRound - 1);
+
+  if (roundInTx !== null) {
+    newCompleted = Math.max(newCompleted, roundInTx);
+  } else {
+    newCompleted += 1;
+  }
+
+  newCompleted = Math.min(targetEqub.totalRounds, newCompleted);
+  const nextRound = Math.min(targetEqub.totalRounds, newCompleted + 1);
+  const isFinished = newCompleted >= targetEqub.totalRounds;
+
+  const updatedEqub: Equb = {
+    ...targetEqub,
+    completedRounds: newCompleted,
+    currentRound: nextRound,
+    status: isFinished ? 'COMPLETED' : 'ACTIVE',
+    isOverdue: false
+  };
+
+  const updatedEqubs = equbs.map(e => (e.id === targetEqub.id ? updatedEqub : e));
+  return { updatedEqubs, matchedEqub: updatedEqub };
 }
 
 

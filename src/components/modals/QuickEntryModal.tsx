@@ -51,6 +51,7 @@ interface QuickEntryModalProps {
     expenseScope?: 'BUSINESS' | 'PERSONAL';
     refType?: 'LOAN' | 'RECEIVABLE' | 'EQUB' | 'TRANSFER' | 'SPLIT_SUB_ENTRY';
     refId?: string;
+    splits?: Array<{ walletId: string; amount: number }>;
   }) => void;
   onBatchSubmitTransactions?: (items: Array<{
     type: TransactionType;
@@ -318,25 +319,48 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
 
       triggerHaptic('success');
 
-      const batchItems = batchEntries.map(entry => {
-        const targetW = wallets.find(w => w.id === entry.walletId);
-        return {
+      if (batchEntries.length > 1) {
+        const splitSummary = batchEntries.map(e => {
+          const targetW = wallets.find(w => w.id === e.walletId);
+          return `${getWalletNickname(targetW?.name)}: ${formatETB(e.amount)}`;
+        }).join(', ');
+
+        const defaultDesc = isEqubContribution && selectedEqub
+          ? `${selectedEqub.name} Round #${selectedEqub.currentRound} payment (Split: ${splitSummary})`
+          : isLoanPayment && selectedLoan
+          ? `${selectedLoan.title} Repayment (Split: ${splitSummary})`
+          : `Split ${entryMode === 'INCOME' ? 'Income' : 'Payment'} (Split: ${splitSummary})`;
+
+        const finalDesc = description
+          ? `${description.trim()} (Split: ${splitSummary})`
+          : defaultDesc;
+
+        onSubmitTransaction({
           type: entryMode as TransactionType,
-          amount: entry.amount,
-          walletId: entry.walletId,
-          category: category || (entryMode === 'INCOME' ? 'Daily Income' : 'Daily Expense'),
-          description: description || (entryMode === 'INCOME' ? 'Split Income' : `Split Payment - ${targetW?.name || 'Wallet'}`),
+          amount: totalBatchAmount,
+          walletId: batchEntries[0].walletId,
+          category: category || (entryMode === 'INCOME' ? 'Daily Income' : (isEqubContribution ? 'Equb Contribution' : isLoanPayment ? 'Loan Payment' : 'Daily Expense')),
+          description: finalDesc,
+          date: txDate,
+          expenseScope: entryMode === 'EXPENSE' ? expenseScope : undefined,
+          refType: isEqubContribution && selectedEqubId ? ('EQUB' as const) : isLoanPayment && selectedLoanId ? ('LOAN' as const) : undefined,
+          refId: isEqubContribution && selectedEqubId ? selectedEqubId : isLoanPayment && selectedLoanId ? selectedLoanId : undefined,
+          splits: batchEntries.map(e => ({ walletId: e.walletId, amount: e.amount }))
+        });
+      } else if (batchEntries.length === 1) {
+        const singleEntry = batchEntries[0];
+        const targetW = wallets.find(w => w.id === singleEntry.walletId);
+        onSubmitTransaction({
+          type: entryMode as TransactionType,
+          amount: singleEntry.amount,
+          walletId: singleEntry.walletId,
+          category: category || (entryMode === 'INCOME' ? 'Daily Income' : (isEqubContribution ? 'Equb Contribution' : isLoanPayment ? 'Loan Payment' : 'Daily Expense')),
+          description: description || (entryMode === 'INCOME' ? 'Daily Income' : `Payment - ${targetW?.name || 'Wallet'}`),
           date: txDate,
           expenseScope: entryMode === 'EXPENSE' ? expenseScope : undefined,
           refType: isEqubContribution && selectedEqubId ? ('EQUB' as const) : isLoanPayment && selectedLoanId ? ('LOAN' as const) : undefined,
           refId: isEqubContribution && selectedEqubId ? selectedEqubId : isLoanPayment && selectedLoanId ? selectedLoanId : undefined
-        };
-      });
-
-      if (onBatchSubmitTransactions) {
-        onBatchSubmitTransactions(batchItems);
-      } else {
-        batchItems.forEach(item => onSubmitTransaction(item));
+        });
       }
 
       resetForm();

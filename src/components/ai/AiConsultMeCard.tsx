@@ -37,22 +37,22 @@ export const AiConsultMeCard: React.FC<AiConsultMeCardProps> = ({
   const quickScenarios = [
     {
       label: '📈 What if prices +5%?',
-      prompt: 'Partner, what will be the exact projected outcome if I increase hourly PlayStation prices by 5%? Calculate customer churn elasticity, monthly revenue change, and profit delta.',
+      prompt: 'Gemini, what will be the exact projected outcome if I increase hourly PlayStation prices by 5%? Calculate customer churn elasticity, monthly revenue change, and profit delta.',
       mode: 'simulator' as const
     },
     {
       label: '🏢 What if 2nd branch in Bole?',
-      prompt: 'What if we open another branch in Addis Ababa (Bole or Megenagna) with ETB 450,000 CapEx and ETB 55,000 monthly overhead? Model the payback period and cash buffer impact.',
+      prompt: 'Gemini, what if we open another branch in Addis Ababa (Bole or Megenagna) with ETB 450,000 CapEx and ETB 55,000 monthly overhead? Model the payback period and cash buffer impact.',
       mode: 'simulator' as const
     },
     {
       label: '⚠️ What if expenses rise 10%?',
-      prompt: 'What if our operating expenses increase by 10% over the next 3 months? Calculate how much our monthly profit and zero-revenue survival runway will shrink.',
+      prompt: 'Gemini, what if our operating expenses increase by 10% over the next 3 months? Calculate how much our monthly profit and zero-revenue survival runway will shrink.',
       mode: 'simulator' as const
     },
     {
       label: '📉 What if revenue drops 20%?',
-      prompt: 'Stress-test scenario: What if income decreases by 20% next month during school exams or rainy weeks? Will we remain cashflow positive?',
+      prompt: 'Gemini stress-test: What if income decreases by 20% next month during school exams or rainy weeks? Will we remain cashflow positive?',
       mode: 'simulator' as const
     }
   ];
@@ -71,7 +71,7 @@ export const AiConsultMeCard: React.FC<AiConsultMeCardProps> = ({
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-xs sm:text-sm font-black text-white tracking-tight flex items-center gap-1.5">
-                AI Business Partner & Decision Simulator
+                Gemini Chatbot & Decision Simulator
               </h3>
               <span className="text-[9px] bg-[#00D4AA]/20 text-[#00D4AA] border border-[#00D4AA]/40 px-2 py-0.5 rounded-full font-mono font-extrabold flex items-center gap-1">
                 <Activity className="w-2.5 h-2.5 animate-pulse" />
@@ -79,7 +79,7 @@ export const AiConsultMeCard: React.FC<AiConsultMeCardProps> = ({
               </span>
             </div>
             <p className="text-[11px] text-slate-300 mt-0.5">
-              {getTimeGreeting()}, {userName}. Ask strategic financial questions or simulate major business decisions before you commit capital.
+              {getTimeGreeting()}, {userName}. Ask multi-turn strategic financial questions to Gemini or simulate business decisions before committing capital.
             </p>
           </div>
         </div>
@@ -105,7 +105,7 @@ export const AiConsultMeCard: React.FC<AiConsultMeCardProps> = ({
             className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-500 to-[#00D4AA] text-slate-950 hover:opacity-95 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-[#00D4AA]/20"
           >
             <Bot className="w-3.5 h-3.5" />
-            <span>Open AI Chat</span>
+            <span>Open Gemini Chat</span>
           </button>
         </div>
       </div>

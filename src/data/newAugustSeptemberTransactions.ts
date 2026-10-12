@@ -743,17 +743,6 @@ const RAW_NEW_AUGUST_SEPTEMBER_TRANSACTIONS: Transaction[] = [
     description: 'Daily Income',
     creatorName: 'Yegeta Huawei'
   },
-  // Expense
-  {
-    id: 'tx-20260901-exp-dinner-tertibega',
-    date: '2026-09-01T19:00:00.000Z',
-    type: 'EXPENSE',
-    category: 'Food & Refreshments',
-    amount: 1000,
-    walletId: 'w-cash',
-    description: 'Dinner tertibega',
-    creatorName: 'Yegeta Huawei'
-  },
 
   // ==========================================
   // SEPTEMBER 2, 2026
@@ -791,34 +780,16 @@ const RAW_NEW_AUGUST_SEPTEMBER_TRANSACTIONS: Transaction[] = [
   },
   // Expense
   {
-    id: 'tx-20260902-exp-gg-hermi-lunch',
-    date: '2026-09-02T13:00:00.000Z',
-    type: 'EXPENSE',
-    category: 'Food & Refreshments',
-    amount: 670,
-    walletId: 'w-cash',
-    description: 'gg and hermi lunch',
-    creatorName: 'Yegeta Huawei'
-  },
-  {
     id: 'tx-20260902-exp-ps5-joysticks',
     date: '2026-09-02T14:30:00.000Z',
     type: 'EXPENSE',
-    category: 'Equipment / Asset Purchase',
+    category: 'Equipment Maintenance',
     amount: 1450,
     walletId: 'w-telebirr',
-    description: '2 ps5 joysticks',
-    creatorName: 'Yegeta Huawei'
-  },
-  {
-    id: 'tx-20260902-exp-zeru-trans',
-    date: '2026-09-02T17:00:00.000Z',
-    type: 'EXPENSE',
-    category: 'Transportation',
-    amount: 200,
-    walletId: 'w-cash',
-    description: 'zeru transport',
-    creatorName: 'Yegeta Huawei'
+    description: '2 PS5 joysticks',
+    notes: 'Account: acc-1782999486323-1',
+    creatorName: 'Yegeta Huawei',
+    expenseScope: 'BUSINESS'
   },
 
   // ==========================================
@@ -857,34 +828,15 @@ const RAW_NEW_AUGUST_SEPTEMBER_TRANSACTIONS: Transaction[] = [
   },
   // Expense
   {
-    id: 'tx-20260903-exp-hermi-lunch-telebirr',
-    date: '2026-09-03T13:00:00.000Z',
-    type: 'EXPENSE',
-    category: 'Food & Refreshments',
-    amount: 280,
-    walletId: 'w-telebirr',
-    description: 'hermi lunch',
-    creatorName: 'Yegeta Huawei'
-  },
-  {
-    id: 'tx-20260903-exp-gg-transport',
-    date: '2026-09-03T14:00:00.000Z',
-    type: 'EXPENSE',
-    category: 'Transportation',
-    amount: 200,
-    walletId: 'w-cash',
-    description: 'gg transport',
-    creatorName: 'Yegeta Huawei'
-  },
-  {
     id: 'tx-20260903-exp-internet-bill',
     date: '2026-09-03T16:00:00.000Z',
     type: 'EXPENSE',
-    category: 'Internet & Phone',
+    category: 'Phone & Internet',
     amount: 1000,
     walletId: 'w-cash',
-    description: 'internet bill',
-    creatorName: 'Yegeta Huawei'
+    description: 'Internet bill',
+    creatorName: 'Yegeta Huawei',
+    expenseScope: 'BUSINESS'
   },
 
   // ==========================================
@@ -931,17 +883,6 @@ const RAW_NEW_AUGUST_SEPTEMBER_TRANSACTIONS: Transaction[] = [
     description: 'Daily Income',
     creatorName: 'Yegeta Huawei'
   },
-  // Expense
-  {
-    id: 'tx-20260904-exp-home',
-    date: '2026-09-04T14:00:00.000Z',
-    type: 'EXPENSE',
-    category: 'Other & Home Expenses',
-    amount: 230,
-    walletId: 'w-cash',
-    description: 'home expense',
-    creatorName: 'Yegeta Huawei'
-  },
 
   // ==========================================
   // SEPTEMBER 5, 2026
@@ -975,17 +916,6 @@ const RAW_NEW_AUGUST_SEPTEMBER_TRANSACTIONS: Transaction[] = [
     amount: 900,
     walletId: 'w-cash',
     description: 'Daily Income',
-    creatorName: 'Yegeta Huawei'
-  },
-  // Expense
-  {
-    id: 'tx-20260905-exp-zeru-hermi-breakfast',
-    date: '2026-09-05T10:30:00.000Z',
-    type: 'EXPENSE',
-    category: 'Food & Refreshments',
-    amount: 1000,
-    walletId: 'w-cash',
-    description: 'zeru and hermi breakfast',
     creatorName: 'Yegeta Huawei'
   },
 
@@ -1081,6 +1011,19 @@ const RAW_NEW_AUGUST_SEPTEMBER_TRANSACTIONS: Transaction[] = [
     walletId: 'w-cbe',
     description: 'Daily Income',
     creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260908-exp-ekub-5000',
+    date: '2026-09-08T10:00:00.000Z',
+    type: 'EXPENSE',
+    category: 'Equb Contribution',
+    amount: 5000,
+    walletId: 'w-cash',
+    description: 'Ekub round contribution: Agerye (Round 24)',
+    creatorName: 'Yegeta Huawei',
+    refType: 'EQUB',
+    refId: 'eq-agerye',
+    expenseScope: 'PERSONAL'
   },
   {
     id: 'tx-20260908-exp-baddebt-sol',
@@ -1713,6 +1656,332 @@ const RAW_NEW_AUGUST_SEPTEMBER_TRANSACTIONS: Transaction[] = [
     amount: 150,
     walletId: 'w-telebirr',
     description: 'Gg Lunch — Daily Sales collection',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260924-exp-cash-2228',
+    date: '2026-09-24T22:28:00.000Z',
+    type: 'EXPENSE',
+    category: 'Food & Refreshment',
+    amount: 100,
+    walletId: 'w-cash',
+    description: 'Owner Withdrawal — Kurs and misa (Food & Refreshment)',
+    expenseScope: 'PERSONAL',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260924-inc-telebirr-2231',
+    date: '2026-09-24T22:31:00.000Z',
+    type: 'INCOME',
+    category: 'Daily Income',
+    amount: 475,
+    walletId: 'w-telebirr',
+    description: 'Daily Sales collection (Telebirr)',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260924-inc-cbe-2240',
+    date: '2026-09-24T22:40:00.000Z',
+    type: 'INCOME',
+    category: 'Daily Income',
+    amount: 500,
+    walletId: 'w-cbe',
+    description: 'Daily Sales collection (CBE)',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260924-exp-ekub-2242',
+    date: '2026-09-24T22:42:00.000Z',
+    type: 'EXPENSE',
+    category: 'Equb Contribution',
+    amount: 10000,
+    walletId: 'w-cash',
+    splits: [
+      { walletId: 'w-telebirr', amount: 2800 },
+      { walletId: 'w-cash', amount: 7200 }
+    ],
+    description: 'Ekub round contribution: Leli ekub 2 (Round 2 - Split: Telebirr ETB 2,800, Cash ETB 7,200)',
+    refType: 'EQUB',
+    refId: 'eq-leli-2',
+    expenseScope: 'PERSONAL',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260924-exp-house-renewal',
+    date: '2026-09-24T09:00:00.000Z',
+    type: 'EXPENSE',
+    category: 'Rent',
+    amount: 14600,
+    walletId: 'w-cash',
+    splits: [
+      { walletId: 'w-telebirr', amount: 3000 },
+      { walletId: 'w-cash', amount: 11600 }
+    ],
+    description: 'House renewal (Split: Telebirr ETB 3,000, Cash ETB 11,600)',
+    creatorName: 'Yegeta Huawei',
+    expenseScope: 'BUSINESS'
+  },
+
+  // ==========================================
+  // SEPTEMBER 25, 2026
+  // ==========================================
+  {
+    id: 'tx-20260925-exp-cash-2002',
+    date: '2026-09-25T20:02:00.000Z',
+    type: 'EXPENSE',
+    category: 'Utilities (Electricity, Water)',
+    amount: 2050,
+    walletId: 'w-cash',
+    description: 'Utilities (Electricity, Water)',
+    expenseScope: 'BUSINESS',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260925-inc-cash-2106',
+    date: '2026-09-25T21:06:00.000Z',
+    type: 'INCOME',
+    category: 'Daily Income',
+    amount: 1130,
+    walletId: 'w-cash',
+    description: 'Daily Sales collection (Cash)',
+    creatorName: 'Yegeta Huawei'
+  },
+
+  // ==========================================
+  // SEPTEMBER 26, 2026
+  // ==========================================
+  {
+    id: 'tx-20260926-exp-cash-0939',
+    date: '2026-09-26T09:39:00.000Z',
+    type: 'EXPENSE',
+    category: 'Utilities (Electricity, Water)',
+    amount: 2100,
+    walletId: 'w-cash',
+    description: 'Card temola (Utilities (Electricity, Water))',
+    expenseScope: 'BUSINESS',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260926-inc-cash-1055',
+    date: '2026-09-26T10:55:00.000Z',
+    type: 'INCOME',
+    category: 'Daily Income',
+    amount: 1685,
+    walletId: 'w-cash',
+    description: 'Daily Sales collection (Cash)',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260926-exp-cash-1055',
+    date: '2026-09-26T10:55:30.000Z',
+    type: 'EXPENSE',
+    category: 'Food & Refreshment',
+    amount: 900,
+    walletId: 'w-cash',
+    description: 'Kurs and misa (Food & Refreshment)',
+    expenseScope: 'PERSONAL',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260926-exp-cash-1127',
+    date: '2026-09-26T11:27:00.000Z',
+    type: 'EXPENSE',
+    category: 'Transport',
+    amount: 150,
+    walletId: 'w-cash',
+    description: 'Transport',
+    expenseScope: 'BUSINESS',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260926-inc-telebirr-1206',
+    date: '2026-09-26T12:06:00.000Z',
+    type: 'INCOME',
+    category: 'Daily Income',
+    amount: 75,
+    walletId: 'w-telebirr',
+    description: 'Daily Sales collection (Telebirr)',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260926-inc-cbe-1206',
+    date: '2026-09-26T12:06:30.000Z',
+    type: 'INCOME',
+    category: 'Daily Income',
+    amount: 315,
+    walletId: 'w-cbe',
+    description: 'Daily Sales collection (CBE)',
+    creatorName: 'Yegeta Huawei'
+  },
+
+  // ==========================================
+  // SEPTEMBER 27, 2026
+  // ==========================================
+  {
+    id: 'tx-20260927-inc-cash-0825',
+    date: '2026-09-27T08:25:00.000Z',
+    type: 'INCOME',
+    category: 'Daily Income',
+    amount: 1950,
+    walletId: 'w-cash',
+    description: 'Daily Sales collection (Cash)',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260927-exp-cash-0826',
+    date: '2026-09-27T08:26:00.000Z',
+    type: 'EXPENSE',
+    category: 'Food & Refreshment',
+    amount: 250,
+    walletId: 'w-cash',
+    description: 'Zeru dinner (Food & Refreshment)',
+    expenseScope: 'PERSONAL',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260927-inc-telebirr-2209',
+    date: '2026-09-27T22:09:00.000Z',
+    type: 'INCOME',
+    category: 'Daily Income',
+    amount: 225,
+    walletId: 'w-telebirr',
+    description: 'Daily Sales collection (Telebirr)',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260927-inc-cbe-2209',
+    date: '2026-09-27T22:09:30.000Z',
+    type: 'INCOME',
+    category: 'Daily Income',
+    amount: 715,
+    walletId: 'w-cbe',
+    description: 'Daily Sales collection (CBE)',
+    creatorName: 'Yegeta Huawei'
+  },
+
+  // ==========================================
+  // SEPTEMBER 28, 2026
+  // ==========================================
+  {
+    id: 'tx-20260928-exp-cash-1131',
+    date: '2026-09-28T11:31:00.000Z',
+    type: 'EXPENSE',
+    category: 'Maintenance',
+    amount: 100,
+    walletId: 'w-cash',
+    description: 'Ye gbi sidat 2 month mebriya',
+    expenseScope: 'BUSINESS',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260928-inc-telebirr-2119',
+    date: '2026-09-28T21:19:00.000Z',
+    type: 'INCOME',
+    category: 'Daily Income',
+    amount: 1230,
+    walletId: 'w-telebirr',
+    description: 'Daily Sales collection (Telebirr)',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260928-inc-cbe-2119',
+    date: '2026-09-28T21:19:30.000Z',
+    type: 'INCOME',
+    category: 'Daily Income',
+    amount: 125,
+    walletId: 'w-cbe',
+    description: 'Daily Sales collection (CBE)',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260928-exp-telebirr-2120',
+    date: '2026-09-28T21:20:00.000Z',
+    type: 'EXPENSE',
+    category: 'Phone & Internet',
+    amount: 1010,
+    walletId: 'w-telebirr',
+    description: 'Phone & Internet',
+    notes: 'Account: acc-1782999486323-1',
+    expenseScope: 'BUSINESS',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260928-inc-cash-2156',
+    date: '2026-09-28T21:56:00.000Z',
+    type: 'INCOME',
+    category: 'Daily Income',
+    amount: 1150,
+    walletId: 'w-cash',
+    description: 'Daily Sales collection (Cash)',
+    creatorName: 'Yegeta Huawei'
+  },
+
+  // ==========================================
+  // SEPTEMBER 29, 2026
+  // ==========================================
+  {
+    id: 'tx-20260929-inc-telebirr-2122',
+    date: '2026-09-29T21:22:00.000Z',
+    type: 'INCOME',
+    category: 'Daily Income',
+    amount: 390,
+    walletId: 'w-telebirr',
+    description: 'Daily Sales collection (Telebirr)',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260929-inc-cash-2148',
+    date: '2026-09-29T21:48:00.000Z',
+    type: 'INCOME',
+    category: 'Daily Income',
+    amount: 1190,
+    walletId: 'w-cash',
+    description: 'Daily Sales collection (Cash)',
+    creatorName: 'Yegeta Huawei'
+  },
+
+  // ==========================================
+  // SEPTEMBER 30, 2026
+  // ==========================================
+  {
+    id: 'tx-20260930-inc-cbe-0945',
+    date: '2026-09-30T09:45:00.000Z',
+    type: 'INCOME',
+    category: 'Daily Income',
+    amount: 30,
+    walletId: 'w-cbe',
+    description: 'Daily Sales collection (CBE)',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260930-exp-telebirr-0951',
+    date: '2026-09-30T09:51:00.000Z',
+    type: 'EXPENSE',
+    category: 'Food & Refreshment',
+    amount: 1000,
+    walletId: 'w-telebirr',
+    description: 'Webe drinks (Food & Refreshment)',
+    expenseScope: 'PERSONAL',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260930-inc-cash-1055',
+    date: '2026-09-30T10:55:00.000Z',
+    type: 'INCOME',
+    category: 'Daily Income',
+    amount: 1205,
+    walletId: 'w-cash',
+    description: 'Daily Sales collection (Cash)',
+    creatorName: 'Yegeta Huawei'
+  },
+  {
+    id: 'tx-20260930-inc-telebirr-1522',
+    date: '2026-09-30T15:22:00.000Z',
+    type: 'INCOME',
+    category: 'Daily Income',
+    amount: 470,
+    walletId: 'w-telebirr',
+    description: 'Daily Sales collection (Telebirr)',
     creatorName: 'Yegeta Huawei'
   }
 ];

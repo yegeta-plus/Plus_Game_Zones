@@ -37,7 +37,7 @@ import {
   Wallet as WalletIcon,
   HelpCircle
 } from 'lucide-react';
-import { Equb, Wallet, UserProfile, Loan, Receivable, LoanType, LoanDirection, AdminApprovalRequest } from '../../types';
+import { Equb, Wallet, UserProfile, Loan, Receivable, LoanType, LoanDirection, AdminApprovalRequest, Transaction } from '../../types';
 import { formatETB } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 import {
@@ -51,6 +51,7 @@ import { ModernDateInput } from '../common/ModernDateInput';
 
 interface EqubViewProps {
   equbs: Equb[];
+  transactions?: Transaction[];
   loans?: Loan[];
   receivables?: Receivable[];
   wallets: Wallet[];
@@ -88,6 +89,7 @@ interface EqubViewProps {
 
 export const EqubView: React.FC<EqubViewProps> = ({
   equbs,
+  transactions = [],
   loans = [],
   receivables = [],
   wallets,
@@ -174,6 +176,10 @@ export const EqubView: React.FC<EqubViewProps> = ({
   const [editEqubName, setEditEqubName] = useState('');
   const [editEqubContribution, setEditEqubContribution] = useState('');
   const [editEqubTotalRounds, setEditEqubTotalRounds] = useState('');
+  const [editEqubCurrentRound, setEditEqubCurrentRound] = useState('');
+  const [editEqubCompletedRounds, setEditEqubCompletedRounds] = useState('');
+  const [editEqubStatus, setEditEqubStatus] = useState<'ACTIVE' | 'COMPLETED'>('ACTIVE');
+  const [editEqubIsOverdue, setEditEqubIsOverdue] = useState(false);
   const [editEqubMySlots, setEditEqubMySlots] = useState('');
 
   const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
@@ -213,6 +219,10 @@ export const EqubView: React.FC<EqubViewProps> = ({
     setEditEqubContribution(eq.contributionPerRound.toString());
     setEditEqubTotalRounds(eq.totalRounds.toString());
     setEditEqubMySlots((eq.mySlots || 1).toString());
+    setEditEqubCurrentRound(eq.currentRound.toString());
+    setEditEqubCompletedRounds((eq.completedRounds ?? Math.max(0, eq.currentRound - 1)).toString());
+    setEditEqubStatus(eq.status);
+    setEditEqubIsOverdue(!!eq.isOverdue);
   };
 
   const startEditLoan = (ln: Loan) => {
@@ -991,7 +1001,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
       {mainTab === 'CIRCLES' && (
         <div className="space-y-4">
 
-          {/* AI Partner Equb Strategic Advisor Banner */}
+          {/* Gemini Chatbot Equb Strategic Advisor Banner */}
           <div className="bg-gradient-to-r from-slate-900 via-[#131B2A] to-[#0D1420] border border-[#00D4AA]/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg shadow-[#00D4AA]/5">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#00D4AA] to-[#3B82F6] flex items-center justify-center text-slate-950 shrink-0 shadow-md shadow-[#00D4AA]/20 font-black">
@@ -1001,11 +1011,11 @@ export const EqubView: React.FC<EqubViewProps> = ({
                 <h4 className="text-xs font-black text-white flex items-center gap-2">
                   Considering joining a new Equb circle?
                   <span className="text-[9px] bg-[#00D4AA]/20 text-[#00D4AA] border border-[#00D4AA]/30 px-2 py-0.5 rounded-full font-mono font-bold">
-                    AI PARTNER
+                    GEMINI CHATBOT
                   </span>
                 </h4>
                 <p className="text-[11px] text-slate-300">
-                  Get a complete pros & cons breakdown with real cashflow numbers, safe limits, and payout rotation strategies.
+                  Get a complete pros & cons breakdown with real cashflow numbers, safe limits, and payout rotation strategies powered by Gemini.
                 </p>
               </div>
             </div>
@@ -1015,13 +1025,13 @@ export const EqubView: React.FC<EqubViewProps> = ({
               onClick={() => {
                 triggerHaptic('medium');
                 if (onOpenAiAdvisor) {
-                  onOpenAiAdvisor('If I want to join a new Equb, what will be the pros and cons with detailed explanation and accurate calculations from our current business data?');
+                  onOpenAiAdvisor('Gemini, if I want to join a new Equb, what will be the pros and cons with detailed explanation and accurate calculations from our current business data?');
                 }
               }}
               className="w-full sm:w-auto px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-[#00D4AA] hover:opacity-95 text-slate-950 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-[#00D4AA]/20 shrink-0"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Consult AI Partner</span>
+              <span>Ask Gemini Chatbot</span>
             </button>
           </div>
           
@@ -1660,25 +1670,104 @@ export const EqubView: React.FC<EqubViewProps> = ({
                                   </div>
                                 </div>
 
-                                {/* Agerye specific payments timeline */}
-                                {eq.id === 'eq-agerye' && (
-                                  <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 rounded-xl text-xs space-y-1.5">
-                                    <div className="flex items-center justify-between text-[11px] font-bold text-indigo-950 dark:text-indigo-200">
-                                      <span className="flex items-center gap-1.5">
-                                        <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                                        <span>Recent Verified Payments:</span>
-                                      </span>
-                                      <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400">Round 24 & 25 Paid</span>
+                                {/* Verified payments & ledger transactions for this Equb */}
+                                {(() => {
+                                  const linkedTxs = (transactions || []).filter(t => 
+                                    (t.refType === 'EQUB' && t.refId === eq.id) ||
+                                    ((t.category === 'Equb Contribution' || t.category === 'Ekub') && t.description?.toLowerCase().includes(eq.name.toLowerCase()))
+                                  ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+                                  return (
+                                    <div className="space-y-2">
+                                      {/* Dynamic timeline */}
+                                      <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 rounded-xl text-xs space-y-1.5">
+                                        <div className="flex items-center justify-between text-[11px] font-bold text-indigo-950 dark:text-indigo-200">
+                                          <span className="flex items-center gap-1.5">
+                                            <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                            <span>Verified Rounds Status:</span>
+                                          </span>
+                                          <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400">
+                                            {completed} of {eq.totalRounds} Paid ({Math.max(0, eq.totalRounds - completed)} Remaining)
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 text-[10px] font-mono text-indigo-900 dark:text-indigo-200 pt-0.5 flex-wrap">
+                                          {eq.id === 'eq-agerye' ? (
+                                            <>
+                                              <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 rounded border border-emerald-200 dark:border-emerald-700 font-bold">R24: Sep 8 (Paid 5k)</span>
+                                              <span className="text-indigo-400">→</span>
+                                              <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 rounded border border-emerald-200 dark:border-emerald-700 font-bold">R25: Sep 20 (Last Paid 5k)</span>
+                                              <span className="text-indigo-400">→</span>
+                                              <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-200 rounded border border-indigo-200 dark:border-indigo-700 font-bold">R26: Next Due (5k)</span>
+                                              <span className="text-indigo-400">→</span>
+                                              <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 rounded border border-amber-200 dark:border-amber-700 font-bold">R27: Final (5k)</span>
+                                            </>
+                                          ) : eq.id === 'eq-leli-2' ? (
+                                            <>
+                                              <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 rounded border border-emerald-200 dark:border-emerald-700 font-bold">R1: Sep 10 (Paid 10k)</span>
+                                              <span className="text-indigo-400">→</span>
+                                              <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 rounded border border-emerald-200 dark:border-emerald-700 font-bold">R2: Sep 24 (Paid 10k)</span>
+                                              <span className="text-indigo-400">→</span>
+                                              <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 rounded border border-emerald-200 dark:border-emerald-700 font-bold">R3: Oct 5 (Paid 10k)</span>
+                                              <span className="text-indigo-400">→</span>
+                                              <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-200 rounded border border-indigo-200 dark:border-indigo-700 font-bold">R4: Oct 15 (Next 10k)</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 rounded border border-emerald-200 dark:border-emerald-700 font-bold">{completed} Completed</span>
+                                              {remaining > 0 && (
+                                                <>
+                                                  <span className="text-indigo-400">→</span>
+                                                  <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-200 rounded border border-indigo-200 dark:border-indigo-700 font-bold">Round #{eq.currentRound} ({remaining} remaining)</span>
+                                                </>
+                                              )}
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {/* Linked Transactions Table */}
+                                      {linkedTxs.length > 0 && (
+                                        <div className="p-3 bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#1E2D40] rounded-xl text-xs space-y-2">
+                                          <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                                            <span className="flex items-center gap-1.5">
+                                              <Layers className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                                              <span>Recent Contributions in Ledger ({linkedTxs.length})</span>
+                                            </span>
+                                            <span className="text-indigo-600 dark:text-indigo-400 font-mono font-bold">
+                                              Total: {formatETB(linkedTxs.reduce((sum, t) => sum + (t.type === 'EXPENSE' ? t.amount : 0), 0))}
+                                            </span>
+                                          </div>
+                                          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                            {linkedTxs.slice(0, 5).map((t) => {
+                                              const w = wallets.find(wal => wal.id === t.walletId);
+                                              const dateStr = t.date ? new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+                                              return (
+                                                <div key={t.id} className="p-2 rounded-lg bg-slate-50 dark:bg-[#1A2234] border border-slate-100 dark:border-[#222E46] flex items-center justify-between text-[11px]">
+                                                  <div className="min-w-0 pr-2">
+                                                    <div className="font-medium text-slate-800 dark:text-slate-200 truncate">{t.description}</div>
+                                                    <div className="text-[10px] text-slate-500 dark:text-[#8899BB] flex items-center gap-2 mt-0.5">
+                                                      <span>{dateStr}</span>
+                                                      <span>•</span>
+                                                      <span>{w?.name || 'Cash'}</span>
+                                                      {t.splits && t.splits.length > 1 && (
+                                                        <span className="px-1 py-0.2 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[9px] font-bold">
+                                                          Split ({t.splits.length})
+                                                        </span>
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                  <div className="font-mono font-bold text-rose-600 dark:text-rose-400 shrink-0">
+                                                    -{formatETB(t.amount)}
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
-                                    <div className="flex items-center gap-2 text-[10px] font-mono text-indigo-900 dark:text-indigo-200 pt-0.5 flex-wrap">
-                                      <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 rounded border border-emerald-200 dark:border-emerald-700 font-bold">Round 24: Sep 10 (Paid)</span>
-                                      <span className="text-indigo-400">→</span>
-                                      <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 rounded border border-emerald-200 dark:border-emerald-700 font-bold">Round 25: Sep 20 (Paid)</span>
-                                      <span className="text-indigo-400">→</span>
-                                      <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-200 rounded border border-indigo-200 dark:border-indigo-700 font-bold">Round 26: Sep 30 (Next)</span>
-                                    </div>
-                                  </div>
-                                )}
+                                  );
+                                })()}
 
                                 {/* Action CTAs */}
                                 <div className="flex items-center gap-2 pt-1">
@@ -3653,7 +3742,11 @@ export const EqubView: React.FC<EqubViewProps> = ({
                 name: editEqubName,
                 contributionPerRound: parseFloat(editEqubContribution) || editingEqub.contributionPerRound,
                 totalRounds: parseInt(editEqubTotalRounds, 10) || editingEqub.totalRounds,
-                mySlots: parseInt(editEqubMySlots, 10) || editingEqub.mySlots
+                currentRound: parseInt(editEqubCurrentRound, 10) || editingEqub.currentRound,
+                completedRounds: parseInt(editEqubCompletedRounds, 10) ?? editingEqub.completedRounds,
+                mySlots: parseInt(editEqubMySlots, 10) || editingEqub.mySlots,
+                status: editEqubStatus,
+                isOverdue: editEqubIsOverdue
               });
             }} className="space-y-3">
               <div>
@@ -3687,6 +3780,56 @@ export const EqubView: React.FC<EqubViewProps> = ({
                     onChange={e => setEditEqubTotalRounds(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none font-mono"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Current Round #</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    value={editEqubCurrentRound}
+                    onChange={e => setEditEqubCurrentRound(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Completed Rounds</label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    value={editEqubCompletedRounds}
+                    onChange={e => setEditEqubCompletedRounds(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Circle Status</label>
+                  <select
+                    value={editEqubStatus}
+                    onChange={e => setEditEqubStatus(e.target.value as 'ACTIVE' | 'COMPLETED')}
+                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none"
+                  >
+                    <option value="ACTIVE">ACTIVE</option>
+                    <option value="COMPLETED">COMPLETED</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-600 dark:text-[#8899BB] block mb-1">Overdue Status</label>
+                  <select
+                    value={editEqubIsOverdue ? 'OVERDUE' : 'UP_TO_DATE'}
+                    onChange={e => setEditEqubIsOverdue(e.target.value === 'OVERDUE')}
+                    className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] rounded-xl p-2.5 text-xs outline-none"
+                  >
+                    <option value="UP_TO_DATE">Up to date (Normal)</option>
+                    <option value="OVERDUE">Overdue (Payment pending)</option>
+                  </select>
                 </div>
               </div>
 
