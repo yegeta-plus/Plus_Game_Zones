@@ -141,6 +141,8 @@ export const EqubView: React.FC<EqubViewProps> = ({
   const [equbSlots, setEqubSlots] = useState('1');
   const [equbTotalRounds, setEqubTotalRounds] = useState('27');
   const [equbMembersInput, setEqubMembersInput] = useState('PlusZone ERP, Abebe Retail, Keba Trading, Tigist Pharmacy, Solomon Exporters');
+  const [equbAdvanceMonths, setEqubAdvanceMonths] = useState<number>(0);
+  const [equbCustomMonths, setEqubCustomMonths] = useState('');
 
   // --- LOANS STATE ---
   const [loanCategoryFilter, setLoanCategoryFilter] = useState<'ALL' | 'LENT' | 'BORROWED'>('ALL');
@@ -470,6 +472,9 @@ export const EqubView: React.FC<EqubViewProps> = ({
       endingDateObj = toGregorianDate(targetYear, targetMonth, Math.min(targetDay, 30));
     }
     const endingIso = endingDateObj.toISOString();
+    const effectiveMonths = equbAdvanceMonths === -1
+      ? (parseFloat(equbCustomMonths) || 0)
+      : equbAdvanceMonths;
 
     onCreateEqub({
       name: equbName,
@@ -481,6 +486,7 @@ export const EqubView: React.FC<EqubViewProps> = ({
       totalRounds: totalRoundsCount,
       startDate: new Date(equbStartDate || Date.now()).toISOString(),
       computedEndingDate: endingIso,
+      advanceMonthsPrepaid: effectiveMonths > 0 ? effectiveMonths : undefined,
       walletId: wallets[0]?.id || ''
     } as any);
 
@@ -489,6 +495,8 @@ export const EqubView: React.FC<EqubViewProps> = ({
     setEqubContribution('');
     setEqubSlots('1');
     setEqubTotalRounds('27');
+    setEqubAdvanceMonths(0);
+    setEqubCustomMonths('');
     setEqubStartDate(new Date().toISOString().split('T')[0]);
   };
 
@@ -2719,6 +2727,15 @@ export const EqubView: React.FC<EqubViewProps> = ({
         const myContribPerRound = contrib * slotsCount;
         const netRoundPoolPreview = contrib * totalRoundsCount;
 
+        const effectiveAdvanceMonths = equbAdvanceMonths === -1 ? (parseFloat(equbCustomMonths) || 0) : equbAdvanceMonths;
+        let rpm = 4;
+        if (equbInterval === 'EVERY_10_DAYS') rpm = 3;
+        else if (equbInterval === 'EVERY_15_DAYS') rpm = 2;
+        else if (equbInterval === 'MONTHLY') rpm = 1;
+        const prepaidRoundsCount = effectiveAdvanceMonths > 0 ? Math.min(totalRoundsCount, Math.round(effectiveAdvanceMonths * rpm)) : 0;
+        const totalAdvancePrepaid = prepaidRoundsCount * myContribPerRound;
+        const startingRound = Math.min(totalRoundsCount, prepaidRoundsCount + 1);
+
         let daysPerRound = 7;
         if (equbInterval === 'EVERY_10_DAYS') daysPerRound = 10;
         else if (equbInterval === 'EVERY_15_DAYS') daysPerRound = 15;
@@ -2828,6 +2845,69 @@ export const EqubView: React.FC<EqubViewProps> = ({
                   />
                 </div>
 
+                {/* How long is it paid in advance in months? */}
+                <div className="pt-2 border-t border-slate-200 dark:border-[#1E2D40] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                      <span>How long is it paid in advance (in months)?</span>
+                    </label>
+                    <span className="text-[9px] bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-mono font-bold px-1.5 py-0.5 rounded">
+                      Prepayment
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-[#8899BB] leading-tight">
+                    Prepaid months advance the initial active round and pause future monthly deductions until covered.
+                  </p>
+
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                    {[
+                      { label: '0 Mo (None)', val: 0 },
+                      { label: '1 Month', val: 1 },
+                      { label: '2 Months', val: 2 },
+                      { label: '3 Months', val: 3 },
+                      { label: '6 Months', val: 6 },
+                      { label: 'Custom', val: -1 },
+                    ].map(chip => {
+                      const isSelected = equbAdvanceMonths === chip.val;
+                      return (
+                        <button
+                          key={chip.val}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setEqubAdvanceMonths(chip.val);
+                          }}
+                          className={`py-1.5 px-2 rounded-xl text-[10px] font-bold border transition-all cursor-pointer text-center ${
+                            isSelected
+                              ? 'bg-indigo-600 dark:bg-indigo-500 text-white border-indigo-600 shadow-xs ring-1 ring-indigo-400'
+                              : 'bg-slate-50 dark:bg-[#1C2333] text-slate-700 dark:text-[#8899BB] border-slate-200 dark:border-[#1E2D40] hover:border-indigo-400'
+                          }`}
+                        >
+                          {chip.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {equbAdvanceMonths === -1 && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="0.5"
+                        step="0.5"
+                        value={equbCustomMonths}
+                        onChange={e => setEqubCustomMonths(e.target.value)}
+                        placeholder="Enter months (e.g. 4 or 5)"
+                        className="w-full bg-slate-50 dark:bg-[#1C2333] border border-indigo-300 dark:border-indigo-600 rounded-xl p-2 text-xs text-slate-900 dark:text-white font-bold outline-none"
+                      />
+                      <span className="text-xs font-bold text-slate-500 dark:text-[#8899BB] shrink-0">
+                        Months
+                      </span>
+                    </div>
+                  )}
+                </div>
+
                 {/* Calculation Summary Box */}
                 <div className="p-3.5 bg-indigo-50/90 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800/70 rounded-xl space-y-1.5 text-xs">
                   <div className="flex justify-between items-center">
@@ -2842,7 +2922,29 @@ export const EqubView: React.FC<EqubViewProps> = ({
                       {formatETB(myContribPerRound)} ({slotsCount} {slotsCount === 1 ? 'slot' : 'slots'})
                     </span>
                   </div>
-                  <div className="flex justify-between items-center text-[11px]">
+                  {prepaidRoundsCount > 0 && (
+                    <>
+                      <div className="flex justify-between items-center text-[11px] pt-1 border-t border-indigo-200/60 dark:border-indigo-800/60">
+                        <span className="text-indigo-900 dark:text-indigo-200 font-bold">Advance Prepaid Rounds:</span>
+                        <span className="font-mono font-bold text-indigo-700 dark:text-indigo-300">
+                          {prepaidRoundsCount} rounds ({effectiveAdvanceMonths} mo)
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-indigo-900 dark:text-indigo-200 font-bold">Total Advance Prepaid:</span>
+                        <span className="font-mono font-black text-emerald-600 dark:text-emerald-400">
+                          {formatETB(totalAdvancePrepaid)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-600 dark:text-[#8899BB]">Active Starting Round:</span>
+                        <span className="font-bold text-indigo-600 dark:text-indigo-400">
+                          Round #{startingRound} of {totalRoundsCount}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex justify-between items-center text-[11px] pt-1 border-t border-indigo-200/60 dark:border-indigo-800/60">
                     <span className="text-slate-600 dark:text-[#8899BB]">Estimated Finish Date:</span>
                     <span className="font-bold text-emerald-600 dark:text-emerald-400">
                       {estEndingFormatted}

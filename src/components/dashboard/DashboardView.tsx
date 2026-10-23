@@ -43,7 +43,9 @@ import {
   Gift,
   X,
   CheckCheck,
-  BarChart3
+  BarChart3,
+  Sun,
+  Moon
 } from 'lucide-react';
 import {
   Wallet,
@@ -53,7 +55,8 @@ import {
   Loan,
   RecurringTemplate,
   UserProfile,
-  Receivable
+  Receivable,
+  ShopOperatingHours
 } from '../../types';
 import {
   calculateWalletBalance,
@@ -64,7 +67,8 @@ import {
   getWalletNickname,
   isCreditSaleCollected,
   consolidateEqubSplitTransactions,
-  getTransactionDisplayTitle
+  getTransactionDisplayTitle,
+  getShopStatusInfo
 } from '../../lib/store';
 import {
   formatEthiopianDate,
@@ -78,6 +82,7 @@ import { formatRelativeNotifTime } from '../../lib/notifications';
 import { BrandLogo } from '../common/BrandLogo';
 import { FutureCashflowForecast } from './FutureCashflowForecast';
 import { ONBOARDING_STORAGE_KEY } from '../onboarding/onboardingSteps';
+import { ShopOperatingHoursModal } from '../common/ShopOperatingHoursModal';
 
 interface DashboardViewProps {
   currentUser: UserProfile;
@@ -88,6 +93,8 @@ interface DashboardViewProps {
   loans: Loan[];
   recurring: RecurringTemplate[];
   receivables?: Receivable[];
+  shopHours?: ShopOperatingHours;
+  onUpdateShopHours?: (updated: ShopOperatingHours) => void;
   hideBalances: boolean;
   calendarType?: 'ETHIOPIAN' | 'GREGORIAN';
   dismissedNotifIds?: string[];
@@ -112,6 +119,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   loans,
   recurring,
   receivables = [],
+  shopHours,
+  onUpdateShopHours,
   hideBalances,
   calendarType = 'GREGORIAN',
   dismissedNotifIds = [],
@@ -126,6 +135,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onStartTour,
   onOpenHelp
 }) => {
+  const [showShopHoursModal, setShowShopHoursModal] = useState(false);
   const totalBalance = calculateTotalBusinessBalance(wallets, transactions, transfers);
   const { income, expense, profit, creditWork } = calculateMonthlyStats(transactions, receivables);
   const incomeAverages = calculateIncomeAverages(transactions, receivables);
@@ -321,6 +331,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Time-based greeting
   const hour = today.getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const statusInfo = getShopStatusInfo(shopHours, today);
   const formattedGregorianDate = today.toLocaleDateString('en-US', {
     weekday: 'short',
     month: 'short',
@@ -556,6 +567,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
               Live Ledger Synced
             </span>
+            {/* Live Shop Operating Hours & Shift Status Pill */}
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setShowShopHoursModal(true);
+              }}
+              className={`text-[10px] border px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105 active:scale-95 shadow-xs ${
+                statusInfo.isOpen
+                  ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700/80 hover:bg-emerald-100'
+                  : 'bg-rose-50 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border-rose-300 dark:border-rose-700/80 hover:bg-rose-100'
+              }`}
+              title="Click to view shop operating hours (6:00 AM – 6:00 PM GMT) & shift details"
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                statusInfo.isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
+              }`} />
+              <span>{statusInfo.isOpen ? 'Shop Open (6 AM – 6 PM GMT)' : 'Shop Closed (Opens 6 AM GMT)'}</span>
+              <span className="opacity-70 font-mono text-[9px] hidden sm:inline">• {statusInfo.currentGmtTimeStr}</span>
+            </button>
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-[#8899BB]">
@@ -1725,6 +1756,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           onNavigateTab={onNavigateTab}
         />
       </div>
+
+      {/* 8. Shop Operating Hours & Shift Handover Modal */}
+      {showShopHoursModal && (
+        <ShopOperatingHoursModal
+          isOpen={showShopHoursModal}
+          onClose={() => setShowShopHoursModal(false)}
+          state={{
+            currentUser,
+            users: [],
+            wallets,
+            transactions,
+            transfers,
+            equbs,
+            loans,
+            assets: [],
+            goals: [],
+            recurring,
+            receivables,
+            categories: [],
+            auditLogs: [],
+            theme: 'dark',
+            hideBalances,
+            shopHours
+          }}
+          onUpdateShopHours={onUpdateShopHours}
+        />
+      )}
 
     </div>
   );

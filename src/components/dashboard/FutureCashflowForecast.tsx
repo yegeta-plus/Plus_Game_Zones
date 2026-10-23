@@ -119,6 +119,13 @@ function getRecurringDuesInWindow(
       : { isDue: false, occurrences: 0, fullAmount: 0, dueDateStr: '' };
   }
 
+  if (freq === 'ONE_TIME' || r.isOneTime) {
+    if (baseDue.getTime() >= wStart.getTime() && baseDue.getTime() <= wEnd.getTime()) {
+      return { isDue: true, occurrences: 1, fullAmount: amt, dueDateStr: baseDue.toISOString().split('T')[0] };
+    }
+    return { isDue: false, occurrences: 0, fullAmount: 0, dueDateStr: '' };
+  }
+
   // If this is Week 1 (current week) and the base due date is in the past or within this week:
   // It is due in full right now!
   if (isFirstWeek && baseDue.getTime() <= wEnd.getTime()) {
@@ -395,6 +402,16 @@ export const FutureCashflowForecast: React.FC<FutureCashflowForecastProps> = ({
       const weekDue = getRecurringDuesInWindow(r, wStart0, wEnd0, true);
       if (weekDue.isDue) {
         dueThisWeekRecurring += weekDue.fullAmount;
+      }
+
+      // If this recurring item is ONE_TIME (like one-time advance rent) or prepaid past this month:
+      const dueMs = r.nextDueDate ? new Date(r.nextDueDate).getTime() : 0;
+      const currentMonthEndMs = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).getTime();
+      const isOneTimeRentOrPrepaid = r.isOneTime || freq === 'ONE_TIME' || (r.prepaidUntilDate && new Date(r.prepaidUntilDate).getTime() > currentMonthEndMs);
+
+      if (isOneTimeRentOrPrepaid) {
+        // Rent paid in advance one time — no recurring baseline outflow needed for this period
+        return;
       }
 
       // Full schedule commitments

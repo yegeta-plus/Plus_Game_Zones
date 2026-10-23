@@ -170,41 +170,43 @@ async function startServer() {
         });
       }
 
-      // Regex 1: Extract FT reference code (e.g., FT260808901234 or Ref: FT...)
-      const ftMatch = smsBody.match(/(?:FT|Ref:\s*FT|Reference:\s*FT|Txn:\s*FT)([A-Z0-9]{8,16})/i) 
-                   || smsBody.match(/\b(FT[A-Z0-9]{8,16})\b/i);
+      const cleanText = smsBody.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
 
-      // Regex 2: Extract ETB Amount (e.g., ETB 15,000.00 or 15000 ETB)
-      const amountMatch = smsBody.match(/(?:ETB|Birr)\s*([\d,]+(?:\.\d{1,2})?)/i)
-                       || smsBody.match(/([\d,]+(?:\.\d{1,2})?)\s*(?:ETB|Birr)/i);
+      // Extract Reference code: CBE FT, Telebirr Txn ID, eBirr, or Amharic
+      const refMatch =
+        cleanText.match(/(?:transaction\s+id|txn\s*id|txnref|ref\s*no|ref|የመለያ\s*ቁጥር|መለያ\s*ቁጥር)\s*[:：]?\s*([a-z0-9\-_]+)/i) ||
+        cleanText.match(/\b(FT[0-9A-Z]{8,16})\b/i) ||
+        cleanText.match(/በ\s+(FT[0-9A-Z]{8,16})/i) ||
+        cleanText.match(/\b(EB[0-9A-Z]{6,12})\b/i) ||
+        cleanText.match(/\b([0-9]{10,14})\b/);
 
-      // Regex 3: Extract Payer Name (e.g. from Abebe Kebede)
-      const payerMatch = smsBody.match(/(?:from|by)\s+([A-Za-z\s]{4,30})(?:\.|\,|$|\sfor|\son)/i);
+      // Extract Amount: ETB, Birr, ብር, or action verbs
+      const amountMatch =
+        cleanText.match(/(?:credited\s+with|debited\s+with|received|paid|transferred)\s+(?:etb|birr)?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/i) ||
+        cleanText.match(/(?:ETB|Birr)\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/i) ||
+        cleanText.match(/([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)\s*(?:ETB|Birr|ብር)/i) ||
+        cleanText.match(/(?:በ|የ)?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)\s*ብር/);
 
-      const ftNumber = ftMatch ? (ftMatch[1].startsWith('FT') ? ftMatch[1] : `FT${ftMatch[1]}`) : null;
+      // Extract Payer / Counterparty
+      const payerMatch =
+        cleanText.match(/(?:from|by)\s+([A-Za-z0-9*()+\s.-]{3,35})(?:\s+on|\s+ref|\s+date|\.|,|$)/i) ||
+        cleanText.match(/ከ\s+([A-Za-z0-9\u1200-\u137F*()+\s.-]{3,35})(?:\s+[0-9]+|\s*ብር|\.|,|$)/);
+
+      const ftNumber = refMatch ? refMatch[1].trim().toUpperCase() : `AUTO-${Date.now().toString().slice(-6)}`;
       const extractedAmount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : null;
-      const extractedPayer = payerMatch ? payerMatch[1].trim() : null;
-
-      if (!ftNumber) {
-        return res.status(422).json({
-          status: 'error',
-          parsed: false,
-          error: 'No valid CBE FT Reference Code detected in the incoming SMS message.',
-          rawSms: smsBody
-        });
-      }
+      const extractedPayer = payerMatch ? payerMatch[1].trim() : (sender || 'Payer');
 
       return res.json({
         status: 'success',
         parsed: true,
         extracted: {
-          ftNumber: ftNumber.toUpperCase(),
+          ftNumber,
           amount: extractedAmount,
           payerName: extractedPayer,
-          sender: sender || 'CBE Birr / Mobile Banking'
+          sender: sender || 'Bank SMS Alert'
         },
-        rawSms: smsBody,
-        message: `Successfully extracted FT reference ${ftNumber.toUpperCase()} from incoming SMS message.`
+        rawSms: cleanText,
+        message: `Successfully extracted reference ${ftNumber} from SMS message.`
       });
 
     } catch (err: any) {

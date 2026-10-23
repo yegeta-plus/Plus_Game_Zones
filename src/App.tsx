@@ -68,7 +68,7 @@ import {
   deleteChatMessageImmediately,
   registerChatEventListener
 } from './lib/realtimeChat';
-import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest, ChatMessage, ChatMessageReaction, ChatChannel, AuditLogEntry } from './types';
+import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest, ChatMessage, ChatMessageReaction, ChatChannel, AuditLogEntry, ShopOperatingHours } from './types';
 import { CheckCircle2, Sparkles } from 'lucide-react';
 import { triggerHaptic } from './lib/haptics';
 import { SessionLockModal } from './components/auth/SessionLockModal';
@@ -449,7 +449,8 @@ export default function App() {
 
           const mergedUsers = mergeListById(prev.users, remoteState.users, combinedDeletedIds);
           const mergedWallets = mergeListById(prev.wallets, remoteState.wallets, combinedDeletedIds);
-          const mergedTransactions = mergeListById(prev.transactions, remoteState.transactions, combinedDeletedIds);
+          const mergedTransactions = mergeListById(prev.transactions, remoteState.transactions, combinedDeletedIds)
+            .filter((t: Transaction) => !t.id?.startsWith('tx-20261019') && !t.date?.startsWith('2026-10-19'));
           const mergedTransfers = mergeListById(prev.transfers, remoteState.transfers, combinedDeletedIds);
           const mergedEqubs = mergeListById(prev.equbs, remoteState.equbs, combinedDeletedIds);
           const mergedLoans = mergeListById(prev.loans, remoteState.loans, combinedDeletedIds);
@@ -2025,37 +2026,107 @@ export default function App() {
   };
 
   // 7. Add Equb
-  const handleCreateEqub = (eq: Omit<Equb, 'id' | 'currentRound' | 'computedEndingDate' | 'status'> & { computedEndingDate?: string }) => {
+  const handleCreateEqub = (eq: Omit<Equb, 'id' | 'currentRound' | 'computedEndingDate' | 'status'> & {
+    computedEndingDate?: string;
+    advanceMonthsPrepaid?: number;
+    initialCompletedRounds?: number;
+    recordAdvanceTransaction?: boolean;
+    advancePaymentWalletId?: string;
+  }) => {
     let daysPerRound = 7;
-    if (eq.interval === 'EVERY_10_DAYS') daysPerRound = 10;
-    else if (eq.interval === 'EVERY_15_DAYS') daysPerRound = 15;
-    else if (eq.interval === 'MONTHLY') daysPerRound = 30;
+    let roundsPerMonth = 4;
+    if (eq.interval === 'EVERY_10_DAYS') {
+      daysPerRound = 10;
+      roundsPerMonth = 3;
+    } else if (eq.interval === 'EVERY_15_DAYS') {
+      daysPerRound = 15;
+      roundsPerMonth = 2;
+    } else if (eq.interval === 'MONTHLY') {
+      daysPerRound = 30;
+      roundsPerMonth = 1;
+    }
 
     const start = new Date(eq.startDate || Date.now());
     const endingDate = eq.computedEndingDate || new Date(start.getTime() + 86400000 * daysPerRound * Math.max(0, eq.totalRounds - 1)).toISOString();
 
+    const advanceMonths = Number(eq.advanceMonthsPrepaid) || 0;
+    const prepaidRoundsFromMonths = advanceMonths > 0 ? Math.min(eq.totalRounds, Math.round(advanceMonths * roundsPerMonth)) : 0;
+    const completedRounds = typeof eq.initialCompletedRounds === 'number'
+      ? eq.initialCompletedRounds
+      : prepaidRoundsFromMonths;
+    const startRound = Math.min(eq.totalRounds, completedRounds + 1);
+    const isFinished = completedRounds >= eq.totalRounds;
+
+    const prepaidUntilDate = advanceMonths > 0
+      ? new Date(start.getTime() + advanceMonths * 30 * 86400000).toISOString()
+      : undefined;
+
     const created: Equb = {
       ...eq,
       id: `eq-${Date.now()}`,
-      currentRound: 1,
+      currentRound: startRound,
+      completedRounds,
       mySlots: eq.mySlots || 1,
       payoutsClaimed: 0,
       computedEndingDate: endingDate,
-      status: 'ACTIVE'
+      status: isFinished ? 'COMPLETED' : 'ACTIVE',
+      prepaidUntilDate,
+      advanceMonthsPrepaid: advanceMonths > 0 ? advanceMonths : undefined
     };
+
+    let newTx: Transaction | null = null;
+    if (eq.recordAdvanceTransaction !== false && completedRounds > 0) {
+      const advanceAmount = completedRounds * eq.contributionPerRound * (eq.mySlots || 1);
+      const targetWId = eq.advancePaymentWalletId || eq.walletId;
+      newTx = {
+        id: `tx-eq-adv-${Date.now()}`,
+        date: new Date().toISOString(),
+        type: 'EXPENSE',
+        amount: advanceAmount,
+        walletId: targetWId,
+        category: 'Equb Contribution',
+        description: `${created.name} Equb advance payment for ${advanceMonths > 0 ? `${advanceMonths} month${advanceMonths > 1 ? 's' : ''}` : `${completedRounds} rounds`} (${completedRounds} rounds prepaid upfront)`,
+        expenseScope: 'BUSINESS',
+        refType: 'EQUB',
+        refId: created.id
+      };
+    }
 
     setState(prev => {
       const updatedState = {
         ...prev,
-        equbs: [...prev.equbs, created]
+        equbs: [...prev.equbs, created],
+        transactions: newTx ? [newTx, ...prev.transactions] : prev.transactions
       };
       saveStateToStorage(updatedState);
       syncStateToFirebaseNow(updatedState);
       return updatedState;
     });
 
-    triggerToast(`Equb circle "${created.name}" launched.`);
+    triggerToast(`Equb circle "${created.name}" launched${completedRounds > 0 ? ` (${completedRounds} rounds prepaid in advance)` : ''}.`);
     performRefresh(true);
+    return created;
+  };
+
+  // 7b. Update Shop Operating Hours
+  const handleUpdateShopHours = (updated: ShopOperatingHours) => {
+    setState(prev => {
+      const updatedState = {
+        ...prev,
+        shopHours: updated
+      };
+      saveStateToStorage(updatedState);
+      syncStateToFirebaseNow(updatedState);
+      return updatedState;
+    });
+
+    triggerToast(
+      updated.manualOverrideStatus === 'OPEN'
+        ? 'Shop status manually set to OPEN'
+        : updated.manualOverrideStatus === 'CLOSED'
+        ? 'Shop status manually set to CLOSED'
+        : 'Shop operating schedule updated (6:00 AM – 6:00 PM GMT)'
+    );
   };
 
   // 8. Create Loan (Lent or Borrowed)
@@ -3553,6 +3624,8 @@ export default function App() {
             loans={state.loans}
             recurring={state.recurring}
             receivables={state.receivables}
+            shopHours={state.shopHours}
+            onUpdateShopHours={handleUpdateShopHours}
             hideBalances={state.hideBalances}
             calendarType={state.calendarType || 'GREGORIAN'}
             dismissedNotifIds={dismissedNotifIds}
@@ -3721,8 +3794,10 @@ export default function App() {
         transfers={state.transfers}
         equbs={state.equbs}
         loans={state.loans}
+        recurring={state.recurring}
         onSubmitTransaction={handlePostTransaction}
         onBatchSubmitTransactions={handleBatchPostTransactions}
+        onCreateEqub={handleCreateEqub}
         prefilledText={sharedSmsPrefill || undefined}
       />
 

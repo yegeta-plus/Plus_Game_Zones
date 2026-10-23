@@ -92,6 +92,7 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
     .reduce((sum, r) => {
       if (r.frequency === 'DAILY') return sum + r.amount * 30;
       if (r.frequency === 'WEEKLY') return sum + Math.round(r.amount * (52 / 12));
+      if (r.frequency === 'ONE_TIME' || r.isOneTime) return sum;
       if (r.frequency === 'BIWEEKLY') return sum + Math.round(r.amount * 2);
       if (r.frequency === 'EVERY_3_WEEKS') return sum + Math.round(r.amount * (52 / 3 / 12));
       if (r.frequency === 'EVERY_4_WEEKS') return sum + Math.round(r.amount * (52 / 4 / 12));
@@ -104,6 +105,7 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
 
   const getFrequencyLabel = (freq: RecurringFrequency) => {
     switch (freq) {
+      case 'ONE_TIME': return 'One-Time Advance (Prepaid Upfront)';
       case 'DAILY': return 'Daily';
       case 'WEEKLY': return 'Weekly';
       case 'BIWEEKLY': return 'Bi-Weekly (14 Days)';
@@ -182,13 +184,13 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
     const todayStr = today.toISOString().split('T')[0];
 
     if (presetType === 'RENT_3MO') {
-      setTitle('Commercial Lounge Rent (3 Months Upfront)');
+      setTitle('Commercial Space Rent (Paid in Advance One Time)');
       setAmount('69000');
       setType('EXPENSE');
       setCategory('Rent & Lease');
-      setFrequency('QUARTERLY');
+      setFrequency('ONE_TIME');
       setWalletId(wallets.find(w => w.type === 'CBE_BANK')?.id || wallets[0]?.id || '');
-      setNotes('ETB 69,000 paid for 3 months in advance (ETB 23,000/mo effective). Manual payment required.');
+      setNotes('ETB 69,000 paid for 3 months in advance as a one-time upfront payment (prepaid until Dec 10, 2026).');
     } else if (presetType === 'INTERNET') {
       setTitle('Internet & Fiber Subscription');
       setAmount('1010');
@@ -260,6 +262,7 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
       category,
       walletId,
       frequency,
+      isOneTime: frequency === 'ONE_TIME',
       nextDueDate: new Date(nextDueDate).toISOString(),
       autoProcess: false, // Strictly manual payment confirmation
       status: 'ACTIVE',
@@ -315,6 +318,7 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
       category: editCategory,
       walletId: editWalletId,
       frequency: editFrequency,
+      isOneTime: editFrequency === 'ONE_TIME',
       nextDueDate: new Date(editNextDueDate).toISOString(),
       status: editStatus,
       notes: editNotes.trim() ? editNotes.trim() : undefined,
@@ -935,17 +939,17 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setEditTitle('Commercial Lounge Rent (3 Months Upfront)');
+                    setEditTitle('Commercial Space Rent (Paid in Advance One Time)');
                     setEditAmount('69000');
                     setEditCategory('Rent & Lease');
-                    setEditFrequency('QUARTERLY');
+                    setEditFrequency('ONE_TIME');
                     setEditWalletId(wallets.find(w => w.type === 'CBE_BANK')?.id || wallets[0]?.id || '');
-                    setEditNotes('ETB 69,000 paid for 3 months in advance (ETB 23,000/mo effective). Manual payment required.');
+                    setEditNotes('ETB 69,000 paid for 3 months in advance as a one-time upfront payment (prepaid until Dec 10, 2026).');
                   }}
                   className="p-1.5 rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] hover:border-indigo-500 text-left transition-all cursor-pointer"
                 >
-                  <span className="text-[10px] font-bold text-indigo-500 block truncate">🏢 Rent (3 Mo Upfront)</span>
-                  <span className="text-[9px] font-mono text-slate-400">69,000 ETB</span>
+                  <span className="text-[10px] font-bold text-indigo-500 block truncate">🏢 One-Time Advance Rent</span>
+                  <span className="text-[9px] font-mono text-slate-400">69,000 ETB (Prepaid)</span>
                 </button>
 
                 <button
@@ -1066,6 +1070,7 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
                     onChange={e => setEditFrequency(e.target.value as RecurringFrequency)}
                     className="w-full bg-white dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] focus:border-[#A78BFA] rounded-xl p-2 text-slate-900 dark:text-white outline-none font-medium"
                   >
+                    <option value="ONE_TIME">One-Time Advance Payment (Prepaid Upfront - Rent)</option>
                     <option value="MONTHLY">Monthly (Every Month)</option>
                     <option value="EVERY_3_WEEKS">Every 3-4 Weeks (21 Days - Electricity)</option>
                     <option value="EVERY_2_MONTHS">Every 2 Months (Bi-Monthly - Water / Police)</option>
@@ -1222,8 +1227,8 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
                   onClick={() => applyPreset('RENT_3MO')}
                   className="p-2 rounded-xl bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] hover:border-indigo-500 text-left transition-all cursor-pointer"
                 >
-                  <span className="text-[10px] font-bold text-indigo-500 block">🏢 Rent (3 Mo Upfront)</span>
-                  <span className="text-[9px] font-mono text-slate-400">69,000 ETB / 3 mo</span>
+                  <span className="text-[10px] font-bold text-indigo-500 block">🏢 One-Time Advance Rent</span>
+                  <span className="text-[9px] font-mono text-slate-400">69,000 ETB (Prepaid)</span>
                 </button>
 
                 <button
@@ -1304,6 +1309,7 @@ export const RecurringView: React.FC<RecurringViewProps> = ({
                     onChange={e => setFrequency(e.target.value as RecurringFrequency)}
                     className="w-full bg-white dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] focus:border-[#A78BFA] rounded-xl p-2 text-slate-900 dark:text-white outline-none font-medium"
                   >
+                    <option value="ONE_TIME">One-Time Advance Payment (Prepaid Upfront - Rent)</option>
                     <option value="MONTHLY">Monthly (Every Month)</option>
                     <option value="EVERY_3_WEEKS">Every 3-4 Weeks (21 Days - Electricity)</option>
                     <option value="EVERY_2_MONTHS">Every 2 Months (Bi-Monthly - Water / Police)</option>

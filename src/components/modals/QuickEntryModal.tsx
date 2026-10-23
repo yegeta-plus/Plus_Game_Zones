@@ -20,9 +20,12 @@ import {
   Users,
   CheckCircle2,
   DollarSign,
-  HandCoins
+  HandCoins,
+  Repeat,
+  Plus,
+  Clock
 } from 'lucide-react';
-import { Wallet, Category, TransactionType, UserProfile, Transaction, Transfer, Equb, Loan } from '../../types';
+import { Wallet, Category, TransactionType, UserProfile, Transaction, Transfer, Equb, Loan, RecurringTemplate } from '../../types';
 import { formatETB, parseSummedAmount, calculateWalletBalance, getWalletNickname, isOverdraftAllowed, isWalletActive, validateTransactionPosting } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 import { ModernDateInput } from '../common/ModernDateInput';
@@ -38,6 +41,7 @@ interface QuickEntryModalProps {
   transfers?: Transfer[];
   equbs?: Equb[];
   loans?: Loan[];
+  recurring?: RecurringTemplate[];
   onSubmitTransaction: (data: {
     type: TransactionType;
     amount: number;
@@ -49,7 +53,7 @@ interface QuickEntryModalProps {
     customerName?: string;
     dueDate?: string;
     expenseScope?: 'BUSINESS' | 'PERSONAL';
-    refType?: 'LOAN' | 'RECEIVABLE' | 'EQUB' | 'TRANSFER' | 'SPLIT_SUB_ENTRY';
+    refType?: 'LOAN' | 'RECEIVABLE' | 'EQUB' | 'TRANSFER' | 'SPLIT_SUB_ENTRY' | 'RECURRING';
     refId?: string;
     splits?: Array<{ walletId: string; amount: number }>;
   }) => void;
@@ -61,9 +65,16 @@ interface QuickEntryModalProps {
     description: string;
     date: string;
     expenseScope?: 'BUSINESS' | 'PERSONAL';
-    refType?: 'LOAN' | 'RECEIVABLE' | 'EQUB' | 'TRANSFER' | 'SPLIT_SUB_ENTRY';
+    refType?: 'LOAN' | 'RECEIVABLE' | 'EQUB' | 'TRANSFER' | 'SPLIT_SUB_ENTRY' | 'RECURRING';
     refId?: string;
   }>) => void;
+  onCreateEqub?: (eq: Omit<Equb, 'id' | 'currentRound' | 'computedEndingDate' | 'status'> & {
+    computedEndingDate?: string;
+    advanceMonthsPrepaid?: number;
+    initialCompletedRounds?: number;
+    recordAdvanceTransaction?: boolean;
+    advancePaymentWalletId?: string;
+  }) => Equb | void;
   prefilledText?: string;
 }
 
@@ -78,8 +89,10 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
   transfers = [],
   equbs = [],
   loans = [],
+  recurring = [],
   onSubmitTransaction,
   onBatchSubmitTransactions,
+  onCreateEqub,
   prefilledText
 }) => {
   const [entryMode, setEntryMode] = useState<'INCOME' | 'EXPENSE'>('INCOME');
@@ -88,6 +101,22 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
   const [expenseScope, setExpenseScope] = useState<'BUSINESS' | 'PERSONAL'>('BUSINESS');
   const [selectedEqubId, setSelectedEqubId] = useState<string | null>(null);
   const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
+  const [selectedRecurringId, setSelectedRecurringId] = useState<string | null>(null);
+
+  // Equb Registration Form inside Quick Entry
+  const [showRegisterEqub, setShowRegisterEqub] = useState(false);
+  const [newEqubName, setNewEqubName] = useState('');
+  const [newEqubContribution, setNewEqubContribution] = useState('');
+  const [newEqubInterval, setNewEqubInterval] = useState<'EVERY_10_DAYS' | 'WEEKLY' | 'EVERY_15_DAYS' | 'MONTHLY'>('EVERY_10_DAYS');
+  const [newEqubTotalRounds, setNewEqubTotalRounds] = useState('27');
+  const [newEqubSlots, setNewEqubSlots] = useState('1');
+  const [newEqubWalletId, setNewEqubWalletId] = useState(defaultWalletId || wallets[0]?.id || '');
+  const [newEqubAdvanceMonths, setNewEqubAdvanceMonths] = useState<number>(0);
+  const [newEqubCustomMonths, setNewEqubCustomMonths] = useState('');
+  const [newEqubRecordPayment, setNewEqubRecordPayment] = useState(true);
+
+  // Advance months selection for existing selected Equb
+  const [advanceMonthsForSelected, setAdvanceMonthsForSelected] = useState<number>(0);
 
   // Single mode state
   const [amountStr, setAmountStr] = useState('');
@@ -136,7 +165,93 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
     if (eq.walletId && wallets.some(w => w.id === eq.walletId && isWalletActive(w))) {
       setWalletId(eq.walletId);
     }
+    setAdvanceMonthsForSelected(0);
     setDescription(`${eq.name} — Round #${eq.currentRound} contribution`);
+  };
+
+  const getRoundsPerMonth = (interval: string): number => {
+    switch (interval) {
+      case 'EVERY_10_DAYS': return 3;
+      case 'WEEKLY': return 4;
+      case 'EVERY_15_DAYS': return 2;
+      case 'MONTHLY': return 1;
+      case 'DAILY': return 30;
+      default: return 3;
+    }
+  };
+
+  const effectiveAdvanceMonths = newEqubAdvanceMonths === -1
+    ? (parseFloat(newEqubCustomMonths) || 0)
+    : newEqubAdvanceMonths;
+  const newEqubTotalRoundsNum = Math.max(1, parseInt(newEqubTotalRounds, 10) || 12);
+  const newEqubSlotsNum = Math.max(1, parseInt(newEqubSlots, 10) || 1);
+  const newEqubContribNum = parseFloat(newEqubContribution) || 0;
+  const newEqubRoundsPerMo = getRoundsPerMonth(newEqubInterval);
+  const newEqubPrepaidRounds = effectiveAdvanceMonths > 0
+    ? Math.min(newEqubTotalRoundsNum, Math.round(effectiveAdvanceMonths * newEqubRoundsPerMo))
+    : 0;
+  const newEqubAdvanceTotal = newEqubPrepaidRounds * newEqubContribNum * newEqubSlotsNum;
+  const newEqubStartingRound = Math.min(newEqubTotalRoundsNum, newEqubPrepaidRounds + 1);
+
+  const handleRegisterEqubSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!newEqubName.trim() || !newEqubContribution || newEqubContribNum <= 0) return;
+    triggerHaptic('success');
+
+    if (onCreateEqub) {
+      const created = onCreateEqub({
+        name: newEqubName.trim(),
+        contributionPerRound: newEqubContribNum,
+        interval: newEqubInterval,
+        totalRounds: newEqubTotalRoundsNum,
+        mySlots: newEqubSlotsNum,
+        walletId: newEqubWalletId || walletId,
+        startDate: new Date().toISOString(),
+        advanceMonthsPrepaid: effectiveAdvanceMonths > 0 ? effectiveAdvanceMonths : undefined,
+        initialCompletedRounds: newEqubPrepaidRounds,
+        recordAdvanceTransaction: newEqubRecordPayment && newEqubPrepaidRounds > 0,
+        advancePaymentWalletId: newEqubWalletId || walletId,
+        members: []
+      });
+
+      if (created && (created as Equb).id) {
+        setSelectedEqubId((created as Equb).id);
+        const roundCost = (created as Equb).contributionPerRound * ((created as Equb).mySlots || 1);
+        setAmountStr(roundCost.toString());
+        setCategory('Equb Contribution');
+        setDescription(`${(created as Equb).name} Round #${(created as Equb).currentRound} contribution`);
+      }
+    }
+
+    setShowRegisterEqub(false);
+    setNewEqubName('');
+    setNewEqubContribution('');
+    setNewEqubAdvanceMonths(0);
+    setNewEqubCustomMonths('');
+  };
+
+  const handleApplyAdvanceForSelectedEqub = (months: number) => {
+    triggerHaptic('light');
+    if (!selectedEqub) return;
+    setAdvanceMonthsForSelected(months);
+
+    const singleRoundDue = selectedEqub.contributionPerRound * (selectedEqub.mySlots || 1);
+    const roundsPerMo = getRoundsPerMonth(selectedEqub.interval);
+    const completed = typeof selectedEqub.completedRounds === 'number'
+      ? selectedEqub.completedRounds
+      : Math.max(0, selectedEqub.currentRound - 1);
+    const roundsRemaining = Math.max(1, selectedEqub.totalRounds - completed);
+
+    if (months === 0) {
+      // 1 single round
+      setAmountStr(singleRoundDue.toString());
+      setDescription(`${selectedEqub.name} Round #${selectedEqub.currentRound} contribution`);
+    } else {
+      const roundsToPay = Math.min(roundsRemaining, Math.max(1, Math.round(months * roundsPerMo)));
+      const totalAdvance = roundsToPay * singleRoundDue;
+      setAmountStr(totalAdvance.toString());
+      setDescription(`${selectedEqub.name} advance contribution for ${months} month${months > 1 ? 's' : ''} (${roundsToPay} rounds prepaid)`);
+    }
   };
 
   // Active Loans list & detection
@@ -161,6 +276,32 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
         ? `Collected loan repayment from ${loan.counterparty} (${loan.title})`
         : `Paid loan installment to ${loan.counterparty} (${loan.title})`
     );
+  };
+
+  // Active Recurring Templates list & detection
+  const activeRecurring = (recurring || []).filter(r => r.status === 'ACTIVE' && r.type === entryMode);
+  const isRecurringPayment = entryMode === 'EXPENSE' && (
+    selectedRecurringId !== null ||
+    category === 'Rent & Lease' ||
+    category === 'Rent' ||
+    category === 'Utilities & Internet' ||
+    category.toLowerCase().includes('rent') ||
+    category.toLowerCase().includes('utilit')
+  );
+  const selectedRecurring = (recurring || []).find(r => r.id === selectedRecurringId);
+
+  const handleSelectRecurring = (rec: RecurringTemplate) => {
+    triggerHaptic('medium');
+    setSelectedRecurringId(rec.id);
+    setSelectedEqubId(null);
+    setSelectedLoanId(null);
+    setCategory(rec.category || 'Rent & Lease');
+    setExpenseScope('BUSINESS');
+    setAmountStr(rec.amount.toString());
+    if (rec.walletId && wallets.some(w => w.id === rec.walletId && isWalletActive(w))) {
+      setWalletId(rec.walletId);
+    }
+    setDescription(`${rec.title} payment`);
   };
 
   // Date helper functions
@@ -206,6 +347,8 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
     setIsCreditSale(false);
     setExpenseScope('BUSINESS');
     setSelectedEqubId(null);
+    setSelectedLoanId(null);
+    setSelectedRecurringId(null);
     setValidationError(null);
     setPostingDate(getTodayStr());
     const defaultCat = categories.find(c => c.type === entryMode && c.active);
@@ -343,8 +486,8 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
           description: finalDesc,
           date: txDate,
           expenseScope: entryMode === 'EXPENSE' ? expenseScope : undefined,
-          refType: isEqubContribution && selectedEqubId ? ('EQUB' as const) : isLoanPayment && selectedLoanId ? ('LOAN' as const) : undefined,
-          refId: isEqubContribution && selectedEqubId ? selectedEqubId : isLoanPayment && selectedLoanId ? selectedLoanId : undefined,
+          refType: isEqubContribution && selectedEqubId ? ('EQUB' as const) : isLoanPayment && selectedLoanId ? ('LOAN' as const) : selectedRecurringId ? ('RECURRING' as const) : undefined,
+          refId: isEqubContribution && selectedEqubId ? selectedEqubId : isLoanPayment && selectedLoanId ? selectedLoanId : selectedRecurringId || undefined,
           splits: batchEntries.map(e => ({ walletId: e.walletId, amount: e.amount }))
         });
       } else if (batchEntries.length === 1) {
@@ -358,8 +501,8 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
           description: description || (entryMode === 'INCOME' ? 'Daily Income' : `Payment - ${targetW?.name || 'Wallet'}`),
           date: txDate,
           expenseScope: entryMode === 'EXPENSE' ? expenseScope : undefined,
-          refType: isEqubContribution && selectedEqubId ? ('EQUB' as const) : isLoanPayment && selectedLoanId ? ('LOAN' as const) : undefined,
-          refId: isEqubContribution && selectedEqubId ? selectedEqubId : isLoanPayment && selectedLoanId ? selectedLoanId : undefined
+          refType: isEqubContribution && selectedEqubId ? ('EQUB' as const) : isLoanPayment && selectedLoanId ? ('LOAN' as const) : selectedRecurringId ? ('RECURRING' as const) : undefined,
+          refId: isEqubContribution && selectedEqubId ? selectedEqubId : isLoanPayment && selectedLoanId ? selectedLoanId : selectedRecurringId || undefined
         });
       }
 
@@ -432,8 +575,8 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
       customerName: activeCreditSale ? customerName.trim() : undefined,
       dueDate: activeCreditSale ? calculatedDueDate : undefined,
       expenseScope: currentType === 'EXPENSE' ? expenseScope : undefined,
-      refType: isEqubContribution && selectedEqubId ? 'EQUB' : isLoanPayment && selectedLoanId ? 'LOAN' : undefined,
-      refId: isEqubContribution && selectedEqubId ? selectedEqubId : isLoanPayment && selectedLoanId ? selectedLoanId : undefined
+      refType: isEqubContribution && selectedEqubId ? 'EQUB' : isLoanPayment && selectedLoanId ? 'LOAN' : selectedRecurringId ? 'RECURRING' : undefined,
+      refId: isEqubContribution && selectedEqubId ? selectedEqubId : isLoanPayment && selectedLoanId ? selectedLoanId : selectedRecurringId || undefined
     });
 
     resetForm();
@@ -1276,7 +1419,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
               </div>
             )}
 
-            {/* Active Equbs Selection Grid - ONLY shown when Equb Contribution is selected from category */}
+            {/* Active Equbs Selection Grid & In-Modal Registration - ONLY shown when Equb Contribution is selected from category */}
             {isEqubContribution && (
               <div className="mt-3 p-3.5 rounded-2xl border bg-gradient-to-br from-purple-50/80 to-slate-50 dark:from-purple-950/30 dark:to-[#131926] border-purple-200 dark:border-purple-800/50 space-y-3 animate-fadeIn shadow-xs">
                 <div className="flex items-center justify-between">
@@ -1292,32 +1435,277 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                         </span>
                       </h4>
                       <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">
-                        Select which active Equb circle this round contribution belongs to
+                        Select an active circle or register a new one with prepaid advance months
                       </p>
                     </div>
                   </div>
 
-                  {selectedEqubId && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        setSelectedEqubId(null);
-                      }}
-                      className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 underline cursor-pointer"
-                    >
-                      Deselect
-                    </button>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    {onCreateEqub && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setShowRegisterEqub(prev => !prev);
+                        }}
+                        className={`text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer shadow-xs ${
+                          showRegisterEqub
+                            ? 'bg-purple-200 dark:bg-purple-900 text-purple-900 dark:text-purple-200 hover:bg-purple-300'
+                            : 'bg-purple-600 dark:bg-purple-500 text-white hover:bg-purple-700'
+                        }`}
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>{showRegisterEqub ? 'Close' : 'Register New Equb'}</span>
+                      </button>
+                    )}
+
+                    {selectedEqubId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setSelectedEqubId(null);
+                          setAdvanceMonthsForSelected(0);
+                        }}
+                        className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 underline cursor-pointer"
+                      >
+                        Deselect
+                      </button>
+                    )}
+                  </div>
                 </div>
 
+                {/* Inline Equb Circle Registration Form */}
+                {showRegisterEqub && (
+                  <div className="p-3.5 bg-white dark:bg-[#131926] border border-purple-300 dark:border-purple-700/70 rounded-2xl space-y-3 animate-fadeIn shadow-xs">
+                    <div className="flex items-center justify-between border-b border-purple-100 dark:border-[#1E2D40] pb-2">
+                      <div className="flex items-center gap-1.5">
+                        <Users className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                        <h5 className="text-xs font-black text-slate-900 dark:text-white">Register New Equb Circle</h5>
+                      </div>
+                      <span className="text-[9px] bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 px-1.5 py-0.5 rounded font-mono font-bold">
+                        Quick Launch
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-600 dark:text-[#8899BB] block mb-1">
+                          Equb Name *
+                        </label>
+                        <input
+                          type="text"
+                          value={newEqubName}
+                          onChange={e => setNewEqubName(e.target.value)}
+                          placeholder="e.g. Agerye Equb 2, Leli 3"
+                          className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] focus:border-purple-500 rounded-xl p-2 text-xs text-slate-900 dark:text-white font-medium outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-600 dark:text-[#8899BB] block mb-1">
+                          Contribution / Round (ETB) *
+                        </label>
+                        <input
+                          type="number"
+                          value={newEqubContribution}
+                          onChange={e => setNewEqubContribution(e.target.value)}
+                          placeholder="e.g. 5000"
+                          className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] focus:border-purple-500 rounded-xl p-2 text-xs text-slate-900 dark:text-white font-mono font-bold outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-600 dark:text-[#8899BB] block mb-1">
+                          Interval
+                        </label>
+                        <select
+                          value={newEqubInterval}
+                          onChange={e => setNewEqubInterval(e.target.value as any)}
+                          className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] focus:border-purple-500 rounded-xl p-2 text-xs text-slate-900 dark:text-white font-medium outline-none"
+                        >
+                          <option value="EVERY_10_DAYS">Every 10 Days</option>
+                          <option value="WEEKLY">Weekly</option>
+                          <option value="EVERY_15_DAYS">Every 15 Days</option>
+                          <option value="MONTHLY">Monthly</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-600 dark:text-[#8899BB] block mb-1">
+                          Total Rounds
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={newEqubTotalRounds}
+                          onChange={e => setNewEqubTotalRounds(e.target.value)}
+                          placeholder="27"
+                          className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] focus:border-purple-500 rounded-xl p-2 text-xs text-slate-900 dark:text-white font-mono font-bold outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-600 dark:text-[#8899BB] block mb-1">
+                          Your Slots
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={newEqubSlots}
+                          onChange={e => setNewEqubSlots(e.target.value)}
+                          placeholder="1"
+                          className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] focus:border-purple-500 rounded-xl p-2 text-xs text-slate-900 dark:text-white font-mono font-bold outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600 dark:text-[#8899BB] block mb-1">
+                        Default Payment Wallet
+                      </label>
+                      <select
+                        value={newEqubWalletId}
+                        onChange={e => setNewEqubWalletId(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-[#1C2333] border border-slate-200 dark:border-[#1E2D40] focus:border-purple-500 rounded-xl p-2 text-xs text-slate-900 dark:text-white font-medium outline-none"
+                      >
+                        {wallets.map(w => (
+                          <option key={w.id} value={w.id}>
+                            {w.name} ({formatETB(calculateWalletBalance(w, transactions, transfers))})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* How long is it paid in advance in months? */}
+                    <div className="pt-2.5 border-t border-purple-100 dark:border-[#1E2D40] space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-extrabold text-purple-950 dark:text-purple-200 flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                          <span>How long is it paid in advance (in months)?</span>
+                        </label>
+                        <span className="text-[9px] bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-300 font-mono font-bold px-1.5 py-0.5 rounded">
+                          Prepayment Option
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-[#8899BB] leading-tight">
+                        Choose how many months have already been settled upfront. Future cashflow forecasts will pause deductions during this period.
+                      </p>
+
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                        {[
+                          { label: '0 Mo (None)', val: 0 },
+                          { label: '1 Month', val: 1 },
+                          { label: '2 Months', val: 2 },
+                          { label: '3 Months', val: 3 },
+                          { label: '6 Months', val: 6 },
+                          { label: 'Custom', val: -1 },
+                        ].map(chip => {
+                          const isSelected = newEqubAdvanceMonths === chip.val;
+                          return (
+                            <button
+                              key={chip.val}
+                              type="button"
+                              onClick={() => {
+                                triggerHaptic('light');
+                                setNewEqubAdvanceMonths(chip.val);
+                              }}
+                              className={`py-1.5 px-2 rounded-xl text-[10px] font-bold border transition-all cursor-pointer text-center ${
+                                isSelected
+                                  ? 'bg-purple-600 dark:bg-purple-500 text-white border-purple-600 shadow-xs ring-1 ring-purple-400'
+                                  : 'bg-slate-50 dark:bg-[#1C2333] text-slate-700 dark:text-[#8899BB] border-slate-200 dark:border-[#1E2D40] hover:border-purple-400'
+                              }`}
+                            >
+                              {chip.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {newEqubAdvanceMonths === -1 && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="0.5"
+                            step="0.5"
+                            value={newEqubCustomMonths}
+                            onChange={e => setNewEqubCustomMonths(e.target.value)}
+                            placeholder="Enter months (e.g. 4 or 5)"
+                            className="w-full bg-slate-50 dark:bg-[#1C2333] border border-purple-300 dark:border-purple-600 rounded-xl p-2 text-xs text-slate-900 dark:text-white font-bold outline-none"
+                          />
+                          <span className="text-xs font-bold text-slate-500 dark:text-[#8899BB] shrink-0">
+                            Months
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Advance Breakdown Banner */}
+                      {newEqubPrepaidRounds > 0 && (
+                        <div className="mt-2.5 p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-xs space-y-1.5 animate-fadeIn">
+                          <div className="flex justify-between items-center text-[11px] font-bold text-purple-950 dark:text-purple-100">
+                            <span>Prepaid Rounds:</span>
+                            <span className="font-mono text-purple-700 dark:text-purple-300">
+                              {newEqubPrepaidRounds} rounds ({effectiveAdvanceMonths} mo)
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center text-[11px] font-bold text-purple-950 dark:text-purple-100">
+                            <span>Total Advance Amount:</span>
+                            <span className="font-mono font-black text-emerald-600 dark:text-emerald-400">
+                              {formatETB(newEqubAdvanceTotal)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center text-[10px] text-purple-800 dark:text-purple-200 pt-1 border-t border-purple-200 dark:border-purple-800/60">
+                            <span>Starting Active Round:</span>
+                            <span className="font-bold">
+                              Round #{newEqubStartingRound} of {newEqubTotalRoundsNum}
+                            </span>
+                          </div>
+
+                          <label className="flex items-center gap-2 pt-1 text-[10px] text-purple-900 dark:text-purple-200 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={newEqubRecordPayment}
+                              onChange={e => setNewEqubRecordPayment(e.target.checked)}
+                              className="rounded accent-purple-600"
+                            />
+                            <span>Record {formatETB(newEqubAdvanceTotal)} advance expense now in ledger</span>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-purple-100 dark:border-[#1E2D40]">
+                      <button
+                        type="button"
+                        onClick={() => setShowRegisterEqub(false)}
+                        className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-[#1E2D40] text-xs font-bold text-slate-600 dark:text-[#8899BB] hover:bg-slate-100 dark:hover:bg-[#1C2333] cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRegisterEqubSubmit()}
+                        disabled={!newEqubName.trim() || !newEqubContribution || newEqubContribNum <= 0}
+                        className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                      >
+                        {newEqubPrepaidRounds > 0
+                          ? `Register & Pay ${formatETB(newEqubAdvanceTotal)}`
+                          : 'Register Equb Circle'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Existing Active Equbs Grid */}
                 {activeEqubs.length === 0 ? (
                   <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 text-amber-900 dark:text-amber-200 text-xs space-y-1">
                     <p className="font-bold flex items-center gap-1">
                       <span>⚠️ No Active Equbs Available</span>
                     </p>
                     <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
-                      All registered Equbs are completed or none have been created yet. You can manage Equb circles in the Equb Hub.
+                      All registered Equbs are completed or none have been created yet. Click "+ Register New Equb" above to launch a new circle.
                     </p>
                   </div>
                 ) : (
@@ -1396,27 +1784,209 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                   </div>
                 )}
 
-                {selectedEqub && (
-                  <div className="p-2.5 bg-purple-100/70 dark:bg-purple-900/40 border border-purple-300 dark:border-purple-700/60 rounded-xl flex items-center justify-between text-xs animate-fadeIn">
-                    <div className="min-w-0 pr-2">
-                      <p className="text-[11px] font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1">
-                        <span>✅ Selected: {selectedEqub.name} (Round #{selectedEqub.currentRound})</span>
-                      </p>
-                      <p className="text-[10px] text-purple-700 dark:text-purple-300/90 mt-0.5">
-                        Submitting this will record the expense and advance {selectedEqub.name} to Round #{Math.min(selectedEqub.totalRounds, selectedEqub.currentRound + 1)}.
+                {/* Selected Equb Action & Advance Months Options */}
+                {selectedEqub && (() => {
+                  const roundAmount = selectedEqub.contributionPerRound * (selectedEqub.mySlots || 1);
+                  const rpm = getRoundsPerMonth(selectedEqub.interval);
+                  const completedRounds = typeof selectedEqub.completedRounds === 'number'
+                    ? selectedEqub.completedRounds
+                    : Math.max(0, selectedEqub.currentRound - 1);
+                  const remaining = Math.max(1, selectedEqub.totalRounds - completedRounds);
+
+                  return (
+                    <div className="p-3 bg-purple-100/70 dark:bg-purple-900/40 border border-purple-300 dark:border-purple-700/60 rounded-xl space-y-2.5 text-xs animate-fadeIn">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="min-w-0 pr-2">
+                          <p className="text-[11px] font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1">
+                            <span>✅ Selected: {selectedEqub.name} (Round #{selectedEqub.currentRound} of {selectedEqub.totalRounds})</span>
+                          </p>
+                          <p className="text-[10px] text-purple-700 dark:text-purple-300/90 mt-0.5">
+                            {advanceMonthsForSelected > 0
+                              ? `Advance payment for ${advanceMonthsForSelected} month(s) (${Math.min(remaining, Math.round(advanceMonthsForSelected * rpm))} rounds). Submitting advances ${selectedEqub.name} to Round #${Math.min(selectedEqub.totalRounds, selectedEqub.currentRound + Math.min(remaining, Math.round(advanceMonthsForSelected * rpm)))}.`
+                              : `Submitting will record single round contribution and advance ${selectedEqub.name} to Round #${Math.min(selectedEqub.totalRounds, selectedEqub.currentRound + 1)}.`}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleApplyAdvanceForSelectedEqub(0)}
+                          className="text-[10px] bg-purple-600 dark:bg-purple-500 hover:bg-purple-700 text-white font-bold px-2.5 py-1 rounded-lg shrink-0 cursor-pointer transition-colors"
+                        >
+                          Fill Single Round ({formatETB(roundAmount)})
+                        </button>
+                      </div>
+
+                      {/* Advance Option Selector for Selected Equb */}
+                      <div className="pt-2 border-t border-purple-200 dark:border-purple-700/60">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                            <span>Pay in advance for how long (in months)?</span>
+                          </span>
+                          {advanceMonthsForSelected > 0 && (
+                            <span className="text-[9px] bg-purple-600 text-white px-1.5 py-0.5 rounded font-mono font-bold">
+                              {advanceMonthsForSelected} Mo Advance
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {[
+                            { label: '1 Round', months: 0, rounds: 1 },
+                            { label: '1 Month', months: 1, rounds: Math.min(remaining, rpm) },
+                            { label: '2 Months', months: 2, rounds: Math.min(remaining, rpm * 2) },
+                            { label: '3 Months', months: 3, rounds: Math.min(remaining, rpm * 3) }
+                          ].map(opt => {
+                            const isAct = advanceMonthsForSelected === opt.months;
+                            const optTotal = opt.rounds * roundAmount;
+                            return (
+                              <button
+                                key={opt.months}
+                                type="button"
+                                onClick={() => handleApplyAdvanceForSelectedEqub(opt.months)}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                                  isAct
+                                    ? 'bg-purple-600 text-white border-purple-600 shadow-xs ring-1 ring-purple-400'
+                                    : 'bg-white dark:bg-[#131926] text-purple-900 dark:text-purple-300 border-purple-200 dark:border-purple-800 hover:border-purple-500'
+                                }`}
+                              >
+                                <span>{opt.label}</span>
+                                {opt.months > 0 && (
+                                  <span className="ml-1 opacity-80 font-mono text-[9px]">
+                                    ({opt.rounds} rnds • {formatETB(optTotal)})
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Recurring Bills & Advance Rent Selection Card */}
+            {isRecurringPayment && (
+              <div className="mt-3 p-3.5 rounded-2xl border bg-gradient-to-br from-blue-50/80 to-slate-50 dark:from-blue-950/30 dark:to-[#131926] border-blue-200 dark:border-blue-800/50 space-y-3 animate-fadeIn shadow-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-xl bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shadow-xs">
+                      <Repeat className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <span>Recurring Bills & Advance Payments</span>
+                        <span className="text-[9px] bg-blue-600 dark:bg-blue-500 text-white px-1.5 py-0.5 rounded-full font-mono font-bold">
+                          {activeRecurring.length} Active
+                        </span>
+                      </h4>
+                      <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">
+                        Paying rent or bills in advance automatically advances the next due date and pauses trajectory deductions.
                       </p>
                     </div>
+                  </div>
+
+                  {selectedRecurringId && (
                     <button
                       type="button"
                       onClick={() => {
                         triggerHaptic('light');
-                        const roundAmount = selectedEqub.contributionPerRound * (selectedEqub.mySlots || 1);
-                        setAmountStr(roundAmount.toString());
+                        setSelectedRecurringId(null);
                       }}
-                      className="text-[10px] bg-purple-600 dark:bg-purple-500 hover:bg-purple-700 text-white font-bold px-2 py-1 rounded-lg shrink-0 cursor-pointer transition-colors"
+                      className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 underline cursor-pointer"
                     >
-                      Fill {formatETB(selectedEqub.contributionPerRound * (selectedEqub.mySlots || 1))}
+                      Deselect
                     </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {activeRecurring.map((rec) => {
+                    const isSelected = selectedRecurringId === rec.id;
+                    const isPrepaid = rec.nextDueDate && new Date(rec.nextDueDate).getTime() > Date.now();
+
+                    return (
+                      <button
+                        key={rec.id}
+                        type="button"
+                        onClick={() => handleSelectRecurring(rec)}
+                        className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative ${
+                          isSelected
+                            ? 'bg-blue-100/80 dark:bg-blue-900/45 border-blue-500 dark:border-blue-400 ring-2 ring-blue-500/40 shadow-sm'
+                            : 'bg-white dark:bg-[#131926] border-slate-200 dark:border-[#1E2D40] hover:border-blue-300 dark:hover:border-blue-700/60'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 pr-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                                {rec.title}
+                              </span>
+                              {isPrepaid && (
+                                <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.2 rounded font-mono font-bold">
+                                  PREPAID
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-blue-700 dark:text-blue-300 font-mono mt-0.5">
+                              Next Due: {rec.nextDueDate ? new Date(rec.nextDueDate).toLocaleDateString() : 'Now'}
+                            </p>
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <span className="text-xs font-mono font-black text-blue-700 dark:text-blue-300">
+                              {formatETB(rec.amount)}
+                            </span>
+                            <span className="text-[9px] text-slate-400 dark:text-[#8899BB] block font-mono">
+                              /{rec.frequency.toLowerCase().replace(/_/g, ' ')}
+                            </span>
+                          </div>
+                        </div>
+
+                        {isSelected && (
+                          <div className="absolute top-2 right-2 flex items-center gap-1 text-[9px] font-bold bg-blue-600 dark:bg-blue-500 text-white px-1.5 py-0.5 rounded-full shadow-xs">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>SELECTED</span>
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {selectedRecurring && (
+                  <div className="p-2.5 bg-blue-100/70 dark:bg-blue-900/40 border border-blue-300 dark:border-blue-700/60 rounded-xl flex items-center justify-between text-xs animate-fadeIn flex-wrap gap-2">
+                    <div className="min-w-0 pr-2">
+                      <p className="text-[11px] font-bold text-blue-900 dark:text-blue-200">
+                        ✅ Selected: {selectedRecurring.title}
+                      </p>
+                      <p className="text-[10px] text-blue-700 dark:text-blue-300/90 mt-0.5">
+                        Base rate: {formatETB(selectedRecurring.amount)} due on {selectedRecurring.nextDueDate ? new Date(selectedRecurring.nextDueDate).toLocaleDateString() : 'Scheduled'}. Advance payment extends due date and pauses trajectory burn.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setAmountStr(selectedRecurring.amount.toString());
+                        }}
+                        className="text-[10px] bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 text-white font-bold px-2 py-1 rounded-lg cursor-pointer transition-colors"
+                      >
+                        1 Cycle ({formatETB(selectedRecurring.amount)})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setAmountStr((selectedRecurring.amount * 3).toString());
+                        }}
+                        className="text-[10px] bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 text-white font-bold px-2 py-1 rounded-lg cursor-pointer transition-colors"
+                      >
+                        3 Mo Advance ({formatETB(selectedRecurring.amount * 3)})
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

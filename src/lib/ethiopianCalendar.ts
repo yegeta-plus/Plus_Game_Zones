@@ -117,6 +117,10 @@ export function calculateNextEthiopianDueDate(
 
   const freq = (frequency || '').toUpperCase();
 
+  if (freq === 'ONE_TIME') {
+    return d;
+  }
+
   if (freq === 'DAILY') {
     targetDay += 1;
   } else if (freq === 'WEEKLY') {

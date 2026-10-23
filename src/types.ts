@@ -183,6 +183,8 @@ export interface Equb {
   status: 'ACTIVE' | 'COMPLETED';
   walletId: string; // linked wallet for payouts/contributions
   payoutsClaimed?: number; // number of payouts claimed by user so far (max = mySlots)
+  prepaidUntilDate?: string; // ISO date until which rounds have been prepaid in advance
+  advanceMonthsPrepaid?: number; // number of months prepaid in advance at registration
 }
 
 export interface EqubRoundPayment {
@@ -258,6 +260,7 @@ export interface Goal {
 }
 
 export type RecurringFrequency =
+  | 'ONE_TIME'
   | 'DAILY'
   | 'WEEKLY'
   | 'BIWEEKLY'
@@ -283,6 +286,8 @@ export interface RecurringTemplate {
   prepaidUntilDate?: string;
   notes?: string;
   beneficiary?: string;
+  isOneTime?: boolean;
+  advanceMonthsPrepaid?: number;
 }
 
 export interface Receivable {
@@ -473,6 +478,15 @@ export interface SentReportEmailLog {
   errorMessage?: string;
 }
 
+export interface ShopOperatingHours {
+  openTimeGMT: string; // e.g. "06:00" (6:00 AM GMT / 9:00 AM EAT)
+  closeTimeGMT: string; // e.g. "18:00" (6:00 PM GMT / 9:00 PM EAT)
+  autoStatus: boolean; // Automatically determine status based on current GMT time
+  manualOverrideStatus?: 'OPEN' | 'CLOSED' | null;
+  closingReason?: string;
+  notes?: string;
+}
+
 export interface ERPState {
   currentUser: UserProfile;
   users: UserProfile[];
@@ -496,6 +510,7 @@ export interface ERPState {
   automatedEmailReportsSettings?: AutomatedEmailReportsSettings;
   sentReportEmailLogs?: SentReportEmailLog[];
   deletedEntityIds?: string[];
+  shopHours?: ShopOperatingHours;
   theme: 'dark' | 'light';
   hideBalances: boolean;
   calendarType?: 'ETHIOPIAN' | 'GREGORIAN';

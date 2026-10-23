@@ -235,7 +235,7 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
     return true;
   });
 
-  // Filter transactions for selected wallet (sorted latest first)
+  // Filter transactions for selected wallet (sorted latest first - all transactions always visible)
   const walletTxs = selectedWallet
     ? transactions
         .filter(tx => tx.walletId === selectedWallet.id)
@@ -943,7 +943,9 @@ export const WalletsView: React.FC<WalletsViewProps> = ({
 
           <div className="space-y-2 max-h-60 overflow-y-auto pr-0.5">
             {walletTxs.length === 0 ? (
-              <p className="text-xs text-slate-500 dark:text-[#8899BB] py-4 text-center">No transactions recorded for this wallet.</p>
+              <p className="text-xs text-slate-500 dark:text-[#8899BB] py-4 text-center">
+                No transactions recorded for this wallet.
+              </p>
             ) : (
               walletTxs.map((tx) => {
                 const isCreditCollected = isCreditSaleCollected(tx);

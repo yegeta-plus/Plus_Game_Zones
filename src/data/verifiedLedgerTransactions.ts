@@ -1435,5 +1435,367 @@ export const VERIFIED_TRANSACTIONS: Transaction[] = [
     "walletId": "w-cash",
     "description": "Balance correction — Cash vault ledger adjustment to actual 4,850 ETB",
     "creatorName": "Yegeta Huawei"
+  },
+  // ==========================================
+  // OCTOBER 12, 2026
+  // ==========================================
+  {
+    "id": "tx-20261012-inc-cbe-1049",
+    "date": "2026-10-12T10:49:00.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 60,
+    "walletId": "w-cbe",
+    "description": "Daily Sales collection (CBE)",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261012-inc-telebirr-1049",
+    "date": "2026-10-12T10:49:15.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 515,
+    "walletId": "w-telebirr",
+    "description": "Daily Sales collection (Telebirr)",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261012-inc-cash-1049",
+    "date": "2026-10-12T10:49:30.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 950,
+    "walletId": "w-cash",
+    "description": "Daily Sales collection (Cash)",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261012-exp-cash-drinks-1051",
+    "date": "2026-10-12T10:51:00.000Z",
+    "type": "EXPENSE",
+    "category": "Food & Refreshments",
+    "amount": 250,
+    "walletId": "w-cash",
+    "description": "Owner Withdrawal — Webe drinks (Food & Refreshments)",
+    "expenseScope": "PERSONAL",
+    "creatorName": "Yegeta Huawei"
+  },
+  // ==========================================
+  // OCTOBER 13, 2026
+  // ==========================================
+  {
+    "id": "tx-20261013-exp-cash-home-1050",
+    "date": "2026-10-13T10:50:00.000Z",
+    "type": "EXPENSE",
+    "category": "Home Expense",
+    "amount": 50,
+    "walletId": "w-cash",
+    "description": "Owner Withdrawal — Home expense",
+    "expenseScope": "PERSONAL",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261013-inc-telebirr-1116",
+    "date": "2026-10-13T11:16:00.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 505,
+    "walletId": "w-telebirr",
+    "description": "Daily Sales collection (Telebirr)",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261013-exp-cash-hermi-1310",
+    "date": "2026-10-13T13:10:00.000Z",
+    "type": "EXPENSE",
+    "category": "Transport",
+    "amount": 200,
+    "walletId": "w-cash",
+    "description": "Owner Withdrawal — Hermi transport",
+    "expenseScope": "PERSONAL",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261013-exp-cash-home-1316",
+    "date": "2026-10-13T13:16:00.000Z",
+    "type": "EXPENSE",
+    "category": "Home Expense",
+    "amount": 360,
+    "walletId": "w-cash",
+    "description": "Owner Withdrawal — Home expense (edited)",
+    "expenseScope": "PERSONAL",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261013-inc-cash-2047",
+    "date": "2026-10-13T20:47:00.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 1870,
+    "walletId": "w-cash",
+    "description": "Daily Sales collection (Cash)",
+    "creatorName": "Yegeta Huawei"
+  },
+  // ==========================================
+  // OCTOBER 14, 2026
+  // ==========================================
+  {
+    "id": "tx-20261014-inc-cbe-1043",
+    "date": "2026-10-14T10:43:00.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 140,
+    "walletId": "w-cbe",
+    "description": "Daily Sales collection (CBE)",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261014-inc-telebirr-1043",
+    "date": "2026-10-14T10:43:30.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 640,
+    "walletId": "w-telebirr",
+    "description": "Daily Sales collection (Telebirr)",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261014-inc-cash-1108",
+    "date": "2026-10-14T11:08:00.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 1030,
+    "walletId": "w-cash",
+    "description": "Daily Sales collection (Cash)",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261014-inc-telebirr-rcv-1112",
+    "date": "2026-10-14T11:12:00.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 190,
+    "walletId": "w-telebirr",
+    "description": "Receivable collected — Repayment on receivable",
+    "refType": "RECEIVABLE",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261014-inc-cbe-1319",
+    "date": "2026-10-14T13:19:00.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 400,
+    "walletId": "w-cbe",
+    "description": "Daily Sales collection (CBE)",
+    "creatorName": "Yegeta Huawei"
+  },
+  // ==========================================
+  // OCTOBER 16, 2026
+  // ==========================================
+  {
+    "id": "tx-20261016-inc-cbe-0812",
+    "date": "2026-10-16T08:12:00.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 30,
+    "walletId": "w-cbe",
+    "description": "Daily Sales collection (CBE)",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261016-inc-telebirr-0812",
+    "date": "2026-10-16T08:12:20.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 505,
+    "walletId": "w-telebirr",
+    "description": "Daily Sales collection (Telebirr)",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261016-inc-ebirr-0812",
+    "date": "2026-10-16T08:12:40.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 75,
+    "walletId": "w-ebirr",
+    "description": "Daily Sales collection (Ebirr)",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261016-exp-cash-oil-1043",
+    "date": "2026-10-16T10:43:00.000Z",
+    "type": "EXPENSE",
+    "category": "Home Expense",
+    "amount": 440,
+    "walletId": "w-cash",
+    "description": "Owner Withdrawal — Zeyt (home expense)",
+    "expenseScope": "PERSONAL",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261016-inc-cash-1117",
+    "date": "2026-10-16T11:17:00.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 1090,
+    "walletId": "w-cash",
+    "description": "Daily Sales collection (Cash)",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261016-exp-cash-gg-1119",
+    "date": "2026-10-16T11:19:00.000Z",
+    "type": "EXPENSE",
+    "category": "Transport",
+    "amount": 200,
+    "walletId": "w-cash",
+    "description": "Owner Withdrawal — GG transport",
+    "expenseScope": "PERSONAL",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261016-exp-cash-zeru-1119",
+    "date": "2026-10-16T11:19:20.000Z",
+    "type": "EXPENSE",
+    "category": "Personal Expense",
+    "amount": 200,
+    "walletId": "w-cash",
+    "description": "Owner Withdrawal — Zeru (Personal Expense)",
+    "expenseScope": "PERSONAL",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261016-exp-cash-food-1119",
+    "date": "2026-10-16T11:19:40.000Z",
+    "type": "EXPENSE",
+    "category": "Food & Refreshments",
+    "amount": 300,
+    "walletId": "w-cash",
+    "description": "Owner Withdrawal — Food & Refreshments",
+    "expenseScope": "PERSONAL",
+    "creatorName": "Yegeta Huawei"
+  },
+  // ==========================================
+  // OCTOBER 17, 2026
+  // ==========================================
+  {
+    "id": "tx-20261017-inc-cbe-0851",
+    "date": "2026-10-17T08:51:00.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 315,
+    "walletId": "w-cbe",
+    "description": "Daily Sales collection (CBE)",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261017-inc-telebirr-0851",
+    "date": "2026-10-17T08:51:30.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 225,
+    "walletId": "w-telebirr",
+    "description": "Daily Sales collection (Telebirr)",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261017-inc-cash-1026",
+    "date": "2026-10-17T10:26:00.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 2015,
+    "walletId": "w-cash",
+    "description": "Daily Sales collection (Cash)",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261017-exp-cash-home-1058",
+    "date": "2026-10-17T10:58:00.000Z",
+    "type": "EXPENSE",
+    "category": "Home Expense",
+    "amount": 300,
+    "walletId": "w-cash",
+    "description": "Owner Withdrawal — Home expense (edited)",
+    "expenseScope": "PERSONAL",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261017-exp-cash-zeru-2220",
+    "date": "2026-10-17T22:20:00.000Z",
+    "type": "EXPENSE",
+    "category": "Food & Refreshments",
+    "amount": 250,
+    "walletId": "w-cash",
+    "description": "Owner Withdrawal — Zeru luch (Food & Refreshments)",
+    "expenseScope": "PERSONAL",
+    "creatorName": "Yegeta Huawei"
+  },
+  // ==========================================
+  // OCTOBER 18, 2026
+  // ==========================================
+  {
+    "id": "tx-20261018-inc-cbe-1040",
+    "date": "2026-10-18T10:40:00.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 120,
+    "walletId": "w-cbe",
+    "description": "Daily Sales collection (CBE)",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261018-inc-telebirr-1040",
+    "date": "2026-10-18T10:40:30.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 400,
+    "walletId": "w-telebirr",
+    "description": "Daily Sales collection (Telebirr)",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261018-exp-cash-water-1059",
+    "date": "2026-10-18T10:59:00.000Z",
+    "type": "EXPENSE",
+    "category": "Utilities & Internet",
+    "amount": 400,
+    "walletId": "w-cash",
+    "description": "Money Out — Water bill (Utilities/Electricity…)",
+    "expenseScope": "BUSINESS",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261018-exp-ekub-split-1100",
+    "date": "2026-10-18T11:00:00.000Z",
+    "type": "EXPENSE",
+    "category": "Equb Contribution",
+    "amount": 5000,
+    "walletId": "w-cash",
+    "description": "Ekub contribution — Split across 3 wallets",
+    "refType": "EQUB",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261018-inc-cash-2220",
+    "date": "2026-10-18T22:20:00.000Z",
+    "type": "INCOME",
+    "category": "Daily Income",
+    "amount": 1550,
+    "walletId": "w-cash",
+    "description": "Daily Sales collection (Cash)",
+    "creatorName": "Yegeta Huawei"
+  },
+  {
+    "id": "tx-20261018-exp-cash-buna-2220",
+    "date": "2026-10-18T22:20:30.000Z",
+    "type": "EXPENSE",
+    "category": "Home Expense",
+    "amount": 200,
+    "walletId": "w-cash",
+    "description": "Owner Withdrawal — Buna (home expense)",
+    "expenseScope": "PERSONAL",
+    "creatorName": "Yegeta Huawei"
   }
 ];

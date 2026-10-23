@@ -347,7 +347,7 @@ export interface ScenarioSimulationResult {
  */
 export function analyzeRecencyData(
   transactions: Transaction[],
-  wallets: Wallet[],
+  wallets: Wallet[] = [],
   equbs: Equb[] = [],
   loans: Loan[] = [],
   receivables: Receivable[] = []
@@ -437,7 +437,7 @@ export function analyzeRecencyData(
   let cbeTotal = 0;
   let telebirrTotal = 0;
   let cashTotal = 0;
-  wallets.forEach((w) => {
+  (wallets || []).forEach((w) => {
     const bal = w.openingBalance + w.totalIn - w.totalOut;
     if (w.type === 'CBE_BANK' || w.name.toLowerCase().includes('cbe')) {
       cbeTotal += bal;
@@ -654,10 +654,13 @@ export function simulateScenario(
 
   (input.recurring || []).filter((r) => r.status === 'ACTIVE').forEach((r) => {
     let monthlyEquiv = 0;
-    switch (r.frequency) {
-      case 'DAILY':
-        monthlyEquiv = r.amount * 30;
-        break;
+    if (r.isOneTime || r.frequency === 'ONE_TIME') {
+      monthlyEquiv = 0;
+    } else {
+      switch (r.frequency) {
+        case 'DAILY':
+          monthlyEquiv = r.amount * 30;
+          break;
       case 'WEEKLY':
         monthlyEquiv = r.amount * (52 / 12);
         break;
@@ -685,6 +688,7 @@ export function simulateScenario(
       default:
         monthlyEquiv = r.amount;
     }
+  }
     const roundedMonthly = Math.round(monthlyEquiv);
     if (r.type === 'INCOME') {
       recurringMonthlyIncome += roundedMonthly;

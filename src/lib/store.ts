@@ -18,7 +18,8 @@ import {
   ChatChannel,
   ChatMessage,
   AutomatedEmailReportsSettings,
-  SentReportEmailLog
+  SentReportEmailLog,
+  ShopOperatingHours
 } from '../types';
 import { triggerHaptic } from './haptics';
 import { DEFAULT_ROLE_PERMISSIONS, getEffectivePermissions } from './auth';
@@ -49,6 +50,7 @@ const STORAGE_KEY = 'pluszone_fin_erp_state_v52_oct12_advance_rent_and_equb_traj
  */
 export function isCanonicalTransactionId(id: string): boolean {
   if (!id || typeof id !== 'string') return false;
+  if (id.startsWith('tx-20261019')) return false;
   return (
     id.startsWith('tx-2026') ||
     id.startsWith('tx-jul') ||
@@ -372,16 +374,26 @@ export const DEFAULT_RECURRING: RecurringTemplate[] = [
     type: 'EXPENSE',
     category: 'Rent & Lease',
     walletId: 'w-cash',
-    frequency: 'MONTHLY',
+    frequency: 'ONE_TIME',
     nextDueDate: '2026-12-10T00:00:00.000Z',
     prepaidUntilDate: '2026-12-10T00:00:00.000Z',
     lastProcessedDate: '2026-09-10T09:30:00.000Z',
     autoProcess: false,
     status: 'ACTIVE',
-    notes: 'Commercial shop rent ETB 23,000/mo. Paid 69,000 in advance on Sep 10 (prepaid until Dec 10, 2026).'
+    isOneTime: true,
+    advanceMonthsPrepaid: 3,
+    notes: 'Commercial shop rent ETB 23,000/mo. Paid 69,000 in advance on Sep 10 as a one-time upfront payment (prepaid until Dec 10, 2026).'
   }
 ];
 const DEFAULT_RECEIVABLES: Receivable[] = INITIAL_DATASET_JULY_AUG.receivables;
+
+export const DEFAULT_SHOP_HOURS: ShopOperatingHours = {
+  openTimeGMT: '06:00', // 6:00 AM GMT (09:00 EAT / 3:00 ጠዋት)
+  closeTimeGMT: '18:00', // 6:00 PM GMT (21:00 EAT / 3:00 ማታ)
+  autoStatus: true,
+  manualOverrideStatus: null,
+  notes: 'Plus Game Zone standard shift: 6:00 AM – 6:00 PM GMT (09:00 – 21:00 EAT / 12 Hours Daily).'
+};
 
 export function evaluateReceivableStatus(r: Receivable): 'OUTSTANDING' | 'COLLECTED' | 'WRITTEN_OFF' | 'LATE' {
   if (r.status === 'COLLECTED' || r.amountCollected >= r.amountOwed) {
@@ -582,16 +594,25 @@ export function loadInitialState(): ERPState {
         });
 
         // Retain verified transactions and any valid user-created transactions
-        const obsoleteTxIds = new Set(['tx-20260910-exp-house-renewal', 'tx-20260910-exp-rent-6900', 'tx-20261002-exp-ekub-0956']);
+        const obsoleteTxIds = new Set([
+          'tx-20260910-exp-house-renewal',
+          'tx-20260910-exp-rent-6900',
+          'tx-20261002-exp-ekub-0956',
+          'tx-20261019-inc-cash-rcv-1102',
+          'tx-20261019-inc-cash-2111',
+          'tx-20261019-exp-cash-home-2111',
+          'tx-20261019-inc-telebirr-2236',
+          'tx-20261019-inc-cbe-2236'
+        ]);
         const existingTxMap = new Map<string, Transaction>();
         baseTransactions.forEach(t => {
-          if (!obsoleteTxIds.has(t.id)) {
+          if (!obsoleteTxIds.has(t.id) && !t.id.startsWith('tx-20261019') && !t.date?.startsWith('2026-10-19')) {
             existingTxMap.set(t.id, t);
           }
         });
         if (Array.isArray(parsed.transactions)) {
           parsed.transactions.forEach((t: Transaction) => {
-            if (t && t.id && !obsoleteTxIds.has(t.id)) {
+            if (t && t.id && !obsoleteTxIds.has(t.id) && !t.id.startsWith('tx-20261019') && !t.date?.startsWith('2026-10-19')) {
               if (!existingTxMap.has(t.id)) {
                 existingTxMap.set(t.id, t);
               }
@@ -604,11 +625,17 @@ export function loadInitialState(): ERPState {
         const deletedTestIds = new Set(rawDeletedIds.filter((id: string) => !isCanonicalTransactionId(id)));
         deletedTestIds.add('tx-1790749015154');
         deletedTestIds.add('tx-1790748931615');
+        deletedTestIds.add('tx-20261019-inc-cash-rcv-1102');
+        deletedTestIds.add('tx-20261019-inc-cash-2111');
+        deletedTestIds.add('tx-20261019-exp-cash-home-2111');
+        deletedTestIds.add('tx-20261019-inc-telebirr-2236');
+        deletedTestIds.add('tx-20261019-inc-cbe-2236');
 
         parsed.transactions = Array.from(existingTxMap.values())
           .filter((t: Transaction) => {
             if (!t || !t.id) return false;
             if (obsoleteTxIds.has(t.id)) return false;
+            if (t.id.startsWith('tx-20261019') || t.date?.startsWith('2026-10-19')) return false;
             if (isCanonicalTransactionId(t.id)) return true;
             if (deletedTestIds.has(t.id)) return false;
             return true;
@@ -757,6 +784,18 @@ export function loadInitialState(): ERPState {
             }
           });
         }
+        // Ensure rec-rent-shop is correctly marked as ONE-TIME advance payment
+        const shopRentIdx = currentRecurring.findIndex(r => r.id === 'rec-rent-shop');
+        if (shopRentIdx !== -1) {
+          currentRecurring[shopRentIdx] = {
+            ...currentRecurring[shopRentIdx],
+            frequency: 'ONE_TIME',
+            isOneTime: true,
+            advanceMonthsPrepaid: 3,
+            prepaidUntilDate: '2026-12-10T00:00:00.000Z',
+            notes: 'Commercial shop rent ETB 23,000/mo. Paid 69,000 in advance on Sep 10 as a one-time upfront payment (prepaid until Dec 10, 2026).'
+          };
+        }
         parsed.recurring = currentRecurring;
         parsed.transfers = Array.isArray(parsed.transfers) ? parsed.transfers : [];
         parsed.goals = Array.isArray(parsed.goals) ? parsed.goals : DEFAULT_GOALS;
@@ -837,6 +876,9 @@ export function loadInitialState(): ERPState {
         } else {
           parsed.currentUser = parsed.users?.[0] || DEFAULT_USERS[0];
         }
+        if (!parsed.shopHours || !parsed.shopHours.openTimeGMT) {
+          parsed.shopHours = DEFAULT_SHOP_HOURS;
+        }
         const userExplicitCal = typeof window !== 'undefined' ? (localStorage.getItem('pluszone_calendar_user_choice') as 'ETHIOPIAN' | 'GREGORIAN' | null) : null;
         parsed.calendarType = userExplicitCal || (parsed.calendarType === 'ETHIOPIAN' && !userExplicitCal ? 'GREGORIAN' : parsed.calendarType) || 'GREGORIAN';
         return parsed;
@@ -893,6 +935,7 @@ function createInitialState(): ERPState {
     automatedEmailReportsSettings: DEFAULT_AUTOMATED_EMAIL_REPORTS,
     sentReportEmailLogs: DEFAULT_SENT_REPORT_LOGS,
     deletedEntityIds: [],
+    shopHours: DEFAULT_SHOP_HOURS,
     theme: 'dark',
     hideBalances: false,
     calendarType: 'GREGORIAN'
@@ -2160,31 +2203,283 @@ export function syncEqubWithTransaction(
 
   const match = tx.description?.match(/round\s*#?\s*(\d+)/i);
   const roundInTx = match ? parseInt(match[1], 10) : null;
+  const advanceRoundsMatch = tx.description?.match(/(\d+)\s*rounds?\s*(?:prepaid|advance)/i);
+
+  const singleRoundCost = (targetEqub.contributionPerRound || 1) * (targetEqub.mySlots || 1);
+  const roundsCoveredByAmount = singleRoundCost > 0 ? Math.floor(tx.amount / singleRoundCost) : 1;
+  const roundsToAdd = advanceRoundsMatch
+    ? parseInt(advanceRoundsMatch[1], 10)
+    : Math.max(1, roundsCoveredByAmount);
 
   let newCompleted = typeof targetEqub.completedRounds === 'number'
     ? targetEqub.completedRounds
     : Math.max(0, targetEqub.currentRound - 1);
 
-  if (roundInTx !== null) {
+  if (roundInTx !== null && roundsCoveredByAmount <= 1) {
     newCompleted = Math.max(newCompleted, roundInTx);
   } else {
-    newCompleted += 1;
+    newCompleted += roundsToAdd;
   }
 
   newCompleted = Math.min(targetEqub.totalRounds, newCompleted);
   const nextRound = Math.min(targetEqub.totalRounds, newCompleted + 1);
   const isFinished = newCompleted >= targetEqub.totalRounds;
 
+  let intervalDays = 7;
+  if (targetEqub.interval === 'EVERY_10_DAYS') intervalDays = 10;
+  else if (targetEqub.interval === 'EVERY_15_DAYS') intervalDays = 15;
+  else if (targetEqub.interval === 'MONTHLY') intervalDays = 30;
+
+  const txTime = new Date(tx.date).getTime();
+  const prepaidUntilDate = new Date(txTime + roundsToAdd * intervalDays * 86400000).toISOString();
+
   const updatedEqub: Equb = {
     ...targetEqub,
     completedRounds: newCompleted,
     currentRound: nextRound,
     status: isFinished ? 'COMPLETED' : 'ACTIVE',
-    isOverdue: false
+    isOverdue: false,
+    prepaidUntilDate: roundsToAdd > 1 ? prepaidUntilDate : targetEqub.prepaidUntilDate
   };
 
   const updatedEqubs = equbs.map(e => (e.id === targetEqub.id ? updatedEqub : e));
   return { updatedEqubs, matchedEqub: updatedEqub };
 }
+
+// ==================== SHOP OPERATING HOURS (6:00 AM - 6:00 PM GMT) ====================
+
+export interface ShopStatusInfo {
+  isOpen: boolean;
+  statusLabel: 'OPEN' | 'CLOSED';
+  currentGmtTimeStr: string; // e.g. "17:47 GMT"
+  currentEatTimeStr: string; // e.g. "08:47 PM EAT"
+  currentEthTimeStr: string; // e.g. "2:47 ማታ"
+  openTimeGmtFormatted: string; // "6:00 AM GMT (9:00 AM EAT)"
+  closeTimeGmtFormatted: string; // "6:00 PM GMT (9:00 PM EAT)"
+  countdownText: string;
+  isOverridden: boolean;
+  shiftName: 'Day Operating Shift' | 'After-Hours / Closed';
+  openTimeGMT: string;
+  closeTimeGMT: string;
+}
+
+export function getShopStatusInfo(
+  shopHours?: ShopOperatingHours,
+  referenceDate: Date = new Date()
+): ShopStatusInfo {
+  const hours = shopHours || DEFAULT_SHOP_HOURS;
+  
+  const utcHours = referenceDate.getUTCHours();
+  const utcMinutes = referenceDate.getUTCMinutes();
+  const currentUtcMinutes = utcHours * 60 + utcMinutes;
+
+  const [openH, openM] = (hours.openTimeGMT || '06:00').split(':').map(Number);
+  const [closeH, closeM] = (hours.closeTimeGMT || '18:00').split(':').map(Number);
+  const openMinutes = (isNaN(openH) ? 6 : openH) * 60 + (isNaN(openM) ? 0 : openM);
+  const closeMinutes = (isNaN(closeH) ? 18 : closeH) * 60 + (isNaN(closeM) ? 0 : closeM);
+
+  let scheduledOpen = false;
+  if (closeMinutes > openMinutes) {
+    scheduledOpen = currentUtcMinutes >= openMinutes && currentUtcMinutes < closeMinutes;
+  } else {
+    scheduledOpen = currentUtcMinutes >= openMinutes || currentUtcMinutes < closeMinutes;
+  }
+
+  const isOverridden = hours.manualOverrideStatus === 'OPEN' || hours.manualOverrideStatus === 'CLOSED';
+  const isOpen = isOverridden
+    ? hours.manualOverrideStatus === 'OPEN'
+    : scheduledOpen;
+
+  let countdownText = '';
+  if (isOpen) {
+    let diff = closeMinutes - currentUtcMinutes;
+    if (diff < 0) diff += 1440;
+    const h = Math.floor(diff / 60);
+    const m = diff % 60;
+    countdownText = h > 0 ? `Closes in ${h}h ${m}m (6:00 PM GMT)` : `Closes in ${m}m (6:00 PM GMT)`;
+  } else {
+    let diff = openMinutes - currentUtcMinutes;
+    if (diff <= 0) diff += 1440;
+    const h = Math.floor(diff / 60);
+    const m = diff % 60;
+    countdownText = h > 0 ? `Opens in ${h}h ${m}m (6:00 AM GMT)` : `Opens in ${m}m (6:00 AM GMT)`;
+  }
+
+  const gmtPadH = String(utcHours).padStart(2, '0');
+  const gmtPadM = String(utcMinutes).padStart(2, '0');
+  const currentGmtTimeStr = `${gmtPadH}:${gmtPadM} GMT`;
+
+  // East Africa Time (Addis Ababa) is GMT + 3
+  const eatDate = new Date(referenceDate.getTime() + 3 * 3600 * 1000);
+  const eatHours = eatDate.getUTCHours();
+  const eatMinutes = eatDate.getUTCMinutes();
+  const eatAmPm = eatHours >= 12 ? 'PM' : 'AM';
+  const eat12 = eatHours % 12 || 12;
+  const currentEatTimeStr = `${eat12}:${String(eatMinutes).padStart(2, '0')} ${eatAmPm} EAT`;
+
+  // Ethiopian 12-hour clock (6:00 AM EAT is 12:00 morning)
+  const ethHour = (eatHours - 6 + 24) % 24;
+  const isEthNight = ethHour >= 12;
+  const ethHour12 = (ethHour % 12) || 12;
+  const ethPeriod = isEthNight ? 'ማታ' : (ethHour < 6 ? 'ጠዋት' : 'ከሰዓት');
+  const currentEthTimeStr = `${ethHour12}:${String(eatMinutes).padStart(2, '0')} ${ethPeriod}`;
+
+  return {
+    isOpen,
+    statusLabel: isOpen ? 'OPEN' : 'CLOSED',
+    currentGmtTimeStr,
+    currentEatTimeStr,
+    currentEthTimeStr,
+    openTimeGmtFormatted: '6:00 AM GMT (9:00 AM EAT)',
+    closeTimeGmtFormatted: '6:00 PM GMT (9:00 PM EAT)',
+    countdownText,
+    isOverridden,
+    shiftName: isOpen ? 'Day Operating Shift' : 'After-Hours / Closed',
+    openTimeGMT: hours.openTimeGMT || '06:00',
+    closeTimeGMT: hours.closeTimeGMT || '18:00'
+  };
+}
+
+export function isTransactionDuringOpenHours(txDateIso: string, shopHours?: ShopOperatingHours): boolean {
+  try {
+    const d = new Date(txDateIso);
+    if (isNaN(d.getTime())) return true;
+    const utcM = d.getUTCHours() * 60 + d.getUTCMinutes();
+    const [openH, openM] = ((shopHours?.openTimeGMT) || '06:00').split(':').map(Number);
+    const [closeH, closeM] = ((shopHours?.closeTimeGMT) || '18:00').split(':').map(Number);
+    const oMin = (isNaN(openH) ? 6 : openH) * 60 + (isNaN(openM) ? 0 : openM);
+    const cMin = (isNaN(closeH) ? 18 : closeH) * 60 + (isNaN(closeM) ? 0 : closeM);
+    if (cMin > oMin) {
+      return utcM >= oMin && utcM < cMin;
+    }
+    return utcM >= oMin || utcM < cMin;
+  } catch {
+    return true;
+  }
+}
+
+export interface TodayShiftMetrics {
+  openShiftIncome: number;
+  openShiftExpenses: number;
+  openShiftNet: number;
+  openShiftTxCount: number;
+  afterHoursIncome: number;
+  afterHoursExpenses: number;
+  afterHoursNet: number;
+  afterHoursTxCount: number;
+  totalDayIncome: number;
+  totalDayExpense: number;
+  totalDayNet: number;
+  totalTxCount: number;
+}
+
+export function calculateTodayShiftMetrics(
+  transactions: Transaction[],
+  shopHours?: ShopOperatingHours,
+  targetDate: Date = new Date()
+): TodayShiftMetrics {
+  const targetYear = targetDate.getFullYear();
+  const targetMonth = targetDate.getMonth();
+  const targetDay = targetDate.getDate();
+
+  const todayTxs = (transactions || []).filter(tx => {
+    try {
+      const d = new Date(tx.date);
+      if (isNaN(d.getTime())) return false;
+      return (
+        d.getFullYear() === targetYear &&
+        d.getMonth() === targetMonth &&
+        d.getDate() === targetDay
+      );
+    } catch {
+      return false;
+    }
+  });
+
+  let openShiftIncome = 0;
+  let openShiftExpenses = 0;
+  let openShiftTxCount = 0;
+
+  let afterHoursIncome = 0;
+  let afterHoursExpenses = 0;
+  let afterHoursTxCount = 0;
+
+  todayTxs.forEach(tx => {
+    const isDuringShift = isTransactionDuringOpenHours(tx.date, shopHours);
+    const amt = tx.amount || 0;
+    if (isDuringShift) {
+      openShiftTxCount++;
+      if (tx.type === 'INCOME') {
+        openShiftIncome += amt;
+      } else {
+        openShiftExpenses += amt;
+      }
+    } else {
+      afterHoursTxCount++;
+      if (tx.type === 'INCOME') {
+        afterHoursIncome += amt;
+      } else {
+        afterHoursExpenses += amt;
+      }
+    }
+  });
+
+  return {
+    openShiftIncome,
+    openShiftExpenses,
+    openShiftNet: openShiftIncome - openShiftExpenses,
+    openShiftTxCount,
+    afterHoursIncome,
+    afterHoursExpenses,
+    afterHoursNet: afterHoursIncome - afterHoursExpenses,
+    afterHoursTxCount,
+    totalDayIncome: openShiftIncome + afterHoursIncome,
+    totalDayExpense: openShiftExpenses + afterHoursExpenses,
+    totalDayNet: (openShiftIncome + afterHoursIncome) - (openShiftExpenses + afterHoursExpenses),
+    totalTxCount: todayTxs.length
+  };
+}
+
+// ==================== OPERATING HOURS CUTOFF (Closed 6pm GMT, Opened 6am GMT) ====================
+
+/**
+ * Checks if a given timestamp was recorded when the shop was closed
+ * (Shop closes at 6:00 PM GMT and opens at 6:00 AM GMT)
+ */
+export function isRecordedAfter6pmGMT(dateStr: string): boolean {
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return false;
+    const totalMinutes = d.getUTCHours() * 60 + d.getUTCMinutes();
+    // Closed between 18:00 (6 PM GMT) and 06:00 (6 AM GMT)
+    return totalMinutes >= 18 * 60 || totalMinutes < 6 * 60;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Checks if the current live time is during closed hours
+ * (Shop closed 6:00 PM GMT to 6:00 AM GMT)
+ */
+export function isCurrentTimeAfter6pmGMT(): boolean {
+  const now = new Date();
+  const totalMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  // Closed between 18:00 (6 PM GMT) and 06:00 (6 AM GMT)
+  return totalMinutes >= 18 * 60 || totalMinutes < 6 * 60;
+}
+
+export function isRecordedOutsideOperatingHours(dateStr: string, shopHours?: ShopOperatingHours): boolean {
+  return !isTransactionDuringOpenHours(dateStr, shopHours);
+}
+
+export function isCurrentTimeOutsideOperatingHours(shopHours?: ShopOperatingHours): boolean {
+  return !getShopStatusInfo(shopHours).isOpen;
+}
+
+// Backward compatibility aliases for legacy references (now aligned to 6 PM GMT shop closing)
+export const isRecordedAfter7pmGMT = isRecordedAfter6pmGMT;
+export const isCurrentTimeAfter7pmGMT = isCurrentTimeAfter6pmGMT;
+
 
 

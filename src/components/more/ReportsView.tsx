@@ -114,7 +114,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ state, onUpdateState }
     });
   }, [state.users]);
 
-  // Filter transactions
+  // Filter transactions (all transactions are visible across reports)
   const filteredTransactions = useMemo(() => {
     return state.transactions.filter(t => {
       if (selectedType !== 'all' && t.type !== selectedType) return false;

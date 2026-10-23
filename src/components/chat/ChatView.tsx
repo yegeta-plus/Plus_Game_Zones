@@ -877,7 +877,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
             <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
               <p className="text-[11px] font-extrabold uppercase text-slate-400">Recent Transactions</p>
-              {state.transactions.slice(0, 8).map(tx => (
+              {state.transactions
+                .slice(0, 8)
+                .map(tx => (
                 <button
                   key={tx.id}
                   onClick={() => {

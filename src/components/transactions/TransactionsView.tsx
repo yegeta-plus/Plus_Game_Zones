@@ -124,6 +124,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   const [confirmReversalTxId, setConfirmReversalTxId] = useState<string | null>(null);
   const [confirmDeleteTxId, setConfirmDeleteTxId] = useState<string | null>(null);
 
+
   // Inactive / Non-working days reminders & toggle
   const [showNonWorkingDays, setShowNonWorkingDays] = useState<boolean>(true);
   const [dayReminders, setDayReminders] = useState<Record<string, string>>(() => {
@@ -675,8 +676,9 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     });
   }, [consolidatedTransactions, transfers, receivables]);
 
-  // Filter ledger items (strictly sorted latest first)
+  // Filter ledger items (strictly sorted latest first - all transactions always visible)
   const filtered = allLedgerItems.filter((item) => {
+
     if (item.kind === 'TX') {
       const tx = item.tx;
       if (selectedScope === 'PERSONAL') {
@@ -1263,7 +1265,6 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
               {showNonWorkingDays ? 'ON' : 'OFF'}
             </span>
           </button>
-
         </div>
       </div>
 

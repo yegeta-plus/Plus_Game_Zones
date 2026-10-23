@@ -25,6 +25,7 @@ import {
 import { Wallet, TransactionType, Transaction, Transfer } from '../../types';
 import { formatETB, calculateWalletBalance } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
+import { parseBankMessage, MULTILINGUAL_SMS_SAMPLES } from '../../lib/smsParser';
 
 interface TelebirrIntegrationModalProps {
   isOpen: boolean;
@@ -54,38 +55,7 @@ interface TelebirrIntegrationModalProps {
 type Provider = 'TELEBIRR' | 'CBE' | 'EBIRR';
 type ActiveTab = 'SMS_PARSER' | 'BULK_IMPORT' | 'API_CONFIG' | 'SHEGERPAY_VERIFY';
 
-const SAMPLE_MESSAGES = {
-  TELEBIRR: [
-    {
-      label: 'Telebirr 0989367877 Received (Income)',
-      text: 'Dear Customer, you have received ETB 12,500.00 from ABEBE KEBEDE (251989367877) on 2026-08-05 10:15:20. Transaction ID: 8A49204829. Your current balance is ETB 45,200.00. Thank you for using telebirr.'
-    },
-    {
-      label: 'Telebirr Payment (Expense)',
-      text: 'Dear Customer, you have paid ETB 2,400.00 to MERCHANTPAY (Store #4092) on 2026-08-05 11:30:10. Transaction ID: 8B90123981. Current balance: ETB 42,800.00. telebirr.'
-    }
-  ],
-  CBE: [
-    {
-      label: 'CBE 1000751694559 Credit (Income)',
-      text: 'Dear Customer, your account 1000751694559 has been credited with ETB 35,000.00 by BIRHANU WORKU on 05-AUG-2026. Ref: FT2608059082. Available balance ETB 145,200.00. Commercial Bank of Ethiopia.'
-    },
-    {
-      label: 'CBE 1000751694559 Debit (Expense)',
-      text: 'Dear Customer, your account 1000751694559 has been debited with ETB 8,500.00 to TELEBIRR TRANSFER on 05-AUG-2026. Ref: FT2608054412. Available balance ETB 136,700.00. Commercial Bank of Ethiopia.'
-    }
-  ],
-  EBIRR: [
-    {
-      label: 'eBirr Received (Income)',
-      text: 'You have received 5,800.00 ETB from eBirr User 251922334455. TxnRef: EB908231. Date: 05/08/2026. Current balance: 18,500.00 ETB. eBirr Mobile Money.'
-    },
-    {
-      label: 'eBirr Payment (Expense)',
-      text: 'Payment of 1,200.00 ETB to Merchant POS-882 successful. TxnRef: EB771209. Date: 05/08/2026. Balance: 17,300.00 ETB. eBirr.'
-    }
-  ]
-};
+const SAMPLE_MESSAGES = MULTILINGUAL_SMS_SAMPLES;
 
 export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> = ({
   isOpen,
@@ -118,6 +88,7 @@ export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> =
     description: string;
     standingBalance?: number;
     matchedAccount?: string;
+    confidence?: 'HIGH' | 'MEDIUM' | 'LOW';
   } | null>(null);
 
   // Bulk Import state
@@ -165,14 +136,18 @@ export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> =
       }
     }
 
-    // 2. Account filter rules: CBE -> 1000751694559, Telebirr -> 0989367877
-    if (prov === 'CBE' || text.includes('1000751694559')) {
-      const cbeAcc = wallets.find(w => w.type === 'CBE_BANK' && w.accountNumber === '1000751694559');
+    // 2. Specific matching based on provider and account keywords
+    if (prov === 'CBE' || text.toLowerCase().includes('cbe') || text.includes('1000751694559') || /ft\d+/i.test(text)) {
+      const cbeAcc = wallets.find(w => w.type === 'CBE_BANK');
       if (cbeAcc) return cbeAcc;
     }
-    if (prov === 'TELEBIRR' || text.includes('0989367877') || text.includes('251989367877')) {
-      const tbAcc = wallets.find(w => w.type === 'TELEBIRR' && (w.accountNumber === '0989367877' || w.accountNumber?.includes('989367877')));
+    if (prov === 'TELEBIRR' || text.toLowerCase().includes('telebirr') || text.includes('0989367877') || text.includes('251989367877')) {
+      const tbAcc = wallets.find(w => w.type === 'TELEBIRR');
       if (tbAcc) return tbAcc;
+    }
+    if (prov === 'EBIRR' || text.toLowerCase().includes('ebirr')) {
+      const ebAcc = wallets.find(w => w.type === 'EBIRR');
+      if (ebAcc) return ebAcc;
     }
 
     // 3. Fallback to first wallet of provider type
@@ -189,57 +164,47 @@ export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> =
     ? calculateWalletBalance(selectedWallet, transactions, transfers)
     : 0;
 
-  // Parse Single SMS with account filter & standing balance extraction
+  // Parse Single SMS with account filter & standing balance extraction using robust parser
   const parseSingleSMS = (text: string, prov: Provider) => {
     if (!text.trim()) {
       setParsedTx(null);
       return;
     }
 
-    const cleanText = text.replace(/,/g, '');
-    
-    // Amount extraction regex
-    const amountMatch = cleanText.match(/(?:ETB|Birr)\s*([\d.]+)|([\d.]+)\s*(?:ETB|Birr)/i);
-    let amount = amountMatch ? parseFloat(amountMatch[1] || amountMatch[2]) : 0;
-
-    // Direction detection
-    const isIncome = /received|credited|credited with|received from|deposit|credited by|received \d/i.test(text);
-    const type: TransactionType = isIncome ? 'INCOME' : 'EXPENSE';
-
-    // Ref ID extraction
-    const refMatch = text.match(/(?:Transaction ID|Ref|Ref:|Txn ID|TxnRef|TxnRef:)\s*:?\s*([A-Z0-9_-]+)/i);
-    const refId = refMatch ? refMatch[1] : `REF-${Math.floor(Math.random() * 100000)}`;
-
-    // Standing Balance extraction (e.g. "Your current balance is ETB 45,200.00" or "Available balance ETB 145,200.00")
-    const balanceMatch = cleanText.match(/(?:current balance|available balance|balance|bal|new balance)\s*(?:is)?\s*:?\s*(?:ETB|Birr)?\s*([\d.]+)/i) || cleanText.match(/(?:ETB|Birr)\s*([\d.]+)\s*(?:Available|Current|Balance)/i);
-    let standingBalance = balanceMatch ? parseFloat(balanceMatch[1]) : undefined;
-
-    // Counterparty extraction
-    let counterparty = prov + ' User';
-    const fromMatch = text.match(/(?:from|by|paid to|to)\s+([A-Z0-9\s()#-]+?)(?=\s+on|\s+\d|\.|,|$)/i);
-    if (fromMatch && fromMatch[1].trim()) {
-      counterparty = fromMatch[1].trim();
+    const parsed = parseBankMessage(text);
+    if (!parsed) {
+      setParsedTx(null);
+      return;
     }
 
-    // Account match extraction
-    let matchedAccount: string | undefined = undefined;
-    if (text.includes('1000751694559')) matchedAccount = '1000751694559 (CBE)';
-    else if (text.includes('0989367877') || text.includes('251989367877')) matchedAccount = '0989367877 (Telebirr)';
+    // Auto-switch provider tab if detected differently
+    if (parsed.provider === 'CBE' && prov !== 'CBE') {
+      setProvider('CBE');
+    } else if (parsed.provider === 'TELEBIRR' && prov !== 'TELEBIRR') {
+      setProvider('TELEBIRR');
+    } else if (parsed.provider === 'EBIRR' && prov !== 'EBIRR') {
+      setProvider('EBIRR');
+    }
 
-    const date = new Date().toISOString().split('T')[0];
-    const category = isIncome ? 'Sales' : 'Operational';
-    const description = `[${prov} Auto-Sync] Ref: ${refId} - ${counterparty}`;
+    // Matched account detection
+    let matchedAccount: string | undefined = undefined;
+    if (text.includes('1000751694559') || text.includes('1000')) matchedAccount = '1000751694559 (CBE)';
+    else if (text.includes('0989367877') || text.includes('251989367877')) matchedAccount = '0989367877 (Telebirr)';
+    else if (parsed.targetAccount) matchedAccount = parsed.targetAccount;
+
+    const description = `[${parsed.provider} Auto-Sync] Ref: ${parsed.refCode} - ${parsed.senderOrCounterparty}`;
 
     setParsedTx({
-      amount: amount || 0,
-      type,
-      refId,
-      counterparty,
-      date,
-      category,
+      amount: parsed.amount || 0,
+      type: parsed.type,
+      refId: parsed.refCode,
+      counterparty: parsed.senderOrCounterparty,
+      date: parsed.dateStr || new Date().toISOString().split('T')[0],
+      category: parsed.suggestedCategory,
       description,
-      standingBalance,
-      matchedAccount
+      standingBalance: parsed.standingBalance,
+      matchedAccount,
+      confidence: parsed.confidence
     });
   };
 
@@ -290,7 +255,7 @@ export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> =
     setParsedTx(null);
   };
 
-  // Bulk parser
+  // Bulk parser using robust multilingual parser
   const handleParseBulk = (val: string) => {
     setBulkText(val);
     if (!val.trim()) {
@@ -298,23 +263,28 @@ export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> =
       return;
     }
 
-    const lines = val.split('\n').filter(l => l.trim().length > 10);
+    const lines = val.split('\n').filter(l => l.trim().length > 5);
     const results = lines.map(line => {
-      const cleanLine = line.replace(/,/g, '');
-      const amountMatch = cleanLine.match(/(?:ETB|Birr)?\s*([\d.]+)\s*(?:ETB|Birr)?/i);
-      const amount = amountMatch ? parseFloat(amountMatch[1]) : 0;
-      const isIncome = /received|credited|deposit|in/i.test(line);
-      const refMatch = line.match(/(?:Ref|ID|Txn):\s*([A-Z0-9]+)/i);
-
-      return {
-        amount: amount || 0,
-        type: (isIncome ? 'INCOME' : 'EXPENSE') as TransactionType,
-        refId: refMatch ? refMatch[1] : `TX-${Math.floor(Math.random() * 89999 + 10000)}`,
-        counterparty: provider + ' Transaction',
-        date: new Date().toISOString().split('T')[0],
-        selected: amount > 0
-      };
-    });
+      const parsed = parseBankMessage(line);
+      if (parsed && parsed.amount > 0) {
+        return {
+          amount: parsed.amount,
+          type: parsed.type,
+          refId: parsed.refCode,
+          counterparty: parsed.senderOrCounterparty,
+          date: parsed.dateStr || new Date().toISOString().split('T')[0],
+          selected: true
+        };
+      }
+      return null;
+    }).filter(Boolean) as Array<{
+      amount: number;
+      type: TransactionType;
+      refId: string;
+      counterparty: string;
+      date: string;
+      selected: boolean;
+    }>;
 
     setParsedBulkList(results);
   };
@@ -654,44 +624,113 @@ export const TelebirrIntegrationModal: React.FC<TelebirrIntegrationModalProps> =
             {parsedTx && (
               <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 space-y-3 animate-in fade-in duration-150">
                 <div className="flex items-center justify-between border-b border-emerald-500/20 pb-2">
-                  <span className="text-xs font-bold text-emerald-700 dark:text-[#00D4AA] flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>SMS Transaction Extracted</span>
-                  </span>
-                  <span
-                    className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded-md flex items-center gap-1 ${
-                      parsedTx.type === 'INCOME'
-                        ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
-                        : 'bg-rose-500/20 text-rose-700 dark:text-rose-300'
-                    }`}
-                  >
-                    {parsedTx.type === 'INCOME' ? (
-                      <ArrowDownRight className="w-3 h-3" />
-                    ) : (
-                      <ArrowUpRight className="w-3 h-3" />
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-emerald-700 dark:text-[#00D4AA] flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                      <span>SMS Alert Extracted</span>
+                    </span>
+                    {parsedTx.confidence === 'HIGH' && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-600 dark:text-[#00D4AA] border border-emerald-500/30">
+                        Verified
+                      </span>
                     )}
-                    <span>{parsedTx.type}</span>
-                  </span>
+                  </div>
+
+                  {/* Interactive Direction / Type Toggle */}
+                  <div className="flex items-center gap-1 bg-white dark:bg-[#0A0E1A] p-0.5 rounded-lg border border-slate-200 dark:border-[#1E2D40]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setParsedTx({ ...parsedTx, type: 'INCOME' });
+                      }}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                        parsedTx.type === 'INCOME'
+                          ? 'bg-emerald-500 text-slate-950 font-black shadow-sm'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <ArrowDownRight className="w-3 h-3" />
+                      <span>Money In</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setParsedTx({ ...parsedTx, type: 'EXPENSE' });
+                      }}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                        parsedTx.type === 'EXPENSE'
+                          ? 'bg-rose-500 text-white font-black shadow-sm'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <ArrowUpRight className="w-3 h-3" />
+                      <span>Money Out</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs font-mono">
-                  <div>
-                    <span className="text-[10px] text-slate-500 dark:text-[#8899BB] block">Amount:</span>
-                    <span className="font-bold text-base text-slate-900 dark:text-white">
-                      {formatETB(parsedTx.amount)}
-                    </span>
+                {/* Editable Extracted Fields */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs font-mono">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-500 dark:text-[#8899BB] font-bold flex items-center justify-between">
+                      <span>Amount (ETB):</span>
+                      <span className="font-sans text-[9px] text-emerald-600 dark:text-[#00D4AA]">Editable</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={parsedTx.amount || ''}
+                      onChange={(e) => setParsedTx({ ...parsedTx, amount: parseFloat(e.target.value) || 0 })}
+                      placeholder="0.00"
+                      className="w-full bg-white dark:bg-[#0A0E1A] border border-slate-200 dark:border-[#1E2D40] text-slate-900 dark:text-white font-bold text-sm rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-[#00D4AA] focus:outline-none"
+                    />
                   </div>
 
-                  <div>
-                    <span className="text-[10px] text-slate-500 dark:text-[#8899BB] block">Reference ID:</span>
-                    <span className="font-bold text-slate-900 dark:text-white">{parsedTx.refId}</span>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-500 dark:text-[#8899BB] font-bold flex items-center justify-between">
+                      <span>Ref / Transaction ID:</span>
+                      <span className="font-sans text-[9px] text-emerald-600 dark:text-[#00D4AA]">Editable</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={parsedTx.refId}
+                      onChange={(e) => setParsedTx({ ...parsedTx, refId: e.target.value.trim().toUpperCase() })}
+                      className="w-full bg-white dark:bg-[#0A0E1A] border border-slate-200 dark:border-[#1E2D40] text-slate-900 dark:text-white font-mono text-xs rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-[#00D4AA] focus:outline-none"
+                    />
                   </div>
 
-                  <div>
-                    <span className="text-[10px] text-slate-500 dark:text-[#8899BB] block">Payer / Recipient:</span>
-                    <span className="font-bold text-slate-900 dark:text-white truncate block">
-                      {parsedTx.counterparty}
-                    </span>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-500 dark:text-[#8899BB] font-bold block">
+                      Payer / Counterparty:
+                    </label>
+                    <input
+                      type="text"
+                      value={parsedTx.counterparty}
+                      onChange={(e) => setParsedTx({ ...parsedTx, counterparty: e.target.value })}
+                      className="w-full bg-white dark:bg-[#0A0E1A] border border-slate-200 dark:border-[#1E2D40] text-slate-900 dark:text-white text-xs rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-[#00D4AA] focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-500 dark:text-[#8899BB] font-bold block">
+                      Category:
+                    </label>
+                    <select
+                      value={parsedTx.category}
+                      onChange={(e) => setParsedTx({ ...parsedTx, category: e.target.value })}
+                      className="w-full bg-white dark:bg-[#0A0E1A] border border-slate-200 dark:border-[#1E2D40] text-slate-900 dark:text-white text-xs rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-[#00D4AA] focus:outline-none font-sans"
+                    >
+                      <option value="Daily Sales collection">Daily Sales collection</option>
+                      <option value="Repayment on receivable">Repayment on receivable</option>
+                      <option value="Food & Refreshments">Food & Refreshments</option>
+                      <option value="Utilities/Electricity">Utilities/Electricity</option>
+                      <option value="Ekub contribution">Ekub contribution</option>
+                      <option value="Home expense">Home expense</option>
+                      <option value="Transportation">Transportation</option>
+                      <option value="Operational Expense">Operational Expense</option>
+                    </select>
                   </div>
                 </div>
 
