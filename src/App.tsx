@@ -22,6 +22,7 @@ import { AiAssistantWidget } from './components/ai/AiAssistantWidget';
 import { LoginPage } from './components/auth/LoginPage';
 import { OnboardingTour, ONBOARDING_STORAGE_KEY } from './components/onboarding/OnboardingTour';
 import { PageHelpModal } from './components/help/PageHelpModal';
+import { CompanyManagerModal } from './components/modals/CompanyManagerModal';
 import { getPageTourSteps, FULL_APP_TOUR_STEPS, TourStep } from './components/onboarding/onboardingSteps';
 import { FirestoreQuotaBanner } from './components/common/FirestoreQuotaBanner';
 
@@ -30,6 +31,7 @@ import {
   loadInitialState,
   saveStateToStorage,
   DEFAULT_TRANSACTIONS,
+  DEFAULT_USERS,
   calculateWalletBalance,
   isTransactionEditable,
   formatETB,
@@ -68,7 +70,7 @@ import {
   deleteChatMessageImmediately,
   registerChatEventListener
 } from './lib/realtimeChat';
-import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest, ChatMessage, ChatMessageReaction, ChatChannel, AuditLogEntry, ShopOperatingHours } from './types';
+import { Transaction, Transfer, Wallet, UserProfile, TransactionType, Equb, NavTab, Receivable, Loan, LoanPayment, AdminApprovalRequest, ChatMessage, ChatMessageReaction, ChatChannel, AuditLogEntry, ShopOperatingHours, CompanyProfile } from './types';
 import { CheckCircle2, Sparkles } from 'lucide-react';
 import { triggerHaptic } from './lib/haptics';
 import { SessionLockModal } from './components/auth/SessionLockModal';
@@ -166,6 +168,7 @@ export default function App() {
   const [showAiAssistant, setShowAiAssistant] = useState(false);
   const [aiAssistantPrompt, setAiAssistantPrompt] = useState<string | undefined>(undefined);
   const [aiAssistantMode, setAiAssistantMode] = useState<'chat' | 'simulator'>('chat');
+  const [showCompanyManagerModal, setShowCompanyManagerModal] = useState<boolean>(false);
 
   const handleOpenAiAssistant = (
     prompt?: string,
@@ -361,76 +364,7 @@ export default function App() {
     setDismissedNotifIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
   }, []);
 
-  // Active safeguard on mount: Ensure all verified canonical ledger transactions are present and sorted
-  useEffect(() => {
-    setState((current) => {
-      const existingIds = new Set(current.transactions.map((t) => t.id));
-      const missingCanonical = DEFAULT_TRANSACTIONS.filter((t) => isCanonicalTransactionId(t.id) && !existingIds.has(t.id));
 
-      let hasReceivableUpdate = false;
-      const updatedReceivables = (current.receivables || []).map(r => {
-        if (r.id === 'rcv-20260923-solomon' && r.status !== 'COLLECTED') {
-          hasReceivableUpdate = true;
-          return { ...r, amountCollected: 180, status: 'COLLECTED' as const };
-        }
-        return r;
-      });
-      if (!updatedReceivables.some(r => r.id === 'rcv-20261002-solomon')) {
-        hasReceivableUpdate = true;
-        updatedReceivables.push({
-          id: 'rcv-20261002-solomon',
-          customerName: 'Solomon',
-          description: "Bale'da credit for Solomon",
-          amountOwed: 300,
-          amountCollected: 0,
-          createdDate: '2026-10-02T19:32:00.000Z',
-          dueDate: '2026-10-16T19:32:00.000Z',
-          status: 'OUTSTANDING',
-          walletId: 'w-cash'
-        });
-      }
-      if (!updatedReceivables.some(r => r.id === 'rcv-20261006-solomon-190')) {
-        hasReceivableUpdate = true;
-        updatedReceivables.push({
-          id: 'rcv-20261006-solomon-190',
-          customerName: 'Solomon',
-          description: "Bale'da credit for Solomon",
-          amountOwed: 190,
-          amountCollected: 0,
-          createdDate: '2026-10-06T08:47:00.000Z',
-          dueDate: '2026-10-20T08:47:00.000Z',
-          status: 'OUTSTANDING',
-          walletId: 'w-cash'
-        });
-      }
-
-      let hasTxSplitUpdate = false;
-      const canonicalMap = new Map(DEFAULT_TRANSACTIONS.map(t => [t.id, t]));
-      const refreshedTxs = current.transactions.map(t => {
-        const canonical = canonicalMap.get(t.id);
-        if (canonical?.splits && canonical.splits.length > 0 && (!t.splits || t.splits.length === 0)) {
-          hasTxSplitUpdate = true;
-          return { ...t, splits: canonical.splits };
-        }
-        return t;
-      });
-
-      if (missingCanonical.length > 0 || hasReceivableUpdate || hasTxSplitUpdate) {
-        const updatedTxs = [...missingCanonical, ...refreshedTxs]
-          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        const next = {
-          ...current,
-          transactions: updatedTxs,
-          receivables: updatedReceivables,
-          deletedEntityIds: (current.deletedEntityIds || []).filter(id => !isCanonicalTransactionId(id))
-        };
-        saveStateToStorage(next);
-        syncStateToFirebaseNow(next);
-        return next;
-      }
-      return current;
-    });
-  }, []);
 
   // Real-time Firebase Firestore Subscription & Chat Notifications
   const prevChatCountRef = useRef<number>(0);
@@ -447,7 +381,18 @@ export default function App() {
           const localDeletedIds = (Array.isArray(prev.deletedEntityIds) ? prev.deletedEntityIds : []).filter(id => !isCanonicalTransactionId(id));
           const combinedDeletedIds = Array.from(new Set([...localDeletedIds, ...remoteDeletedIds]));
 
-          const mergedUsers = mergeListById(prev.users, remoteState.users, combinedDeletedIds);
+          let mergedUsers = mergeListById(prev.users, remoteState.users, combinedDeletedIds);
+          DEFAULT_USERS.forEach((defUser) => {
+            const hasUser = mergedUsers.some(
+              (u) =>
+                u.id === defUser.id ||
+                (u.username && defUser.username && u.username.toLowerCase() === defUser.username.toLowerCase()) ||
+                (u.email && defUser.email && u.email.toLowerCase() === defUser.email.toLowerCase())
+            );
+            if (!hasUser) {
+              mergedUsers = [...mergedUsers, defUser];
+            }
+          });
           const mergedWallets = mergeListById(prev.wallets, remoteState.wallets, combinedDeletedIds);
           const mergedTransactions = mergeListById(prev.transactions, remoteState.transactions, combinedDeletedIds)
             .filter((t: Transaction) => !t.id?.startsWith('tx-20261019') && !t.date?.startsWith('2026-10-19'));
@@ -2129,6 +2074,88 @@ export default function App() {
     );
   };
 
+  // 7c. Update Company Profile, Stations & Branding
+  const handleUpdateCompanyProfile = (updatedProfile: CompanyProfile) => {
+    setState(prev => {
+      const all = prev.allCompanies || (prev.companyProfile ? [prev.companyProfile] : []);
+      const updatedAll = all.some(c => c.id === updatedProfile.id)
+        ? all.map(c => c.id === updatedProfile.id ? updatedProfile : c)
+        : [...all, updatedProfile];
+      const next: ERPState = {
+        ...prev,
+        companyProfile: updatedProfile,
+        allCompanies: updatedAll,
+        auditLogs: [
+          {
+            id: `aud-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            actorId: prev.currentUser.id,
+            actorName: prev.currentUser.name,
+            action: 'UPDATE_COMPANY_PROFILE' as any,
+            entity: 'CompanyProfile' as any,
+            entityId: updatedProfile.id,
+            diffAfter: { name: updatedProfile.name, stationsCount: updatedProfile.stations?.length },
+            branch: prev.currentUser.branch
+          },
+          ...(prev.auditLogs || [])
+        ]
+      };
+      saveStateToStorage(next);
+      syncStateToFirebaseNow(next);
+      return next;
+    });
+    triggerToast(`🏢 Company settings for "${updatedProfile.name}" saved!`);
+  };
+
+  const handleSwitchCompany = (companyId: string) => {
+    let targetName = '';
+    setState(prev => {
+      const target = (prev.allCompanies || []).find(c => c.id === companyId);
+      if (!target) return prev;
+      targetName = target.name;
+      const next: ERPState = {
+        ...prev,
+        companyProfile: target
+      };
+      saveStateToStorage(next);
+      syncStateToFirebaseNow(next);
+      return next;
+    });
+    if (targetName) {
+      triggerToast(`🔄 Switched active game zone to "${targetName}"!`);
+    }
+  };
+
+  const handleCreateCompany = (newCompany: CompanyProfile) => {
+    setState(prev => {
+      const all = prev.allCompanies || (prev.companyProfile ? [prev.companyProfile] : []);
+      const updatedAll = [...all.filter(c => c.id !== newCompany.id), newCompany];
+      const next: ERPState = {
+        ...prev,
+        companyProfile: newCompany,
+        allCompanies: updatedAll,
+        auditLogs: [
+          {
+            id: `aud-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            actorId: prev.currentUser.id,
+            actorName: prev.currentUser.name,
+            action: 'CREATE_COMPANY' as any,
+            entity: 'CompanyProfile' as any,
+            entityId: newCompany.id,
+            diffAfter: { name: newCompany.name, stationsCount: newCompany.stations?.length },
+            branch: prev.currentUser.branch
+          },
+          ...(prev.auditLogs || [])
+        ]
+      };
+      saveStateToStorage(next);
+      syncStateToFirebaseNow(next);
+      return next;
+    });
+    triggerToast(`✨ New game zone company "${newCompany.name}" created!`);
+  };
+
   // 8. Create Loan (Lent or Borrowed)
   const handleCreateLoan = (newLoan: Omit<Loan, 'id' | 'outstandingBalance' | 'status' | 'payments'>) => {
     const created: Loan = {
@@ -3585,6 +3612,8 @@ export default function App() {
       <Header
         currentUser={state.currentUser}
         allUsers={state.users}
+        companyProfile={state.companyProfile}
+        onOpenCompanyManager={() => setShowCompanyManagerModal(true)}
         onSwitchUser={(user: UserProfile) => {
           setState(prev => ({ ...prev, currentUser: user }));
           updateAuthSessionUser(user);
@@ -3626,6 +3655,8 @@ export default function App() {
             receivables={state.receivables}
             shopHours={state.shopHours}
             onUpdateShopHours={handleUpdateShopHours}
+            companyProfile={state.companyProfile}
+            onOpenCompanyManager={() => setShowCompanyManagerModal(true)}
             hideBalances={state.hideBalances}
             calendarType={state.calendarType || 'GREGORIAN'}
             dismissedNotifIds={dismissedNotifIds}
@@ -3789,6 +3820,7 @@ export default function App() {
         wallets={state.wallets}
         categories={state.categories}
         currentUser={state.currentUser}
+        companyProfile={state.companyProfile}
         defaultWalletId={quickEntryWalletId}
         transactions={state.transactions}
         transfers={state.transfers}
@@ -3890,6 +3922,18 @@ export default function App() {
         onStartPageTour={handleStartPageTour}
         onStartFullAppTour={handleStartFullAppTour}
       />
+
+      {/* Game Zone Company & Multi-Company Manager Modal */}
+      {showCompanyManagerModal && state.companyProfile && (
+        <CompanyManagerModal
+          companyProfile={state.companyProfile}
+          allCompanies={state.allCompanies || [state.companyProfile]}
+          onUpdateCompany={handleUpdateCompanyProfile}
+          onSwitchCompany={(targetComp) => handleSwitchCompany(targetComp.id)}
+          onCreateCompany={handleCreateCompany}
+          onClose={() => setShowCompanyManagerModal(false)}
+        />
+      )}
 
       {/* Interactive Spotlight Tour */}
       <OnboardingTour

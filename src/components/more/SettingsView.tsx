@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Tag, Users, Repeat, Database, Settings, ArrowLeft, ChevronRight, ShieldAlert, Sparkles, RotateCcw, Play } from 'lucide-react';
-import { ERPState } from '../../types';
+import { Tag, Users, Repeat, Database, Settings, ArrowLeft, ChevronRight, ShieldAlert, Sparkles, RotateCcw, Play, Building2, Gamepad2 } from 'lucide-react';
+import { ERPState, CompanyProfile } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 
 import { CategoriesView } from './CategoriesView';
@@ -8,8 +8,9 @@ import { UsersView } from './UsersView';
 import { RecurringView } from './RecurringView';
 import { BackupView } from './BackupView';
 import { SecuritySystemView } from './SecuritySystemView';
+import { CompanyManagerModal } from '../modals/CompanyManagerModal';
 
-export type SettingsTabType = 'CATEGORIES' | 'PARTNERS' | 'RECURRING' | 'BACKUP' | 'SECURITY';
+export type SettingsTabType = 'COMPANY' | 'CATEGORIES' | 'PARTNERS' | 'RECURRING' | 'BACKUP' | 'SECURITY';
 
 interface SettingsViewProps {
   state: ERPState;
@@ -52,6 +53,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   }
 
   const tabs = [
+    {
+      id: 'COMPANY' as SettingsTabType,
+      label: 'Game Zone Company & Venues',
+      subtitle: 'Brand name, gaming stations (PS5/PC/VR), hourly rates, branches & templates',
+      icon: Building2,
+      color: '#10B981',
+      count: state.companyProfile?.companyName || 'Configure'
+    },
     {
       id: 'CATEGORIES' as SettingsTabType,
       label: 'Transaction Categories',
@@ -247,6 +256,34 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       {/* Selected Setting View Content */}
       <div className="animate-fadeIn">
+        {activeTab === 'COMPANY' && state.companyProfile && (
+          <CompanyManagerModal
+            companyProfile={state.companyProfile}
+            allCompanies={state.allCompanies || [state.companyProfile]}
+            onUpdateCompany={(updated) => {
+              onUpdateState((prev) => ({
+                ...prev,
+                companyProfile: updated,
+                allCompanies: (prev.allCompanies || [prev.companyProfile!]).map(c => c.id === updated.id ? updated : c)
+              }));
+            }}
+            onSwitchCompany={(targetComp) => {
+              onUpdateState((prev) => ({
+                ...prev,
+                companyProfile: targetComp
+              }));
+            }}
+            onCreateCompany={(newComp) => {
+              onUpdateState((prev) => ({
+                ...prev,
+                companyProfile: newComp,
+                allCompanies: [...(prev.allCompanies || [prev.companyProfile!]), newComp]
+              }));
+            }}
+            onClose={() => setActiveTab(null)}
+          />
+        )}
+
         {activeTab === 'CATEGORIES' && (
           <CategoriesView categories={state.categories} onUpdateState={onUpdateState} />
         )}

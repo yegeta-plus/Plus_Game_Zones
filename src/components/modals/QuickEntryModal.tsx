@@ -23,9 +23,10 @@ import {
   HandCoins,
   Repeat,
   Plus,
-  Clock
+  Clock,
+  Gamepad2
 } from 'lucide-react';
-import { Wallet, Category, TransactionType, UserProfile, Transaction, Transfer, Equb, Loan, RecurringTemplate } from '../../types';
+import { Wallet, Category, TransactionType, UserProfile, Transaction, Transfer, Equb, Loan, RecurringTemplate, CompanyProfile } from '../../types';
 import { formatETB, parseSummedAmount, calculateWalletBalance, getWalletNickname, isOverdraftAllowed, isWalletActive, validateTransactionPosting } from '../../lib/store';
 import { triggerHaptic } from '../../lib/haptics';
 import { ModernDateInput } from '../common/ModernDateInput';
@@ -76,6 +77,7 @@ interface QuickEntryModalProps {
     advancePaymentWalletId?: string;
   }) => Equb | void;
   prefilledText?: string;
+  companyProfile?: CompanyProfile;
 }
 
 export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
@@ -93,7 +95,8 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
   onSubmitTransaction,
   onBatchSubmitTransactions,
   onCreateEqub,
-  prefilledText
+  prefilledText,
+  companyProfile
 }) => {
   const [entryMode, setEntryMode] = useState<'INCOME' | 'EXPENSE'>('INCOME');
   const [batchMode, setBatchMode] = useState<'single' | 'batch'>('single');
@@ -102,6 +105,8 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
   const [selectedEqubId, setSelectedEqubId] = useState<string | null>(null);
   const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
   const [selectedRecurringId, setSelectedRecurringId] = useState<string | null>(null);
+  const [showStationCalc, setShowStationCalc] = useState(false);
+  const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
 
   // Equb Registration Form inside Quick Entry
   const [showRegisterEqub, setShowRegisterEqub] = useState(false);
@@ -1130,6 +1135,88 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                       {formatETB(parsedSingle.total)}
                     </span>
                   </div>
+                </div>
+              )}
+
+              {/* Station Playtime Calculator for Game Zone Venues */}
+              {entryMode === 'INCOME' && companyProfile?.stations && companyProfile.stations.length > 0 && (
+                <div className="pt-2 border-t border-slate-200 dark:border-[#1E2D40]/60">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <Gamepad2 className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>Station Playtime Calculator</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setShowStationCalc(!showStationCalc);
+                      }}
+                      className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+                    >
+                      {showStationCalc ? 'Hide Stations' : 'Select Station Playtime'}
+                    </button>
+                  </div>
+
+                  {showStationCalc && (
+                    <div className="space-y-2.5 p-2.5 mt-2 bg-white dark:bg-[#0A0E1A] rounded-xl border border-slate-200 dark:border-[#1E2D40] animate-fadeIn">
+                      <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-1">
+                        {companyProfile.stations.map((st) => (
+                          <button
+                            key={st.id}
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              setSelectedStationId(st.id);
+                            }}
+                            className={`p-2 rounded-lg text-left text-xs border transition-all cursor-pointer ${
+                              selectedStationId === st.id
+                                ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 font-bold'
+                                : 'bg-slate-50 dark:bg-[#131926] border-slate-200 dark:border-[#1E2D40] text-slate-700 dark:text-slate-300 hover:border-slate-400'
+                            }`}
+                          >
+                            <div className="font-bold truncate">{st.name}</div>
+                            <div className="text-[10px] text-emerald-500 font-mono">{st.hourlyRate} ETB/hr</div>
+                          </button>
+                        ))}
+                      </div>
+
+                      {(() => {
+                        const selectedSt = companyProfile.stations.find(s => s.id === selectedStationId) || companyProfile.stations[0];
+                        if (!selectedSt) return null;
+                        return (
+                          <div className="flex items-center gap-1.5 flex-wrap pt-1.5 border-t border-slate-200 dark:border-[#1E2D40]">
+                            <span className="text-[10px] text-[#8899BB] font-bold">Duration for {selectedSt.name}:</span>
+                            {[
+                              { mins: 30, label: '30m' },
+                              { mins: 60, label: '1h' },
+                              { mins: 90, label: '1.5h' },
+                              { mins: 120, label: '2h' },
+                              { mins: 180, label: '3h' }
+                            ].map((opt) => {
+                              const cost = Math.round((selectedSt.hourlyRate / 60) * opt.mins / 5) * 5;
+                              return (
+                                <button
+                                  key={opt.mins}
+                                  type="button"
+                                  onClick={() => {
+                                    triggerHaptic('medium');
+                                    setAmountStr(String(cost));
+                                    setDescription(`Playtime: ${selectedSt.name} (${opt.label})`);
+                                    const revCat = categories.find(c => c.type === 'INCOME' && (c.name.toLowerCase().includes('sale') || c.name.toLowerCase().includes('income') || c.name.toLowerCase().includes('daily')));
+                                    if (revCat) setCategory(revCat.name);
+                                  }}
+                                  className="px-2 py-1 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono font-bold cursor-pointer"
+                                >
+                                  {opt.label} ({cost} ETB)
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

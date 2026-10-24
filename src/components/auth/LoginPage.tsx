@@ -257,8 +257,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         const emailVal = isEmail ? cleanInput.toLowerCase() : `${cleanInput.toLowerCase()}@pluszone.com`;
         const usernameVal = (isEmail ? cleanInput.split('@')[0] : cleanInput).toLowerCase().replace(/[^a-z0-9_]/g, '') || `user_${Date.now().toString().slice(-4)}`;
         const nameVal = usernameVal.replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-        const isYegeta = cleanInput.toLowerCase().includes('yegeta') || emailVal.includes('yegeta');
-        const assignedRole: UserRole = isYegeta ? 'SuperAdmin' : 'Partner';
+        const isSuperAdminCandidate =
+          cleanInput.toLowerCase().includes('yegeta') ||
+          emailVal.includes('yegeta') ||
+          cleanInput.toLowerCase().includes('suraphel') ||
+          emailVal.includes('suraphel') ||
+          usernameVal === 'suraphel';
+        const assignedRole: UserRole = isSuperAdminCandidate ? 'SuperAdmin' : 'Partner';
 
         const newUser: UserProfile = {
           id: `u-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -268,7 +273,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           role: assignedRole,
           active: true,
           isApproved: true,
-          isDigitalMoneyManager: isYegeta,
+          isDigitalMoneyManager: isSuperAdminCandidate,
           invitationCode: `PZ-AUTO-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
           password: password,
           passwordHash: enteredHash,
@@ -366,8 +371,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     const usernameVal = (isEmail ? cleanInput.split('@')[0] : cleanInput).toLowerCase().replace(/[^a-z0-9_]/g, '') || `user_${Date.now().toString().slice(-4)}`;
     const nameVal = usernameVal.replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
     const passHash = await hashPassword(password);
-    const isYegeta = cleanInput.toLowerCase().includes('yegeta') || emailVal.includes('yegeta');
-    const role: UserRole = isYegeta ? 'SuperAdmin' : 'Partner';
+    const isSuperAdminCandidate =
+      cleanInput.toLowerCase().includes('yegeta') ||
+      emailVal.includes('yegeta') ||
+      cleanInput.toLowerCase().includes('suraphel') ||
+      emailVal.includes('suraphel') ||
+      usernameVal === 'suraphel';
+    const role: UserRole = isSuperAdminCandidate ? 'SuperAdmin' : 'Partner';
 
     const newUser: UserProfile = {
       id: `u-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -447,8 +457,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     triggerHaptic('medium');
 
     const passHash = await hashPassword(regPassword);
-    const isYegeta = emailClean.includes('yegeta') || userClean === 'yegeta';
-    const finalRole: UserRole = isYegeta ? 'SuperAdmin' : regRole;
+    const isSuperAdminCandidate =
+      emailClean.includes('yegeta') ||
+      userClean === 'yegeta' ||
+      emailClean.includes('suraphel') ||
+      userClean === 'suraphel';
+    const finalRole: UserRole = isSuperAdminCandidate ? 'SuperAdmin' : regRole;
 
     const newUser: UserProfile = {
       id: `u-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -698,8 +712,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         if (!matchedUser) {
           // If not registered register them!
           const enteredHash = await hashPassword(pwd);
-          const isYegeta = email.includes('yegeta') || email === 'yegeta.huawei@gmail.com' || email === 'ygyegeta@gmail.com';
-          const assignedRole: UserRole = isYegeta ? 'SuperAdmin' : 'Partner';
+          const isSuperAdminCandidate =
+            email.includes('yegeta') ||
+            email === 'yegeta.huawei@gmail.com' ||
+            email === 'ygyegeta@gmail.com' ||
+            email.includes('suraphel');
+          const assignedRole: UserRole = isSuperAdminCandidate ? 'SuperAdmin' : 'Partner';
 
           const newUser: UserProfile = {
             id: `u-google-manual-${Date.now()}`,
@@ -709,7 +727,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             role: assignedRole,
             active: true,
             isApproved: true,
-            isDigitalMoneyManager: isYegeta,
+            isDigitalMoneyManager: isSuperAdminCandidate,
             invitationCode: `PZ-GOOGLE-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
             hasSetPassword: true,
             password: pwd,
@@ -922,6 +940,59 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                       </button>
                     </div>
                   )}
+
+                  {/* Quick 1-Click SuperAdmin Fast Login */}
+                  <div className="p-3 bg-[#0D121F] border border-slate-800 rounded-2xl space-y-2">
+                    <p className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-[#00D4AA]" />
+                        SuperAdmin Accounts
+                      </span>
+                      <span className="text-[#00D4AA] font-mono text-[9px]">Tap to Auto-Fill</span>
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setUsername('yegeta');
+                          setPassword('password123');
+                          setErrorMsg(null);
+                        }}
+                        className={`py-2 px-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                          username.toLowerCase() === 'yegeta'
+                            ? 'bg-[#00D4AA]/15 border-[#00D4AA] text-white shadow-sm'
+                            : 'bg-slate-800/60 hover:bg-slate-800 border-slate-700/60 text-slate-300'
+                        }`}
+                      >
+                        <p className="text-xs font-bold text-white flex items-center justify-between">
+                          <span>Yegeta</span>
+                          <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-mono">HQ</span>
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-mono mt-0.5">SuperAdmin</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setUsername('suraphel');
+                          setPassword('password123');
+                          setErrorMsg(null);
+                        }}
+                        className={`py-2 px-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                          username.toLowerCase() === 'suraphel'
+                            ? 'bg-[#00D4AA]/15 border-[#00D4AA] text-white shadow-sm'
+                            : 'bg-slate-800/60 hover:bg-slate-800 border-slate-700/60 text-slate-300'
+                        }`}
+                      >
+                        <p className="text-xs font-bold text-white flex items-center justify-between">
+                          <span>Suraphel</span>
+                          <span className="text-[9px] px-1 py-0.2 rounded bg-[#00D4AA]/20 text-[#00D4AA] font-mono">HQ</span>
+                        </p>
+                        <p className="text-[10px] text-[#00D4AA] font-mono font-bold mt-0.5">SuperAdmin</p>
+                      </button>
+                    </div>
+                  </div>
 
                   {/* Login Form */}
                   <form onSubmit={handleLoginSubmit} className="space-y-4">

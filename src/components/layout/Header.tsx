@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut, Gamepad2, Send, Sparkles, X, CheckCheck } from 'lucide-react';
+import { Eye, EyeOff, Sun, Moon, ShieldCheck, ChevronDown, Bell, CheckCircle2, RefreshCw, LogOut, Gamepad2, Send, Sparkles, X, CheckCheck, Building2, User, Lock } from 'lucide-react';
 import { UserProfile, NavTab } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
 import { requestNotificationPermission, sendExternalNotification } from '../../lib/notifications';
@@ -37,6 +37,8 @@ interface HeaderProps {
   onToggleAutoRefresh?: () => void;
   onManualRefresh?: () => void;
   unreadChatCount?: number;
+  companyProfile?: any;
+  onOpenCompanyManager?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -60,17 +62,24 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleCalendarType,
   onToggleAutoRefresh,
   onManualRefresh,
-  unreadChatCount = 0
+  unreadChatCount = 0,
+  companyProfile,
+  onOpenCompanyManager
 }) => {
   const [showNotifMenu, setShowNotifMenu] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const [pushSentMessage, setPushSentMessage] = useState<string | null>(null);
 
   const notifRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
         setShowNotifMenu(false);
+      }
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false);
       }
     };
 
@@ -105,8 +114,8 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="sticky top-0 z-30 bg-white/90 dark:bg-[#0A0E1A]/90 backdrop-blur-md border-b border-slate-200/80 dark:border-[#1E2D40] px-4 py-3 transition-colors">
       <div className="max-w-6xl mx-auto flex items-center justify-between w-full">
-        {/* Left: Brand logo */}
-        <div className="flex items-center gap-3">
+        {/* Left: Brand logo & Company Switcher */}
+        <div className="flex items-center gap-2">
           <div
             onClick={() => {
               triggerHaptic('light');
@@ -115,14 +124,45 @@ export const Header: React.FC<HeaderProps> = ({
             className="flex items-center gap-2.5 cursor-pointer group select-none"
             title="Return to Dashboard"
           >
-            <AppLogo size="md" className="group-hover:scale-105 transition-transform" />
-            <div>
-              <h1 className="text-sm font-bold text-slate-900 dark:text-[#F0F4FF] leading-tight group-hover:text-emerald-500 dark:group-hover:text-[#00D4AA] transition-colors">
-                Plus Game Zone
-              </h1>
-              <p className="text-[10px] text-slate-500 dark:text-[#8899BB]">Financial ERP</p>
+            {companyProfile?.logoEmoji ? (
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center text-lg border border-white/10 shrink-0 group-hover:scale-105 transition-transform shadow-xs"
+                style={{
+                  backgroundColor: `${companyProfile.brandColor || '#10B981'}25`,
+                  borderColor: companyProfile.brandColor || '#10B981'
+                }}
+              >
+                {companyProfile.logoEmoji}
+              </div>
+            ) : (
+              <AppLogo size="md" className="group-hover:scale-105 transition-transform" />
+            )}
+            <div className="text-left">
+              <div className="flex items-center gap-1.5">
+                <h1 className="text-sm font-bold text-slate-900 dark:text-[#F0F4FF] leading-tight group-hover:text-emerald-500 dark:group-hover:text-[#00D4AA] transition-colors truncate max-w-[130px] sm:max-w-[200px]">
+                  {companyProfile?.companyName || companyProfile?.name || 'Plus Game Zone'}
+                </h1>
+              </div>
+              <p className="text-[10px] text-slate-500 dark:text-[#8899BB] truncate max-w-[130px] sm:max-w-[200px]">
+                {companyProfile?.tagline || 'Financial ERP'}
+              </p>
             </div>
           </div>
+
+          {/* Quick Company & Venue Settings Trigger */}
+          {onOpenCompanyManager && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                onOpenCompanyManager();
+              }}
+              title="Configure Game Zone Venues & Multi-Company Switcher"
+              className="p-1.5 rounded-lg bg-slate-100 dark:bg-[#1C2333] hover:bg-slate-200 dark:hover:bg-[#252E42] border border-slate-200 dark:border-[#1E2D40] text-slate-500 dark:text-[#8899BB] hover:text-emerald-500 dark:hover:text-[#00D4AA] transition-colors cursor-pointer"
+            >
+              <Building2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
       {/* Right Controls */}
@@ -346,6 +386,141 @@ export const Header: React.FC<HeaderProps> = ({
         >
           {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
         </button>
+
+        {/* User Profile & Account Switcher Dropdown */}
+        <div className="relative" ref={userMenuRef}>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              setShowUserMenu(!showUserMenu);
+            }}
+            className="flex items-center gap-1.5 sm:gap-2 p-1 sm:px-2.5 sm:py-1 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#1C2333] dark:hover:bg-[#252E42] border border-slate-200 dark:border-[#1E2D40] text-left transition-all cursor-pointer group"
+            title={`Active User: ${currentUser.name} (${currentUser.role})`}
+          >
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-emerald-500 to-indigo-600 text-white font-black text-[10px] flex items-center justify-center shadow-xs shrink-0">
+              {currentUser.name.slice(0, 2).toUpperCase()}
+            </div>
+            <div className="hidden sm:block leading-tight min-w-0">
+              <p className="text-xs font-bold text-slate-900 dark:text-white truncate max-w-[95px]">
+                {currentUser.name}
+              </p>
+              <p className="text-[9px] font-mono text-emerald-600 dark:text-[#00D4AA] font-semibold">
+                {currentUser.role}
+              </p>
+            </div>
+            <ChevronDown className={`w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
+          </button>
+
+          {/* User Profile & Switcher Dropdown Menu */}
+          {showUserMenu && (
+            <div className="absolute top-11 right-0 bg-white dark:bg-[#131926] border border-slate-200 dark:border-[#2A3B53] rounded-2xl shadow-2xl p-3 w-64 sm:w-72 z-50 animate-fadeIn space-y-3 text-slate-900 dark:text-white">
+              {/* Current User Info */}
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#0D121F] border border-slate-200 dark:border-[#1E2D40] flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-indigo-600 text-white font-black text-sm flex items-center justify-center shadow-sm shrink-0">
+                  {currentUser.name.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">{currentUser.name}</h4>
+                    <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-600 dark:text-[#00D4AA] border border-emerald-500/30">
+                      {currentUser.role}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-[#8899BB] font-mono truncate">{currentUser.email}</p>
+                  <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">{currentUser.branch || 'Addis Ababa HQ'}</p>
+                </div>
+              </div>
+
+              {/* Quick Switch Team Accounts */}
+              <div className="space-y-1.5">
+                <p className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider">
+                  Switch Active Account
+                </p>
+                <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+                  {allUsers.map((u) => {
+                    const isSelected = u.id === currentUser.id;
+                    const isSuper = u.role === 'SuperAdmin';
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('medium');
+                          setShowUserMenu(false);
+                          if (!isSelected) {
+                            onSwitchUser(u);
+                          }
+                        }}
+                        className={`w-full p-2 rounded-xl text-left flex items-center justify-between transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-emerald-500/10 border border-emerald-500/40 text-emerald-600 dark:text-[#00D4AA]'
+                            : 'hover:bg-slate-100 dark:hover:bg-[#1A2234] border border-transparent text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 ${
+                            isSuper
+                              ? 'bg-gradient-to-tr from-emerald-500 to-indigo-600 text-white'
+                              : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white'
+                          }`}>
+                            {u.name.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold truncate flex items-center gap-1.5">
+                              <span>{u.name}</span>
+                              {isSuper && (
+                                <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-emerald-500/10 text-emerald-500 font-bold">
+                                  SuperAdmin
+                                </span>
+                              )}
+                            </p>
+                            <p className="text-[9px] text-slate-400 font-mono truncate">{u.email}</p>
+                          </div>
+                        </div>
+                        {isSelected && (
+                          <span className="text-[9px] font-bold text-emerald-500 font-mono ml-2">Active</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Bottom Actions: Lock & Logout */}
+              <div className="pt-2 border-t border-slate-200 dark:border-[#2A3B53] grid grid-cols-2 gap-2">
+                {onLockSession && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('medium');
+                      setShowUserMenu(false);
+                      onLockSession();
+                    }}
+                    className="py-1.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#1C2333] dark:hover:bg-[#252E42] text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <Lock className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Lock Session</span>
+                  </button>
+                )}
+                {onLogout && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('medium');
+                      setShowUserMenu(false);
+                      onLogout();
+                    }}
+                    className="py-1.5 px-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Sign Out</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   </header>

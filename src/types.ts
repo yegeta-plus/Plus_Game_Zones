@@ -487,6 +487,66 @@ export interface ShopOperatingHours {
   notes?: string;
 }
 
+export type GamingStationType =
+  | 'PS5'
+  | 'PS4'
+  | 'XBOX'
+  | 'PC_GAMING'
+  | 'VR_HEADSET'
+  | 'RACING_SIMULATOR'
+  | 'BILLIARDS'
+  | 'FOOSBALL'
+  | 'VIP_ROOM'
+  | 'OTHER';
+
+export interface GamingStation {
+  id: string;
+  name: string; // e.g. "PS5 Station 1"
+  type: GamingStationType;
+  hourlyRate: number; // in ETB
+  controllersCount?: number;
+  status: 'AVAILABLE' | 'IN_SESSION' | 'MAINTENANCE';
+  currentSessionStartedAt?: string;
+  notes?: string;
+}
+
+export interface CompanyBranch {
+  id: string;
+  name: string; // e.g. "Main Branch (Bole)", "Sarbet Branch"
+  city?: string; // e.g. "Addis Ababa"
+  address?: string;
+  phone?: string;
+  isMain?: boolean;
+}
+
+export type IndustryPresetType =
+  | 'CONSOLE_LOUNGE'
+  | 'PC_CAFE'
+  | 'MIXED_ENTERTAINMENT'
+  | 'VR_SIMULATOR'
+  | 'COMMUNITY_ZONE'
+  | 'CUSTOM';
+
+export interface CompanyProfile {
+  id: string;
+  companyName: string; // e.g. "Plus Game Zone" or "Galaxy Esports Lounge"
+  name?: string; // alias for companyName for seamless template/component interop
+  tagline: string; // e.g. "PlayStation & Virtual Reality Lounge"
+  logoEmoji: string; // e.g. "🎮", "⚡", "🕹️", "🏆", "🚀"
+  logoUrl?: string;
+  brandColor: string; // e.g. "#10B981", "#0EA5E9", "#8B5CF6", "#F97316"
+  industryPreset: IndustryPresetType;
+  branches: CompanyBranch[];
+  activeBranchId: string;
+  currencySymbol: string; // default "ETB"
+  stations: GamingStation[];
+  tinNumber?: string;
+  phone?: string;
+  email?: string;
+  wifiPassword?: string;
+  rulesNotes?: string;
+}
+
 export interface ERPState {
   currentUser: UserProfile;
   users: UserProfile[];
@@ -511,6 +571,8 @@ export interface ERPState {
   sentReportEmailLogs?: SentReportEmailLog[];
   deletedEntityIds?: string[];
   shopHours?: ShopOperatingHours;
+  companyProfile?: CompanyProfile;
+  allCompanies?: CompanyProfile[];
   theme: 'dark' | 'light';
   hideBalances: boolean;
   calendarType?: 'ETHIOPIAN' | 'GREGORIAN';

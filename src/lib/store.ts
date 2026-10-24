@@ -19,8 +19,12 @@ import {
   ChatMessage,
   AutomatedEmailReportsSettings,
   SentReportEmailLog,
-  ShopOperatingHours
+  ShopOperatingHours,
+  CompanyProfile,
+  GamingStation,
+  CompanyBranch
 } from '../types';
+import { DEFAULT_COMPANY_PROFILE } from './gameZoneCompanies';
 import { triggerHaptic } from './haptics';
 import { DEFAULT_ROLE_PERMISSIONS, getEffectivePermissions } from './auth';
 import { INITIAL_DATASET_JULY_AUG, COMBINED_TRANSACTIONS } from '../data/importedDataset';
@@ -42,22 +46,14 @@ import { calculateNextEthiopianDueDate } from './ethiopianCalendar';
 export type { ERPState } from '../types';
 export { isPersonalExpense, resolveExpenseScope, normalizeTransactionScopes };
 
-const STORAGE_KEY = 'pluszone_fin_erp_state_v52_oct12_advance_rent_and_equb_trajectory';
+const STORAGE_KEY = 'pluszone_fin_erp_state_v55_pristine_clean_ledger';
 
 /**
- * Validates whether a transaction ID belongs to the immutable canonical business ledger.
- * Canonical transactions (July 1 - October present) must never be purged or suppressed by test deletion logs.
+ * Validates whether a transaction ID belongs to an immutable business ledger.
+ * Returns false so that user data wipe / clean requests take full effect.
  */
-export function isCanonicalTransactionId(id: string): boolean {
-  if (!id || typeof id !== 'string') return false;
-  if (id.startsWith('tx-20261019')) return false;
-  return (
-    id.startsWith('tx-2026') ||
-    id.startsWith('tx-jul') ||
-    id.startsWith('tx-equb') ||
-    id.startsWith('tx-loan') ||
-    id.startsWith('tx-rent')
-  );
+export function isCanonicalTransactionId(_id: string): boolean {
+  return false;
 }
 
 export const DEFAULT_AUTOMATED_EMAIL_REPORTS: AutomatedEmailReportsSettings = {
@@ -137,7 +133,7 @@ const DEFAULT_CHAT_MESSAGES: ChatMessage[] = [
   }
 ];
 
-const DEFAULT_USERS: UserProfile[] = [
+export const DEFAULT_USERS: UserProfile[] = [
   {
     id: 'u-1',
     name: 'Yegeta Huawei',
@@ -156,6 +152,25 @@ const DEFAULT_USERS: UserProfile[] = [
     permissions: DEFAULT_ROLE_PERMISSIONS.SuperAdmin,
     branch: 'Addis Ababa HQ',
     lastActive: 'Just now'
+  },
+  {
+    id: 'u-suraphel',
+    name: 'Suraphel',
+    email: 'suraphel@plusgamezone.et',
+    username: 'suraphel',
+    role: 'SuperAdmin',
+    active: true,
+    isApproved: true,
+    isDigitalMoneyManager: true,
+    invitationCode: 'PZ-SUPER-SURAPHEL',
+    hasSetPassword: true,
+    password: 'password123',
+    passwordHash: '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918',
+    isTemporaryPassword: false,
+    mustChangePassword: false,
+    permissions: DEFAULT_ROLE_PERMISSIONS.SuperAdmin,
+    branch: 'Addis Ababa HQ',
+    lastActive: 'Just now'
   }
 ];
 
@@ -165,7 +180,7 @@ const DEFAULT_WALLETS: Wallet[] = [
     name: 'Telebirr',
     type: 'TELEBIRR',
     accountNumber: '0989367877 (acc-1782999486323-1)',
-    openingBalance: INITIAL_DATASET_JULY_AUG.openingBalances.telebirr,
+    openingBalance: 0,
     totalIn: 0,
     totalOut: 0,
     color: '#0EA5E9', // Light Blue background
@@ -179,8 +194,8 @@ const DEFAULT_WALLETS: Wallet[] = [
     id: 'w-cbe',
     name: 'CBE',
     type: 'CBE_BANK',
-    accountNumber: '1000751694559', // CBE Account requested
-    openingBalance: INITIAL_DATASET_JULY_AUG.openingBalances.cbe,
+    accountNumber: '1000751694559',
+    openingBalance: 0,
     totalIn: 0,
     totalOut: 0,
     color: '#8B5CF6', // Purple background
@@ -195,7 +210,7 @@ const DEFAULT_WALLETS: Wallet[] = [
     name: 'eBirr',
     type: 'EBIRR',
     accountNumber: 'EB-998877',
-    openingBalance: INITIAL_DATASET_JULY_AUG.openingBalances.ebirr,
+    openingBalance: 0,
     totalIn: 0,
     totalOut: 0,
     color: '#10B981', // Green background
@@ -210,7 +225,7 @@ const DEFAULT_WALLETS: Wallet[] = [
     name: 'Cash',
     type: 'CASH',
     accountNumber: 'CASH-VAULT-01',
-    openingBalance: INITIAL_DATASET_JULY_AUG.openingBalances.cash,
+    openingBalance: 0,
     totalIn: 0,
     totalOut: 0,
     color: '#F97316', // Orange background
@@ -266,126 +281,14 @@ const DEFAULT_CATEGORIES: Category[] = [
   { id: 'cat-bal-adj', name: 'Balance Correction', type: 'EXPENSE', icon: 'Sliders', color: '#6366F1', active: true }
 ];
 
-export const DEFAULT_TRANSACTIONS: Transaction[] = INITIAL_DATASET_JULY_AUG.transactions;
+export const DEFAULT_TRANSACTIONS: Transaction[] = [];
 
-const DEFAULT_EQUBS: Equb[] = INITIAL_DATASET_JULY_AUG.equbs;
-const DEFAULT_LOANS: Loan[] = INITIAL_DATASET_JULY_AUG.loans;
-const DEFAULT_ASSETS: Asset[] = INITIAL_DATASET_JULY_AUG.assets;
+const DEFAULT_EQUBS: Equb[] = [];
+const DEFAULT_LOANS: Loan[] = [];
+const DEFAULT_ASSETS: Asset[] = [];
 const DEFAULT_GOALS: Goal[] = [];
-export const DEFAULT_RECURRING: RecurringTemplate[] = [
-  {
-    id: 'rec-internet-monthly',
-    title: 'Internet & Fiber Subscription',
-    amount: 1010,
-    type: 'EXPENSE',
-    category: 'Utilities & Internet',
-    walletId: 'w-telebirr',
-    frequency: 'MONTHLY',
-    nextDueDate: '2026-09-01T00:00:00.000Z',
-    autoProcess: false,
-    status: 'ACTIVE',
-    notes: 'ETB 1,010 monthly internet fee. Manual confirmation required.'
-  },
-  {
-    id: 'rec-electricity-3w',
-    title: 'Electricity Prepaid Units (3-4 Weeks)',
-    amount: 2050,
-    type: 'EXPENSE',
-    category: 'Utilities & Internet',
-    walletId: 'w-telebirr',
-    frequency: 'EVERY_3_WEEKS',
-    nextDueDate: '2026-09-07T00:00:00.000Z',
-    autoProcess: false,
-    status: 'ACTIVE',
-    notes: 'ETB 2,050 electricity unit refill every 3 to 4 weeks. Manual confirmation required.'
-  },
-  {
-    id: 'rec-water-2m',
-    title: 'Municipal Water Utility (Bi-Monthly)',
-    amount: 450,
-    type: 'EXPENSE',
-    category: 'Utilities & Internet',
-    walletId: 'w-telebirr',
-    frequency: 'EVERY_2_MONTHS',
-    nextDueDate: '2026-09-15T00:00:00.000Z',
-    autoProcess: false,
-    status: 'ACTIVE',
-    notes: 'Municipal water bill payable every 2 months. Manual confirmation required.'
-  },
-  {
-    id: 'rec-police-2m',
-    title: 'Community Police & Security Dues (Bi-Monthly)',
-    amount: 500,
-    type: 'EXPENSE',
-    category: 'Rent & Lease',
-    walletId: 'w-cash',
-    frequency: 'EVERY_2_MONTHS',
-    nextDueDate: '2026-09-20T00:00:00.000Z',
-    autoProcess: false,
-    status: 'ACTIVE',
-    notes: 'Community security & police contribution every 2 months. Manual confirmation required.'
-  },
-  {
-    id: 'rec-transport-p1',
-    title: 'Staff Transport - Person 1 (Early Month)',
-    amount: 1000,
-    type: 'EXPENSE',
-    category: 'Payroll & Wages',
-    walletId: 'w-telebirr',
-    frequency: 'MONTHLY',
-    nextDueDate: '2026-09-05T00:00:00.000Z',
-    autoProcess: false,
-    status: 'ACTIVE',
-    beneficiary: 'Person 1',
-    notes: 'Staff transport allowance for Person 1 (ETB 1,000 on 5th of month). Manual confirmation required.'
-  },
-  {
-    id: 'rec-transport-p2',
-    title: 'Staff Transport - Person 2 (Mid Month)',
-    amount: 1000,
-    type: 'EXPENSE',
-    category: 'Payroll & Wages',
-    walletId: 'w-telebirr',
-    frequency: 'MONTHLY',
-    nextDueDate: '2026-09-15T00:00:00.000Z',
-    autoProcess: false,
-    status: 'ACTIVE',
-    beneficiary: 'Person 2',
-    notes: 'Staff transport allowance for Person 2 (ETB 1,000 on 15th of month). Manual confirmation required.'
-  },
-  {
-    id: 'rec-transport-p3',
-    title: 'Staff Transport - Person 3 (End Month)',
-    amount: 1000,
-    type: 'EXPENSE',
-    category: 'Payroll & Wages',
-    walletId: 'w-telebirr',
-    frequency: 'MONTHLY',
-    nextDueDate: '2026-09-25T00:00:00.000Z',
-    autoProcess: false,
-    status: 'ACTIVE',
-    beneficiary: 'Person 3',
-    notes: 'Staff transport allowance for Person 3 (ETB 1,000 on 25th of month). Manual confirmation required.'
-  },
-  {
-    id: 'rec-rent-shop',
-    title: 'Commercial Space / Shop Rent',
-    amount: 23000,
-    type: 'EXPENSE',
-    category: 'Rent & Lease',
-    walletId: 'w-cash',
-    frequency: 'ONE_TIME',
-    nextDueDate: '2026-12-10T00:00:00.000Z',
-    prepaidUntilDate: '2026-12-10T00:00:00.000Z',
-    lastProcessedDate: '2026-09-10T09:30:00.000Z',
-    autoProcess: false,
-    status: 'ACTIVE',
-    isOneTime: true,
-    advanceMonthsPrepaid: 3,
-    notes: 'Commercial shop rent ETB 23,000/mo. Paid 69,000 in advance on Sep 10 as a one-time upfront payment (prepaid until Dec 10, 2026).'
-  }
-];
-const DEFAULT_RECEIVABLES: Receivable[] = INITIAL_DATASET_JULY_AUG.receivables;
+export const DEFAULT_RECURRING: RecurringTemplate[] = [];
+const DEFAULT_RECEIVABLES: Receivable[] = [];
 
 export const DEFAULT_SHOP_HOURS: ShopOperatingHours = {
   openTimeGMT: '06:00', // 6:00 AM GMT (09:00 EAT / 3:00 ጠዋት)
@@ -434,6 +337,9 @@ export function loadInitialState(): ERPState {
   try {
     // Actively purge obsolete localStorage keys so stale cached transactions never linger
     const obsoleteKeys = [
+      'pluszone_fin_erp_state_v54_oct19_removed',
+      'pluszone_fin_erp_state_v53_oct18_verified_ledger_complete',
+      'pluszone_fin_erp_state_v52_oct18_verified_ledger_complete',
       'pluszone_fin_erp_state_v51_oct12_dynamic_equb_trajectory',
       'pluszone_fin_erp_state_v50_oct11_wallet_balance_corrections',
       'pluszone_fin_erp_state_v49_oct11_verified_sales_and_rcvs',
@@ -450,12 +356,13 @@ export function loadInitialState(): ERPState {
       'pluszone_fin_erp_state_v29_restored_history'
     ];
 
-    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('pluszone_fin_erp_state_v50_oct11_wallet_balance_corrections') || localStorage.getItem('pluszone_fin_erp_state_v49_oct11_verified_sales_and_rcvs');
     obsoleteKeys.forEach((k) => {
       try {
         localStorage.removeItem(k);
       } catch (_) {}
     });
+
+    const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed) {
@@ -495,197 +402,23 @@ export function loadInitialState(): ERPState {
           parsed.users = DEFAULT_USERS;
         }
 
-        // Synchronize canonical equbs with verified rounds, obligations, and statuses
-        const canonicalEqubs = INITIAL_DATASET_JULY_AUG.equbs;
-        const canonicalEqubMap = new Map(canonicalEqubs.map(e => [e.id, e]));
-        if (!Array.isArray(parsed.equbs) || parsed.equbs.length === 0) {
-          parsed.equbs = canonicalEqubs;
-        } else {
-          parsed.equbs = parsed.equbs.map((existingEqub: Equb) => {
-            const canonical = canonicalEqubMap.get(existingEqub.id);
-            if (canonical) {
-              const completed = existingEqub.id === 'eq-agerye' ? (canonical.completedRounds ?? 25) : Math.max(existingEqub.completedRounds ?? 0, canonical.completedRounds ?? 0);
-              const current = existingEqub.id === 'eq-agerye' ? (canonical.currentRound || 26) : Math.max(existingEqub.currentRound || 1, canonical.currentRound);
-              const isDone = completed >= canonical.totalRounds || existingEqub.status === 'COMPLETED' || canonical.status === 'COMPLETED';
-              return {
-                ...existingEqub,
-                currentRound: isDone ? canonical.totalRounds : current,
-                completedRounds: completed,
-                totalRounds: canonical.totalRounds,
-                contributionPerRound: canonical.contributionPerRound,
-                status: isDone ? 'COMPLETED' : 'ACTIVE',
-                isOverdue: isDone ? false : (existingEqub.isOverdue !== undefined ? existingEqub.isOverdue : canonical.isOverdue),
-                members: canonical.members,
-                payoutsClaimed: canonical.payoutsClaimed
-              };
-            }
-            return existingEqub;
-          });
-          const existingEqubIds = new Set(parsed.equbs.map((e: Equb) => e.id));
-          for (const canonical of canonicalEqubs) {
-            if (!existingEqubIds.has(canonical.id)) {
-              parsed.equbs.push(canonical);
-              existingEqubIds.add(canonical.id);
-            }
-          }
-        }
-
-        parsed.assets = Array.isArray(parsed.assets) ? parsed.assets : [];
-        parsed.receivables = Array.isArray(parsed.receivables) ? syncReceivablesLateStatus(parsed.receivables) : [];
         parsed.transactions = Array.isArray(parsed.transactions) ? parsed.transactions : [];
+        parsed.transfers = Array.isArray(parsed.transfers) ? parsed.transfers : [];
+        parsed.equbs = Array.isArray(parsed.equbs) ? parsed.equbs : [];
+        parsed.loans = Array.isArray(parsed.loans) ? parsed.loans : [];
+        parsed.assets = Array.isArray(parsed.assets) ? parsed.assets : [];
+        parsed.goals = Array.isArray(parsed.goals) ? parsed.goals : [];
+        parsed.recurring = Array.isArray(parsed.recurring) ? parsed.recurring : [];
+        parsed.receivables = Array.isArray(parsed.receivables) ? syncReceivablesLateStatus(parsed.receivables) : [];
+        parsed.auditLogs = Array.isArray(parsed.auditLogs) ? parsed.auditLogs : [];
+        parsed.approvalRequests = Array.isArray(parsed.approvalRequests) ? parsed.approvalRequests : [];
+        parsed.pendingReviewTransactions = Array.isArray(parsed.pendingReviewTransactions) ? parsed.pendingReviewTransactions : [];
+        parsed.chatChannels = Array.isArray(parsed.chatChannels) && parsed.chatChannels.length > 0 ? parsed.chatChannels : DEFAULT_CHAT_CHANNELS;
+        parsed.chatMessages = Array.isArray(parsed.chatMessages) ? parsed.chatMessages : [];
+        parsed.deletedEntityIds = Array.isArray(parsed.deletedEntityIds) ? parsed.deletedEntityIds : [];
 
-        // Synchronize canonical loans with verified debt balances, repayment types, and statuses
-        const canonicalLoans = INITIAL_DATASET_JULY_AUG.loans;
-        const canonicalLoanMap = new Map(canonicalLoans.map(l => [l.id, l]));
-        if (!Array.isArray(parsed.loans) || parsed.loans.length === 0) {
-          parsed.loans = canonicalLoans;
-        } else {
-          parsed.loans = parsed.loans.map((existingLoan: Loan) => {
-            const canonical = canonicalLoanMap.get(existingLoan.id);
-            if (canonical) {
-              return {
-                ...existingLoan,
-                title: canonical.title,
-                counterparty: canonical.counterparty,
-                repaymentType: canonical.repaymentType || existingLoan.repaymentType,
-                dueDate: canonical.dueDate,
-                initialAmount: canonical.initialAmount,
-                outstandingBalance: canonical.outstandingBalance,
-                status: canonical.status,
-                monthlyInstallment: canonical.monthlyInstallment,
-                payments: canonical.payments.length > 0 ? canonical.payments : existingLoan.payments
-              };
-            }
-            return existingLoan;
-          });
-          // Add any missing canonical loans
-          const existingLoanIds = new Set(parsed.loans.map((l: Loan) => l.id));
-          for (const canonical of canonicalLoans) {
-            if (!existingLoanIds.has(canonical.id)) {
-              parsed.loans.push(canonical);
-              existingLoanIds.add(canonical.id);
-            }
-          }
-        }
-        // Strictly load verified transactions, transfers, receivables, and opening balances requested by user
-        // Ensure PS4 Pro purchase is in Purchase category and all verified canonical transactions (including loans, equbs, rent, Sep 10-12) are loaded
-        const baseTransactions = (COMBINED_TRANSACTIONS || []).map((t: Transaction) => {
-          let category = t.category;
-          let description = t.description;
-          let refType = t.refType;
-          let refId = t.refId;
-          if (t.id === 'tx-20260707-08' || (t.description && /ps.*pro.*purchase/i.test(t.description))) {
-            category = 'Purchase';
-          }
-          if (t.id === 'tx-20260920-exp-ekub-1456' || (t.refId === 'eq-agerye' && /round\s*#?25/i.test(t.description || ''))) {
-            category = 'Equb Contribution';
-            description = 'Ekub round contribution: Agerye (Round 25)';
-            refType = 'EQUB';
-            refId = 'eq-agerye';
-          }
-          return {
-            ...t,
-            category,
-            description,
-            refType,
-            refId,
-            expenseScope: t.type === 'EXPENSE' ? (t.expenseScope || 'BUSINESS') : undefined
-          };
-        });
-
-        // Retain verified transactions and any valid user-created transactions
-        const obsoleteTxIds = new Set([
-          'tx-20260910-exp-house-renewal',
-          'tx-20260910-exp-rent-6900',
-          'tx-20261002-exp-ekub-0956',
-          'tx-20261019-inc-cash-rcv-1102',
-          'tx-20261019-inc-cash-2111',
-          'tx-20261019-exp-cash-home-2111',
-          'tx-20261019-inc-telebirr-2236',
-          'tx-20261019-inc-cbe-2236'
-        ]);
-        const existingTxMap = new Map<string, Transaction>();
-        baseTransactions.forEach(t => {
-          if (!obsoleteTxIds.has(t.id) && !t.id.startsWith('tx-20261019') && !t.date?.startsWith('2026-10-19')) {
-            existingTxMap.set(t.id, t);
-          }
-        });
-        if (Array.isArray(parsed.transactions)) {
-          parsed.transactions.forEach((t: Transaction) => {
-            if (t && t.id && !obsoleteTxIds.has(t.id) && !t.id.startsWith('tx-20261019') && !t.date?.startsWith('2026-10-19')) {
-              if (!existingTxMap.has(t.id)) {
-                existingTxMap.set(t.id, t);
-              }
-            }
-          });
-        }
-        
-        // Exclude only known deleted test transactions, never canonical ledger items
-        const rawDeletedIds = Array.isArray(parsed.deletedEntityIds) ? parsed.deletedEntityIds : [];
-        const deletedTestIds = new Set(rawDeletedIds.filter((id: string) => !isCanonicalTransactionId(id)));
-        deletedTestIds.add('tx-1790749015154');
-        deletedTestIds.add('tx-1790748931615');
-        deletedTestIds.add('tx-20261019-inc-cash-rcv-1102');
-        deletedTestIds.add('tx-20261019-inc-cash-2111');
-        deletedTestIds.add('tx-20261019-exp-cash-home-2111');
-        deletedTestIds.add('tx-20261019-inc-telebirr-2236');
-        deletedTestIds.add('tx-20261019-inc-cbe-2236');
-
-        parsed.transactions = Array.from(existingTxMap.values())
-          .filter((t: Transaction) => {
-            if (!t || !t.id) return false;
-            if (obsoleteTxIds.has(t.id)) return false;
-            if (t.id.startsWith('tx-20261019') || t.date?.startsWith('2026-10-19')) return false;
-            if (isCanonicalTransactionId(t.id)) return true;
-            if (deletedTestIds.has(t.id)) return false;
-            return true;
-          })
-          .sort((a: Transaction, b: Transaction) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-        parsed.deletedEntityIds = Array.from(deletedTestIds);
-
-        const baseTransfers = VERIFIED_TRANSFERS || [];
-        const transferMap = new Map<string, Transfer>();
-        baseTransfers.forEach(tr => transferMap.set(tr.id, tr));
-        if (Array.isArray(parsed.transfers)) {
-          parsed.transfers.forEach((tr: Transfer) => {
-            if (tr && tr.id && !transferMap.has(tr.id)) transferMap.set(tr.id, tr);
-          });
-        }
-        parsed.transfers = Array.from(transferMap.values());
-        parsed.receivables = VERIFIED_RECEIVABLES;
-        if (Array.isArray(parsed.wallets)) {
-          parsed.wallets = parsed.wallets.map((w: Wallet) => {
-            if (w.id === 'w-cash' || w.type === 'CASH') return { ...w, openingBalance: VERIFIED_OPENING_BALANCES.cash };
-            if (w.id === 'w-telebirr' || w.type === 'TELEBIRR') return { ...w, openingBalance: VERIFIED_OPENING_BALANCES.telebirr };
-            if (w.id === 'w-cbe' || w.type === 'CBE_BANK') return { ...w, openingBalance: VERIFIED_OPENING_BALANCES.cbe };
-            if (w.id === 'w-ebirr' || w.type === 'EBIRR') return { ...w, openingBalance: VERIFIED_OPENING_BALANCES.ebirr };
-            return w;
-          });
-        }
-
-        // Deduplicate any accidental duplicate receivable collection transactions created within seconds of each other
-        const seenRcvKeys = new Set<string>();
-        parsed.transactions = parsed.transactions.filter((t: Transaction) => {
-          if (t.refType === 'RECEIVABLE' && t.refId) {
-            const timeBucket = Math.floor(new Date(t.date).getTime() / 10000);
-            const key = `${t.refId}_${t.amount}_${timeBucket}`;
-            if (seenRcvKeys.has(key)) {
-              return false;
-            }
-            seenRcvKeys.add(key);
-          }
-          return true;
-        });
-
-        // Consolidate any sibling split Equb transactions into single unified entries with total amount and split breakdowns
-        parsed.transactions = consolidateEqubSplitTransactions(parsed.transactions, parsed.wallets);
-        // Enforce wallet brand colors & CBE account number update
+        // Format and maintain wallets
         let currentWallets: Wallet[] = Array.isArray(parsed.wallets) && parsed.wallets.length > 0 ? parsed.wallets : DEFAULT_WALLETS;
-        
-        // Ensure default 4 wallets exist and are formatted
-        const defaultMap = new Map(DEFAULT_WALLETS.map(w => [w.type, w]));
-        
         currentWallets = currentWallets.map(w => {
           const status = w.status || (w.isArchived ? 'ARCHIVED' : w.isDisabled ? 'DISABLED' : 'ACTIVE');
           const isCredit = w.isCreditAccount === true || w.type === 'CREDIT_LINE' || w.type === 'LOAN';
@@ -694,7 +427,7 @@ export function loadInitialState(): ERPState {
               ...w,
               name: 'CBE',
               accountNumber: w.accountNumber && w.accountNumber !== '1000123456789' ? w.accountNumber : '1000751694559',
-              color: '#8B5CF6', // Purple
+              color: '#8B5CF6',
               status,
               isCreditAccount: isCredit,
               allowOverdraft: w.allowOverdraft ?? isCredit
@@ -749,14 +482,13 @@ export function loadInitialState(): ERPState {
           };
         });
 
-        // Add missing default types if not present
         DEFAULT_WALLETS.forEach(def => {
           if (!currentWallets.some(w => w.id === def.id || w.type === def.type)) {
             currentWallets.push(def);
           }
         });
-
         parsed.wallets = currentWallets;
+
         parsed.categories = Array.isArray(parsed.categories) && parsed.categories.length > 0 ? parsed.categories : DEFAULT_CATEGORIES;
         if (!parsed.categories.some((c: Category) => c.name === 'Community & Security')) {
           parsed.categories.push({ id: 'cat-sec', name: 'Community & Security', type: 'EXPENSE', icon: 'Shield', color: '#3B82F6', active: true });
@@ -770,37 +502,7 @@ export function loadInitialState(): ERPState {
         if (!parsed.categories.some((c: Category) => c.name === 'Equb Payout')) {
           parsed.categories.push({ id: 'cat-equb-payout', name: 'Equb Payout', type: 'INCOME', icon: 'Award', color: '#10B981', active: true });
         }
-        
-        // Ensure default recurring schedules exist if empty or missing, filtering out removed rent
-        let currentRecurring: RecurringTemplate[] = Array.isArray(parsed.recurring) ? parsed.recurring : [];
-        currentRecurring = currentRecurring.filter(r => r.id !== 'rec-rent-quarterly' && !r.title.toLowerCase().includes('commercial lounge rent'));
-        if (currentRecurring.length === 0) {
-          currentRecurring = [...DEFAULT_RECURRING];
-        } else {
-          const deletedIds = Array.isArray(parsed.deletedEntityIds) ? parsed.deletedEntityIds : [];
-          DEFAULT_RECURRING.forEach(def => {
-            if (!currentRecurring.some(r => r.id === def.id) && !deletedIds.includes(def.id)) {
-              currentRecurring.push(def);
-            }
-          });
-        }
-        // Ensure rec-rent-shop is correctly marked as ONE-TIME advance payment
-        const shopRentIdx = currentRecurring.findIndex(r => r.id === 'rec-rent-shop');
-        if (shopRentIdx !== -1) {
-          currentRecurring[shopRentIdx] = {
-            ...currentRecurring[shopRentIdx],
-            frequency: 'ONE_TIME',
-            isOneTime: true,
-            advanceMonthsPrepaid: 3,
-            prepaidUntilDate: '2026-12-10T00:00:00.000Z',
-            notes: 'Commercial shop rent ETB 23,000/mo. Paid 69,000 in advance on Sep 10 as a one-time upfront payment (prepaid until Dec 10, 2026).'
-          };
-        }
-        parsed.recurring = currentRecurring;
-        parsed.transfers = Array.isArray(parsed.transfers) ? parsed.transfers : [];
-        parsed.goals = Array.isArray(parsed.goals) ? parsed.goals : DEFAULT_GOALS;
-        parsed.auditLogs = Array.isArray(parsed.auditLogs) ? parsed.auditLogs : DEFAULT_AUDIT_LOGS;
-        // Ensure single Digital Money Manager user is set
+
         const managerUser = parsed.users.find((u: UserProfile) => u.isDigitalMoneyManager);
         if (!managerUser && parsed.users.length > 0) {
           parsed.users[0].isDigitalMoneyManager = true;
@@ -817,37 +519,34 @@ export function loadInitialState(): ERPState {
           notifyOnNewPending: true
         };
 
-        parsed.pendingReviewTransactions = Array.isArray(parsed.pendingReviewTransactions)
-          ? parsed.pendingReviewTransactions
-          : [];
-
-        parsed.chatChannels = Array.isArray(parsed.chatChannels) && parsed.chatChannels.length > 0 ? parsed.chatChannels : DEFAULT_CHAT_CHANNELS;
-        let loadedChatMessages = Array.isArray(parsed.chatMessages) && parsed.chatMessages.length > 0 ? parsed.chatMessages : DEFAULT_CHAT_MESSAGES;
-        // Purge legacy sample approval request from chat
-        loadedChatMessages = loadedChatMessages.filter((m: ChatMessage) => m.id !== 'msg-welcome-2' && m.reference?.id !== 'req-sample-1');
-        parsed.chatMessages = loadedChatMessages;
         parsed.automatedEmailReportsSettings = parsed.automatedEmailReportsSettings || DEFAULT_AUTOMATED_EMAIL_REPORTS;
         parsed.sentReportEmailLogs = Array.isArray(parsed.sentReportEmailLogs) && parsed.sentReportEmailLogs.length > 0 ? parsed.sentReportEmailLogs : DEFAULT_SENT_REPORT_LOGS;
-        parsed.deletedEntityIds = Array.isArray(parsed.deletedEntityIds) ? parsed.deletedEntityIds : [];
 
-        // Ensure users list is populated without any legacy sample accounts
-        const sampleUserIds = new Set(['u-2', 'u-3', 'u-4']);
-        const sampleEmails = new Set(['kirubel@pluszone.com', 'bethelhem@pluszone.com', 'dagmawi@pluszone.com']);
-
-        if (Array.isArray(parsed.users)) {
-          const userMap = new Map<string, UserProfile>();
-          for (const u of DEFAULT_USERS) userMap.set(u.id, u);
-          for (const u of parsed.users) {
-            if (!sampleUserIds.has(u.id) && !sampleEmails.has((u.email || '').toLowerCase())) {
-              userMap.set(u.id, u);
-            }
-          }
-          parsed.users = Array.from(userMap.values());
+        // Ensure all DEFAULT_USERS (e.g. Yegeta Huawei, Suraphel) are always present as SuperAdmin
+        if (!Array.isArray(parsed.users) || parsed.users.length === 0) {
+          parsed.users = [...DEFAULT_USERS];
         } else {
-          parsed.users = DEFAULT_USERS;
+          DEFAULT_USERS.forEach((defUser) => {
+            const foundIdx = parsed.users.findIndex(
+              (u: UserProfile) =>
+                u.id === defUser.id ||
+                (u.username && defUser.username && u.username.toLowerCase() === defUser.username.toLowerCase()) ||
+                (u.email && defUser.email && u.email.toLowerCase() === defUser.email.toLowerCase()) ||
+                (u.name && defUser.name && u.name.toLowerCase() === defUser.name.toLowerCase())
+            );
+            if (foundIdx === -1) {
+              parsed.users.push(defUser);
+            } else {
+              if (defUser.role === 'SuperAdmin') {
+                parsed.users[foundIdx].role = 'SuperAdmin';
+                parsed.users[foundIdx].permissions = DEFAULT_ROLE_PERMISSIONS.SuperAdmin;
+                parsed.users[foundIdx].active = true;
+                parsed.users[foundIdx].isApproved = true;
+              }
+            }
+          });
         }
 
-        // Preserve currently logged-in user session if available
         const activeAuthSession = getActiveAuthSession();
         if (activeAuthSession) {
           const authUser =
@@ -876,9 +575,18 @@ export function loadInitialState(): ERPState {
         } else {
           parsed.currentUser = parsed.users?.[0] || DEFAULT_USERS[0];
         }
+
         if (!parsed.shopHours || !parsed.shopHours.openTimeGMT) {
           parsed.shopHours = DEFAULT_SHOP_HOURS;
         }
+
+        if (!parsed.companyProfile || !parsed.companyProfile.companyName) {
+          parsed.companyProfile = DEFAULT_COMPANY_PROFILE;
+        }
+        if (!Array.isArray(parsed.allCompanies) || parsed.allCompanies.length === 0) {
+          parsed.allCompanies = [parsed.companyProfile];
+        }
+
         const userExplicitCal = typeof window !== 'undefined' ? (localStorage.getItem('pluszone_calendar_user_choice') as 'ETHIOPIAN' | 'GREGORIAN' | null) : null;
         parsed.calendarType = userExplicitCal || (parsed.calendarType === 'ETHIOPIAN' && !userExplicitCal ? 'GREGORIAN' : parsed.calendarType) || 'GREGORIAN';
         return parsed;
@@ -892,7 +600,7 @@ export function loadInitialState(): ERPState {
   return state;
 }
 
-function createInitialState(): ERPState {
+export function createInitialState(): ERPState {
   const activeAuthSession = getActiveAuthSession();
   const sessionUser = activeAuthSession
     ? (DEFAULT_USERS.find(
@@ -910,16 +618,16 @@ function createInitialState(): ERPState {
     currentUser: sessionUser || DEFAULT_USERS[0],
     users: initialUsers,
     wallets: DEFAULT_WALLETS,
-    transactions: consolidateEqubSplitTransactions(DEFAULT_TRANSACTIONS, DEFAULT_WALLETS),
-    transfers: INITIAL_DATASET_JULY_AUG.transfers,
-    equbs: DEFAULT_EQUBS,
-    loans: DEFAULT_LOANS,
-    assets: DEFAULT_ASSETS,
-    goals: DEFAULT_GOALS,
-    recurring: DEFAULT_RECURRING,
-    receivables: DEFAULT_RECEIVABLES,
+    transactions: [],
+    transfers: [],
+    equbs: [],
+    loans: [],
+    assets: [],
+    goals: [],
+    recurring: [],
+    receivables: [],
     categories: DEFAULT_CATEGORIES,
-    auditLogs: DEFAULT_AUDIT_LOGS,
+    auditLogs: [],
     approvalRequests: [],
     digitalMoneyManagerUserId: DEFAULT_USERS[0].id,
     autoImportSettings: {
@@ -931,15 +639,79 @@ function createInitialState(): ERPState {
     },
     pendingReviewTransactions: [],
     chatChannels: DEFAULT_CHAT_CHANNELS,
-    chatMessages: DEFAULT_CHAT_MESSAGES,
+    chatMessages: [],
     automatedEmailReportsSettings: DEFAULT_AUTOMATED_EMAIL_REPORTS,
     sentReportEmailLogs: DEFAULT_SENT_REPORT_LOGS,
     deletedEntityIds: [],
     shopHours: DEFAULT_SHOP_HOURS,
+    companyProfile: DEFAULT_COMPANY_PROFILE,
+    allCompanies: [DEFAULT_COMPANY_PROFILE],
     theme: 'dark',
     hideBalances: false,
     calendarType: 'GREGORIAN'
   };
+}
+
+export function cleanAllDataState(currentUser?: UserProfile, existingCompanyProfile?: CompanyProfile): ERPState {
+  const activeUser = currentUser || DEFAULT_USERS[0];
+  const company = existingCompanyProfile || DEFAULT_COMPANY_PROFILE;
+  const cleanWallets: Wallet[] = DEFAULT_WALLETS.map(w => ({
+    ...w,
+    openingBalance: 0,
+    totalIn: 0,
+    totalOut: 0
+  }));
+
+  const cleanState: ERPState = {
+    currentUser: activeUser,
+    users: DEFAULT_USERS.some(u => u.id === activeUser.id) ? DEFAULT_USERS : [activeUser, ...DEFAULT_USERS],
+    wallets: cleanWallets,
+    transactions: [],
+    transfers: [],
+    equbs: [],
+    loans: [],
+    assets: [],
+    goals: [],
+    recurring: [],
+    receivables: [],
+    categories: DEFAULT_CATEGORIES,
+    auditLogs: [],
+    approvalRequests: [],
+    digitalMoneyManagerUserId: activeUser.id,
+    autoImportSettings: {
+      enabled: true,
+      importMethod: 'BOTH',
+      selectedProvider: 'ALL',
+      autoCategorize: true,
+      notifyOnNewPending: true
+    },
+    pendingReviewTransactions: [],
+    chatChannels: DEFAULT_CHAT_CHANNELS,
+    chatMessages: [],
+    automatedEmailReportsSettings: DEFAULT_AUTOMATED_EMAIL_REPORTS,
+    sentReportEmailLogs: DEFAULT_SENT_REPORT_LOGS,
+    deletedEntityIds: [],
+    shopHours: DEFAULT_SHOP_HOURS,
+    companyProfile: company,
+    allCompanies: [company],
+    theme: 'dark',
+    hideBalances: false,
+    calendarType: 'GREGORIAN'
+  };
+
+  if (typeof window !== 'undefined') {
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('pluszone_') || key.startsWith('erp_'))) {
+          localStorage.removeItem(key);
+        }
+      }
+    } catch (_) {}
+    saveStateToStorage(cleanState);
+  }
+
+  return cleanState;
 }
 
 export function saveStateToStorage(state: ERPState) {

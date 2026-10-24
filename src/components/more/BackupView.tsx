@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Database, Download, Upload, RefreshCw, Calendar, CheckCircle2, ShieldCheck, AlertTriangle, Users, Clock, Check, X, Trash2 } from 'lucide-react';
 import { ERPState, UserProfile } from '../../types';
 import { triggerHaptic } from '../../lib/haptics';
+import { cleanAllDataState } from '../../lib/store';
 
 interface BackupViewProps {
   state: ERPState;
@@ -100,8 +101,11 @@ export const BackupView: React.FC<BackupViewProps> = ({ state, onRestore }) => {
 
   const confirmResetDemo = () => {
     triggerHaptic('warning');
-    localStorage.clear();
-    window.location.reload();
+    const cleanState = cleanAllDataState(state.currentUser);
+    onRestore(cleanState);
+    setShowResetModal(false);
+    setRestoreSuccessMsg('All ledger transactions and wallet balances have been completely cleaned!');
+    setTimeout(() => setRestoreSuccessMsg(''), 5000);
   };
 
   const handleResetDemo = () => {
@@ -215,18 +219,18 @@ export const BackupView: React.FC<BackupViewProps> = ({ state, onRestore }) => {
           </label>
         </div>
 
-        {/* Reset Demo */}
+        {/* Clean Ledger Data */}
         <div className="pt-3 border-t border-[#1E2D40] flex items-center justify-between">
           <div>
-            <h4 className="text-xs font-bold text-red-400">Reset Demo Dataset</h4>
-            <p className="text-[10px] text-[#8899BB]">Revert back to initial Ethiopian business seed dataset</p>
+            <h4 className="text-xs font-bold text-red-400">Clean All Ledger Data</h4>
+            <p className="text-[10px] text-[#8899BB]">Reset all transactions, loans, equbs, receivables, and wallet balances to 0</p>
           </div>
           <button
             onClick={handleResetDemo}
             className="px-3 py-1.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 font-bold text-xs flex items-center gap-1.5 cursor-pointer hover:bg-red-500/25 transition-colors"
           >
-            <RefreshCw className="w-4 h-4" />
-            <span>Reset Demo</span>
+            <Trash2 className="w-4 h-4" />
+            <span>Clean All Data</span>
           </button>
         </div>
       </div>
@@ -375,13 +379,13 @@ export const BackupView: React.FC<BackupViewProps> = ({ state, onRestore }) => {
                 <Trash2 className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Reset Ledger State?</h3>
-                <p className="text-xs text-slate-500 dark:text-[#8899BB] font-semibold">Restore Initial Demo Dataset</p>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Clean All Ledger Data?</h3>
+                <p className="text-xs text-slate-500 dark:text-[#8899BB] font-semibold">Start with a Fresh, Empty Ledger</p>
               </div>
             </div>
 
             <p className="text-xs text-slate-600 dark:text-[#8899BB] leading-relaxed">
-              Are you sure you want to reset all business ledger data, wallets, Equb circles, and transaction entries back to the initial demo dataset? Local storage will be cleared and the app will reload.
+              Are you sure you want to clean all transactions, transfers, receivables, Equbs, loans, and reset all wallet balances to 0 ETB? Your user profile and account categories will remain intact.
             </p>
 
             <div className="flex gap-2 pt-2">
@@ -395,7 +399,7 @@ export const BackupView: React.FC<BackupViewProps> = ({ state, onRestore }) => {
                 onClick={confirmResetDemo}
                 className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-bold shadow-md hover:bg-rose-700 active:scale-[0.98] transition-all"
               >
-                Yes, Reset Data
+                Yes, Clean All Data
               </button>
             </div>
           </div>

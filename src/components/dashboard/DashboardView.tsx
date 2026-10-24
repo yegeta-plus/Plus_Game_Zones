@@ -56,7 +56,8 @@ import {
   RecurringTemplate,
   UserProfile,
   Receivable,
-  ShopOperatingHours
+  ShopOperatingHours,
+  CompanyProfile
 } from '../../types';
 import {
   calculateWalletBalance,
@@ -108,6 +109,8 @@ interface DashboardViewProps {
   onOpenAiAssistant?: (prompt?: string, initialMode?: 'chat' | 'simulator') => void;
   onStartTour?: () => void;
   onOpenHelp?: () => void;
+  companyProfile?: CompanyProfile;
+  onOpenCompanyManager?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -133,7 +136,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onAddIncome,
   onOpenAiAssistant,
   onStartTour,
-  onOpenHelp
+  onOpenHelp,
+  companyProfile,
+  onOpenCompanyManager
 }) => {
   const [showShopHoursModal, setShowShopHoursModal] = useState(false);
   const totalBalance = calculateTotalBusinessBalance(wallets, transactions, transfers);
@@ -587,6 +592,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <span>{statusInfo.isOpen ? 'Shop Open (6 AM – 6 PM GMT)' : 'Shop Closed (Opens 6 AM GMT)'}</span>
               <span className="opacity-70 font-mono text-[9px] hidden sm:inline">• {statusInfo.currentGmtTimeStr}</span>
             </button>
+
+            {/* Game Zone Company & Stations Badge */}
+            {companyProfile && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onOpenCompanyManager?.();
+                }}
+                className="text-[10px] bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/70 dark:hover:bg-indigo-900/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105 active:scale-95 shadow-xs"
+                title="Manage Game Zone Company, Stations, Hourly Rates & Branches"
+              >
+                <span>{companyProfile.logoEmoji || '🎮'}</span>
+                <span>{companyProfile.name}</span>
+                <span className="opacity-70 font-mono text-[9px] hidden sm:inline">• {companyProfile.stations?.length || 0} Stations</span>
+              </button>
+            )}
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-[#8899BB]">
